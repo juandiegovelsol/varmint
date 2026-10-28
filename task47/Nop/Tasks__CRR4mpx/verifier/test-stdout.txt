@@ -1,0 +1,299 @@
+== applying test.patch ==
+== starting in-image postgres ==
+== checking pinned test deps (no install) ==
+pytest 9.1.1 | django 5.2.16
+== running f2p + p2p tests ==
+(tests exited non-zero; parsing report)
+== computing reward ==
+{"reward": 0.0, "tests_passed": 0.0, "f2p_passed": 0, "f2p_total": 9, "p2p_passed": 8, "p2p_total": 8, "rubric_passed": -1, "f2p::tests.harborreviewscores4158.test_review_score_validation::test_clearing_the_number_of_a_saved_row_is_refused_and_flagged": 0.0, "f2p::tests.harborreviewscores4158.test_review_score_validation::test_clearing_the_label_of_a_saved_row_is_refused_and_flagged": 0.0, "f2p::tests.harborreviewscores4158.test_review_score_validation::test_clearing_the_number_in_a_second_category_is_refused_and_flagged": 0.0, "f2p::tests.harborreviewscores4158.test_review_score_validation::test_added_row_without_a_number_survives_and_is_flagged": 0.0, "f2p::tests.harborreviewscores4158.test_review_score_validation::test_added_row_without_a_label_survives_and_is_flagged": 0.0, "f2p::tests.harborreviewscores4158.test_review_score_validation::test_an_empty_added_row_does_not_block_an_unrelated_edit": 0.0, "f2p::tests.harborreviewscores4158.test_review_score_validation::test_an_empty_added_category_is_not_stored_as_a_nameless_one": 0.0, "f2p::tests.harborreviewscores4158.test_review_score_validation::test_entering_a_non_numeric_score_is_refused_and_flagged": 0.0, "f2p::tests.harborreviewscores4158.test_review_score_validation::test_a_saved_row_beyond_the_defaults_offers_a_way_to_remove_it": 0.0, "p2p::tests.harborreviewscores4158.test_review_score_validation::test_every_stored_score_is_offered_on_the_page": 1.0, "p2p::tests.harborreviewscores4158.test_review_score_validation::test_editing_a_saved_row_completely_is_stored": 1.0, "p2p::tests.harborreviewscores4158.test_review_score_validation::test_adding_a_complete_row_stores_it": 1.0, "p2p::tests.harborreviewscores4158.test_review_score_validation::test_emptying_both_halves_of_a_saved_row_removes_it": 1.0, "p2p::tests.harborreviewscores4158.test_review_score_validation::test_deleting_a_category_removes_it_with_its_scores": 1.0, "p2p::tests.harborreviewscores4158.test_review_score_validation::test_renaming_a_category_is_stored": 1.0, "p2p::tests.harborreviewscores4158.test_review_score_validation::test_editing_one_row_leaves_the_others_alone": 1.0, "p2p::tests.harborreviewscores4158.test_review_score_validation::test_a_successful_save_flags_no_row": 1.0, "f2p": {"tests.harborreviewscores4158.test_review_score_validation::test_clearing_the_number_of_a_saved_row_is_refused_and_flagged": "fail", "tests.harborreviewscores4158.test_review_score_validation::test_clearing_the_label_of_a_saved_row_is_refused_and_flagged": "fail", "tests.harborreviewscores4158.test_review_score_validation::test_clearing_the_number_in_a_second_category_is_refused_and_flagged": "fail", "tests.harborreviewscores4158.test_review_score_validation::test_added_row_without_a_number_survives_and_is_flagged": "fail", "tests.harborreviewscores4158.test_review_score_validation::test_added_row_without_a_label_survives_and_is_flagged": "fail", "tests.harborreviewscores4158.test_review_score_validation::test_an_empty_added_row_does_not_block_an_unrelated_edit": "fail", "tests.harborreviewscores4158.test_review_score_validation::test_an_empty_added_category_is_not_stored_as_a_nameless_one": "fail", "tests.harborreviewscores4158.test_review_score_validation::test_entering_a_non_numeric_score_is_refused_and_flagged": "fail", "tests.harborreviewscores4158.test_review_score_validation::test_a_saved_row_beyond_the_defaults_offers_a_way_to_remove_it": "fail"}, "p2p": {"tests.harborreviewscores4158.test_review_score_validation::test_every_stored_score_is_offered_on_the_page": "pass", "tests.harborreviewscores4158.test_review_score_validation::test_editing_a_saved_row_completely_is_stored": "pass", "tests.harborreviewscores4158.test_review_score_validation::test_adding_a_complete_row_stores_it": "pass", "tests.harborreviewscores4158.test_review_score_validation::test_emptying_both_halves_of_a_saved_row_removes_it": "pass", "tests.harborreviewscores4158.test_review_score_validation::test_deleting_a_category_removes_it_with_its_scores": "pass", "tests.harborreviewscores4158.test_review_score_validation::test_renaming_a_category_is_stored": "pass", "tests.harborreviewscores4158.test_review_score_validation::test_editing_one_row_leaves_the_others_alone": "pass", "tests.harborreviewscores4158.test_review_score_validation::test_a_successful_save_flags_no_row": "pass"}}
+reward=0.0
+ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+page = <tests.harborreviewscores4158.test_review_score_validation.Page object at 0x7f8b56fe76b0>
+mutate = <function test_clearing_the_number_in_a_second_category_is_refused_and_flagged.<locals>.<lambda> at 0x7f8b54be6b60>
+expected_key = ('1', '33')
+
+    def _refusal(page, mutate, expected_key):
+        """Submit a broken change; the page must refuse it and point at the row."""
+        healthy = page.show()
+        before_notes = row_notes(healthy)
+        before_stored = page.stored()
+    
+        payload = harvest(healthy)
+        mutate(payload)
+        response = page.submit(payload)
+    
+>       assert response.status_code == 200, (
+            f'the broken submission was accepted ({response.status_code}) instead of refused'
+        )
+E       AssertionError: the broken submission was accepted (302) instead of refused
+E       assert 302 == 200
+E        +  where 302 = <HttpResponseRedirect status_code=302, "text/html; charset=utf-8", url="/orga/event/harborrev/revscores/settings/review/">.status_code
+
+tests/harborreviewscores4158/test_review_score_validation.py:442: AssertionError
+___________ test_added_row_without_a_number_survives_and_is_flagged ____________
+
+page = <tests.harborreviewscores4158.test_review_score_validation.Page object at 0x7f8b578773b0>
+
+    def test_added_row_without_a_number_survives_and_is_flagged(page):
+        slot = page.category_slot(_MAIN_CATEGORY)
+        key = 'new417'
+        number_name, label_name = page.added_row_names(slot, key)
+    
+>       html = _refusal(
+            page,
+            lambda data: page.add_row(data, slot, key, '', 'Outstanding'),
+            (slot, key),
+        )
+
+tests/harborreviewscores4158/test_review_score_validation.py:484: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+page = <tests.harborreviewscores4158.test_review_score_validation.Page object at 0x7f8b578773b0>
+mutate = <function test_added_row_without_a_number_survives_and_is_flagged.<locals>.<lambda> at 0x7f8b51d21940>
+expected_key = ('0', 'new417')
+
+    def _refusal(page, mutate, expected_key):
+        """Submit a broken change; the page must refuse it and point at the row."""
+        healthy = page.show()
+        before_notes = row_notes(healthy)
+        before_stored = page.stored()
+    
+        payload = harvest(healthy)
+        mutate(payload)
+        response = page.submit(payload)
+    
+        assert response.status_code == 200, (
+            f'the broken submission was accepted ({response.status_code}) instead of refused'
+        )
+        assert page.stored() == before_stored, 'a refused submission still changed the stored scores'
+    
+        html = response.content.decode()
+        flagged = _flagged_rows(page, before_notes, html)
+>       assert expected_key in flagged, 'the page said nothing at all beside the offending score row'
+E       AssertionError: the page said nothing at all beside the offending score row
+E       assert ('0', 'new417') in set()
+
+tests/harborreviewscores4158/test_review_score_validation.py:449: AssertionError
+____________ test_added_row_without_a_label_survives_and_is_flagged ____________
+
+page = <tests.harborreviewscores4158.test_review_score_validation.Page object at 0x7f8b545f7ce0>
+
+    def test_added_row_without_a_label_survives_and_is_flagged(page):
+        slot = page.category_slot(_SIDE_CATEGORY)
+        key = 'new628'
+        number_name, label_name = page.added_row_names(slot, key)
+    
+>       html = _refusal(
+            page,
+            lambda data: page.add_row(data, slot, key, '7', ''),
+            (slot, key),
+        )
+
+tests/harborreviewscores4158/test_review_score_validation.py:500: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+page = <tests.harborreviewscores4158.test_review_score_validation.Page object at 0x7f8b545f7ce0>
+mutate = <function test_added_row_without_a_label_survives_and_is_flagged.<locals>.<lambda> at 0x7f8b5430de40>
+expected_key = ('1', 'new628')
+
+    def _refusal(page, mutate, expected_key):
+        """Submit a broken change; the page must refuse it and point at the row."""
+        healthy = page.show()
+        before_notes = row_notes(healthy)
+        before_stored = page.stored()
+    
+        payload = harvest(healthy)
+        mutate(payload)
+        response = page.submit(payload)
+    
+>       assert response.status_code == 200, (
+            f'the broken submission was accepted ({response.status_code}) instead of refused'
+        )
+E       AssertionError: the broken submission was accepted (302) instead of refused
+E       assert 302 == 200
+E        +  where 302 = <HttpResponseRedirect status_code=302, "text/html; charset=utf-8", url="/orga/event/harborrev/revscores/settings/review/">.status_code
+
+tests/harborreviewscores4158/test_review_score_validation.py:442: AssertionError
+___________ test_an_empty_added_row_does_not_block_an_unrelated_edit ___________
+
+page = <tests.harborreviewscores4158.test_review_score_validation.Page object at 0x7f8b52bfb890>
+
+    def test_an_empty_added_row_does_not_block_an_unrelated_edit(page):
+        slot = page.category_slot(_MAIN_CATEGORY)
+        renamed = 'Overall rethought'
+        payload = page.payload()
+        page.add_row(payload, slot, 'new930', '', '')
+        for name in list(payload):
+            match = _CATEGORY_NAME.match(name)
+            if match and match.group(1) == slot and payload.get(name) == _MAIN_CATEGORY:
+                payload.setlist(name, [renamed])
+    
+        response = page.submit(payload)
+    
+>       assert response.status_code == 302, (
+            'an added row the user left completely blank blocked an unrelated edit'
+        )
+E       AssertionError: an added row the user left completely blank blocked an unrelated edit
+E       assert 200 == 302
+E        +  where 200 = <TemplateResponse status_code=200, "text/html; charset=utf-8">.status_code
+
+tests/harborreviewscores4158/test_review_score_validation.py:523: AssertionError
+_________ test_an_empty_added_category_is_not_stored_as_a_nameless_one _________
+
+page = <tests.harborreviewscores4158.test_review_score_validation.Page object at 0x7f8b537c7c50>
+
+    def test_an_empty_added_category_is_not_stored_as_a_nameless_one(page):
+        html = page.show()
+        payload = harvest(html)
+        page.add_category(payload, html)
+    
+        response = page.submit(payload)
+    
+        assert response.status_code == 302, f'adding an empty category was refused ({response.status_code})'
+        names = page.category_names()
+>       assert all(name.strip() for name in names), f'a nameless score category was stored: {names}'
+E       AssertionError: a nameless score category was stored: ['Overall has-error deletable', 'Craft protected_score_ids DEFAULT_SCORE_COUNT', '']
+E       assert False
+E        +  where False = all(<generator object test_an_empty_added_category_is_not_stored_as_a_nameless_one.<locals>.<genexpr> at 0x7f8b5486fd30>)
+
+tests/harborreviewscores4158/test_review_score_validation.py:542: AssertionError
+________ test_a_saved_row_beyond_the_defaults_offers_a_way_to_remove_it ________
+
+page = <tests.harborreviewscores4158.test_review_score_validation.Page object at 0x7f8b54ca25a0>
+
+    def test_a_saved_row_beyond_the_defaults_offers_a_way_to_remove_it(page):
+>       assert total_row_button_controls(page.show()) > 2, (
+            'no saved score row beyond the original set offers any way to remove it'
+        )
+E       AssertionError: no saved score row beyond the original set offers any way to remove it
+E       assert 2 > 2
+E        +  where 2 = total_row_button_controls('\n\n\n\n\n\n\n\n\n\n\n<!DOCTYPE html>\n<html lang="en">\n    <head>\n        <meta charset="utf-8">\n        <title>R...a-label="Close"><i class="fa fa-times"></i></button>\n        </div>\n    </form>\n</dialog>\n\n    </body>\n</html>\n')
+E        +    where '\n\n\n\n\n\n\n\n\n\n\n<!DOCTYPE html>\n<html lang="en">\n    <head>\n        <meta charset="utf-8">\n        <title>R...a-label="Close"><i class="fa fa-times"></i></button>\n        </div>\n    </form>\n</dialog>\n\n    </body>\n</html>\n' = show()
+E        +      where show = <tests.harborreviewscores4158.test_review_score_validation.Page object at 0x7f8b54ca25a0>.show
+
+tests/harborreviewscores4158/test_review_score_validation.py:547: AssertionError
+___________ test_entering_a_non_numeric_score_is_refused_and_flagged ___________
+
+page = <tests.harborreviewscores4158.test_review_score_validation.Page object at 0x7f8b52a2b800>
+
+    def test_entering_a_non_numeric_score_is_refused_and_flagged(page):
+        slot, key, number, _label = page.row_for('Nope')
+    
+>       _refusal(page, lambda data: data.setlist(number, ['\U0001F44D']), (slot, key))
+
+tests/harborreviewscores4158/test_review_score_validation.py:660: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+page = <tests.harborreviewscores4158.test_review_score_validation.Page object at 0x7f8b52a2b800>
+mutate = <function test_entering_a_non_numeric_score_is_refused_and_flagged.<locals>.<lambda> at 0x7f8b630519e0>
+expected_key = ('0', '181')
+
+    def _refusal(page, mutate, expected_key):
+        """Submit a broken change; the page must refuse it and point at the row."""
+        healthy = page.show()
+        before_notes = row_notes(healthy)
+        before_stored = page.stored()
+    
+        payload = harvest(healthy)
+        mutate(payload)
+        response = page.submit(payload)
+    
+        assert response.status_code == 200, (
+            f'the broken submission was accepted ({response.status_code}) instead of refused'
+        )
+        assert page.stored() == before_stored, 'a refused submission still changed the stored scores'
+    
+        html = response.content.decode()
+        flagged = _flagged_rows(page, before_notes, html)
+>       assert expected_key in flagged, 'the page said nothing at all beside the offending score row'
+E       AssertionError: the page said nothing at all beside the offending score row
+E       assert ('0', '181') in set()
+
+tests/harborreviewscores4158/test_review_score_validation.py:449: AssertionError
+=============================== warnings summary ===============================
+../../opt/venv/lib/python3.12/site-packages/pydantic_settings/sources/providers/secrets.py:67
+  /opt/venv/lib/python3.12/site-packages/pydantic_settings/sources/providers/secrets.py:67: UserWarning: directory "/app/app/.secrets" does not exist
+    warnings.warn(f'directory "{path}" does not exist')
+
+tests/harborreviewscores4158/test_review_score_validation.py: 17 warnings
+  /opt/venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py:1612: RuntimeWarning: DateTimeField Event.date_from received a naive datetime (2033-09-01 00:00:00) while time zone support is active.
+    warnings.warn(
+
+tests/harborreviewscores4158/test_review_score_validation.py: 17 warnings
+  /opt/venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py:1612: RuntimeWarning: DateTimeField Event.date_to received a naive datetime (2033-09-03 00:00:00) while time zone support is active.
+    warnings.warn(
+
+tests/harborreviewscores4158/test_review_score_validation.py: 22 warnings
+  /opt/venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py:1148: RemovedInDjango60Warning: The default scheme will be changed from 'http' to 'https' in Django 6.0. Pass the forms.URLField.assume_scheme argument to silence this warning, or set the FORMS_URLFIELD_ASSUME_HTTPS transitional setting to True to opt into using 'https' as the new default scheme.
+    return form_class(**defaults)
+
+tests/harborreviewscores4158/test_review_score_validation.py::test_clearing_the_number_of_a_saved_row_is_refused_and_flagged
+  /app/app/eventyay/orga/forms/event.py:61: RemovedInDjango60Warning: The default scheme will be changed from 'http' to 'https' in Django 6.0. Pass the forms.URLField.assume_scheme argument to silence this warning, or set the FORMS_URLFIELD_ASSUME_HTTPS transitional setting to True to opt into using 'https' as the new default scheme.
+    imprint_url = forms.URLField(
+
+tests/harborreviewscores4158/test_review_score_validation.py::test_clearing_the_number_of_a_saved_row_is_refused_and_flagged
+  /app/app/eventyay/orga/forms/event.py:100: RemovedInDjango60Warning: The default scheme will be changed from 'http' to 'https' in Django 6.0. Pass the forms.URLField.assume_scheme argument to silence this warning, or set the FORMS_URLFIELD_ASSUME_HTTPS transitional setting to True to opt into using 'https' as the new default scheme.
+    html_export_url = forms.URLField(
+
+tests/harborreviewscores4158/test_review_score_validation.py::test_clearing_the_number_of_a_saved_row_is_refused_and_flagged
+tests/harborreviewscores4158/test_review_score_validation.py::test_clearing_the_number_of_a_saved_row_is_refused_and_flagged
+  /app/app/eventyay/submission/forms/resource.py:90: RemovedInDjango60Warning: The default scheme will be changed from 'http' to 'https' in Django 6.0. Pass the forms.URLField.assume_scheme argument to silence this warning, or set the FORMS_URLFIELD_ASSUME_HTTPS transitional setting to True to opt into using 'https' as the new default scheme.
+    self.link_field = forms.URLField(required=False)
+
+tests/harborreviewscores4158/test_review_score_validation.py::test_clearing_the_number_of_a_saved_row_is_refused_and_flagged
+  /app/app/eventyay/control/forms/global_settings.py:579: RemovedInDjango60Warning: The default scheme will be changed from 'http' to 'https' in Django 6.0. Pass the forms.URLField.assume_scheme argument to silence this warning, or set the FORMS_URLFIELD_ASSUME_HTTPS transitional setting to True to opt into using 'https' as the new default scheme.
+    telemetry_endpoint = forms.URLField(
+
+tests/harborreviewscores4158/test_review_score_validation.py::test_clearing_the_number_of_a_saved_row_is_refused_and_flagged
+  /app/app/eventyay/control/forms/global_settings.py:604: RemovedInDjango60Warning: The default scheme will be changed from 'http' to 'https' in Django 6.0. Pass the forms.URLField.assume_scheme argument to silence this warning, or set the FORMS_URLFIELD_ASSUME_HTTPS transitional setting to True to opt into using 'https' as the new default scheme.
+    redirect_url = forms.URLField(
+
+tests/harborreviewscores4158/test_review_score_validation.py::test_clearing_the_number_of_a_saved_row_is_refused_and_flagged
+  /opt/venv/lib/python3.12/site-packages/exhibition/forms.py:43: RemovedInDjango60Warning: The default scheme will be changed from 'http' to 'https' in Django 6.0. Pass the forms.URLField.assume_scheme argument to silence this warning, or set the FORMS_URLFIELD_ASSUME_HTTPS transitional setting to True to opt into using 'https' as the new default scheme.
+    slides_url = forms.URLField(
+
+tests/harborreviewscores4158/test_review_score_validation.py::test_clearing_the_number_of_a_saved_row_is_refused_and_flagged
+  /opt/venv/lib/python3.12/site-packages/exhibition/forms.py:48: RemovedInDjango60Warning: The default scheme will be changed from 'http' to 'https' in Django 6.0. Pass the forms.URLField.assume_scheme argument to silence this warning, or set the FORMS_URLFIELD_ASSUME_HTTPS transitional setting to True to opt into using 'https' as the new default scheme.
+    logo_url = forms.URLField(
+
+tests/harborreviewscores4158/test_review_score_validation.py::test_clearing_the_number_of_a_saved_row_is_refused_and_flagged
+  /opt/venv/lib/python3.12/site-packages/exhibition/forms.py:53: RemovedInDjango60Warning: The default scheme will be changed from 'http' to 'https' in Django 6.0. Pass the forms.URLField.assume_scheme argument to silence this warning, or set the FORMS_URLFIELD_ASSUME_HTTPS transitional setting to True to opt into using 'https' as the new default scheme.
+    header_image_url = forms.URLField(
+
+tests/harborreviewscores4158/test_review_score_validation.py::test_clearing_the_number_of_a_saved_row_is_refused_and_flagged
+  /opt/venv/lib/python3.12/site-packages/exhibition/forms.py:550: RemovedInDjango60Warning: The default scheme will be changed from 'http' to 'https' in Django 6.0. Pass the forms.URLField.assume_scheme argument to silence this warning, or set the FORMS_URLFIELD_ASSUME_HTTPS transitional setting to True to opt into using 'https' as the new default scheme.
+    slides_url = forms.URLField(
+
+tests/harborreviewscores4158/test_review_score_validation.py::test_clearing_the_number_of_a_saved_row_is_refused_and_flagged
+  /opt/venv/lib/python3.12/site-packages/exhibition/forms.py:555: RemovedInDjango60Warning: The default scheme will be changed from 'http' to 'https' in Django 6.0. Pass the forms.URLField.assume_scheme argument to silence this warning, or set the FORMS_URLFIELD_ASSUME_HTTPS transitional setting to True to opt into using 'https' as the new default scheme.
+    logo_url = forms.URLField(
+
+tests/harborreviewscores4158/test_review_score_validation.py::test_clearing_the_number_of_a_saved_row_is_refused_and_flagged
+  /opt/venv/lib/python3.12/site-packages/exhibition/forms.py:560: RemovedInDjango60Warning: The default scheme will be changed from 'http' to 'https' in Django 6.0. Pass the forms.URLField.assume_scheme argument to silence this warning, or set the FORMS_URLFIELD_ASSUME_HTTPS transitional setting to True to opt into using 'https' as the new default scheme.
+    header_image_url = forms.URLField(
+
+tests/harborreviewscores4158/test_review_score_validation.py::test_clearing_the_number_of_a_saved_row_is_refused_and_flagged
+  /opt/venv/lib/python3.12/site-packages/socialmedia/forms.py:56: RemovedInDjango60Warning: The default scheme will be changed from 'http' to 'https' in Django 6.0. Pass the forms.URLField.assume_scheme argument to silence this warning, or set the FORMS_URLFIELD_ASSUME_HTTPS transitional setting to True to opt into using 'https' as the new default scheme.
+    socialmedia_event_link = forms.URLField(
+
+tests/harborreviewscores4158/test_review_score_validation.py::test_clearing_the_number_of_a_saved_row_is_refused_and_flagged
+  /app/app/eventyay/plugins/returnurl/views.py:14: RemovedInDjango60Warning: The default scheme will be changed from 'http' to 'https' in Django 6.0. Pass the forms.URLField.assume_scheme argument to silence this warning, or set the FORMS_URLFIELD_ASSUME_HTTPS transitional setting to True to opt into using 'https' as the new default scheme.
+    returnurl_prefix = forms.URLField(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/harborreviewscores4158/test_review_score_validation.py::test_clearing_the_number_of_a_saved_row_is_refused_and_flagged
+FAILED tests/harborreviewscores4158/test_review_score_validation.py::test_clearing_the_label_of_a_saved_row_is_refused_and_flagged
+FAILED tests/harborreviewscores4158/test_review_score_validation.py::test_clearing_the_number_in_a_second_category_is_refused_and_flagged
+FAILED tests/harborreviewscores4158/test_review_score_validation.py::test_added_row_without_a_number_survives_and_is_flagged
+FAILED tests/harborreviewscores4158/test_review_score_validation.py::test_added_row_without_a_label_survives_and_is_flagged
+FAILED tests/harborreviewscores4158/test_review_score_validation.py::test_an_empty_added_row_does_not_block_an_unrelated_edit
+FAILED tests/harborreviewscores4158/test_review_score_validation.py::test_an_empty_added_category_is_not_stored_as_a_nameless_one
+FAILED tests/harborreviewscores4158/test_review_score_validation.py::test_a_saved_row_beyond_the_defaults_offers_a_way_to_remove_it
+FAILED tests/harborreviewscores4158/test_review_score_validation.py::test_entering_a_non_numeric_score_is_refused_and_flagged
+9 failed, 8 passed, 71 warnings in 31.19s
+(tests exited non-zero; parsing report)
+== computing reward ==
+{"reward": 0.0, "tests_passed": 0.0, "f2p_passed": 0, "f2p_total": 9, "p2p_passed": 8, "p2p_total": 8, "rubric_passed": -1, "f2p::tests.harborreviewscores4158.test_review_score_validation::test_clearing_the_number_of_a_saved_row_is_refused_and_flagged": 0.0, "f2p::tests.harborreviewscores4158.test_review_score_validation::test_clearing_the_label_of_a_saved_row_is_refused_and_flagged": 0.0, "f2p::tests.harborreviewscores4158.test_review_score_validation::test_clearing_the_number_in_a_second_category_is_refused_and_flagged": 0.0, "f2p::tests.harborreviewscores4158.test_review_score_validation::test_added_row_without_a_number_survives_and_is_flagged": 0.0, "f2p::tests.harborreviewscores4158.test_review_score_validation::test_added_row_without_a_label_survives_and_is_flagged": 0.0, "f2p::tests.harborreviewscores4158.test_review_score_validation::test_an_empty_added_row_does_not_block_an_unrelated_edit": 0.0, "f2p::tests.harborreviewscores4158.test_review_score_validation::test_an_empty_added_category_is_not_stored_as_a_nameless_one": 0.0, "f2p::tests.harborreviewscores4158.test_review_score_validation::test_entering_a_non_numeric_score_is_refused_and_flagged": 0.0, "f2p::tests.harborreviewscores4158.test_review_score_validation::test_a_saved_row_beyond_the_defaults_offers_a_way_to_remove_it": 0.0, "p2p::tests.harborreviewscores4158.test_review_score_validation::test_every_stored_score_is_offered_on_the_page": 1.0, "p2p::tests.harborreviewscores4158.test_review_score_validation::test_editing_a_saved_row_completely_is_stored": 1.0, "p2p::tests.harborreviewscores4158.test_review_score_validation::test_adding_a_complete_row_stores_it": 1.0, "p2p::tests.harborreviewscores4158.test_review_score_validation::test_emptying_both_halves_of_a_saved_row_removes_it": 1.0, "p2p::tests.harborreviewscores4158.test_review_score_validation::test_deleting_a_category_removes_it_with_its_scores": 1.0, "p2p::tests.harborreviewscores4158.test_review_score_validation::test_renaming_a_category_is_stored": 1.0, "p2p::tests.harborreviewscores4158.test_review_score_validation::test_editing_one_row_leaves_the_others_alone": 1.0, "p2p::tests.harborreviewscores4158.test_review_score_validation::test_a_successful_save_flags_no_row": 1.0, "f2p": {"tests.harborreviewscores4158.test_review_score_validation::test_clearing_the_number_of_a_saved_row_is_refused_and_flagged": "fail", "tests.harborreviewscores4158.test_review_score_validation::test_clearing_the_label_of_a_saved_row_is_refused_and_flagged": "fail", "tests.harborreviewscores4158.test_review_score_validation::test_clearing_the_number_in_a_second_category_is_refused_and_flagged": "fail", "tests.harborreviewscores4158.test_review_score_validation::test_added_row_without_a_number_survives_and_is_flagged": "fail", "tests.harborreviewscores4158.test_review_score_validation::test_added_row_without_a_label_survives_and_is_flagged": "fail", "tests.harborreviewscores4158.test_review_score_validation::test_an_empty_added_row_does_not_block_an_unrelated_edit": "fail", "tests.harborreviewscores4158.test_review_score_validation::test_an_empty_added_category_is_not_stored_as_a_nameless_one": "fail", "tests.harborreviewscores4158.test_review_score_validation::test_entering_a_non_numeric_score_is_refused_and_flagged": "fail", "tests.harborreviewscores4158.test_review_score_validation::test_a_saved_row_beyond_the_defaults_offers_a_way_to_remove_it": "fail"}, "p2p": {"tests.harborreviewscores4158.test_review_score_validation::test_every_stored_score_is_offered_on_the_page": "pass", "tests.harborreviewscores4158.test_review_score_validation::test_editing_a_saved_row_completely_is_stored": "pass", "tests.harborreviewscores4158.test_review_score_validation::test_adding_a_complete_row_stores_it": "pass", "tests.harborreviewscores4158.test_review_score_validation::test_emptying_both_halves_of_a_saved_row_removes_it": "pass", "tests.harborreviewscores4158.test_review_score_validation::test_deleting_a_category_removes_it_with_its_scores": "pass", "tests.harborreviewscores4158.test_review_score_validation::test_renaming_a_category_is_stored": "pass", "tests.harborreviewscores4158.test_review_score_validation::test_editing_one_row_leaves_the_others_alone": "pass", "tests.harborreviewscores4158.test_review_score_validation::test_a_successful_save_flags_no_row": "pass"}}
+reward=0.0

@@ -1,0 +1,198 @@
+diff --git a/packages/ariakit-core/src/utils/focus.ts b/packages/ariakit-core/src/utils/focus.ts
+index f31b6aa..623b336 100644
+--- a/packages/ariakit-core/src/utils/focus.ts
++++ b/packages/ariakit-core/src/utils/focus.ts
+@@ -11,6 +11,25 @@ function hasNegativeTabIndex(element: Element) {
+   return tabIndex < 0;
+ }
+ 
++const formControlSelector = "button, input, select, textarea";
++
++/**
++ * Checks whether `element` is a form control disabled by an ancestor fieldset
++ * element. Controls inside the first legend of the fieldset aren't disabled.
++ */
++function isDisabledByFieldset(element: Element) {
++  if (!element.matches(formControlSelector)) return false;
++  let fieldset = element.parentElement?.closest("fieldset[disabled]");
++  while (fieldset) {
++    const legend = Array.from(fieldset.children).find(
++      (child) => child.tagName === "LEGEND",
++    );
++    if (!legend?.contains(element)) return true;
++    fieldset = fieldset.parentElement?.closest("fieldset[disabled]");
++  }
++  return false;
++}
++
+ /**
+  * Checks whether `element` is focusable or not.
+  * @example
+@@ -21,6 +40,7 @@ function hasNegativeTabIndex(element: Element) {
+  */
+ export function isFocusable(element: Element) {
+   if (!element.matches(selector)) return false;
++  if (isDisabledByFieldset(element)) return false;
+   if (!isVisible(element)) return false;
+   if (element.closest("[inert]")) return false;
+   return true;
+diff --git a/packages/ariakit-test/src/__tests__/press-tab-test.ts b/packages/ariakit-test/src/__tests__/press-tab-test.ts
+new file mode 100644
+index 0000000..cdaa34a
+--- /dev/null
++++ b/packages/ariakit-test/src/__tests__/press-tab-test.ts
+@@ -0,0 +1,70 @@
++import { click } from "../click.ts";
++import { press } from "../press.ts";
++
++function getButton(name: string) {
++  const buttons = Array.from(document.querySelectorAll("button"));
++  return buttons.find((button) => button.textContent === name)!;
++}
++
++afterEach(() => {
++  document.body.innerHTML = "";
++});
++
++test("tab after the focused button is disabled", async () => {
++  document.body.innerHTML =
++    "<button>1</button><button>2</button><button>3</button>";
++  await click(getButton("2"));
++  getButton("2").disabled = true;
++  await press.Tab();
++  expect(getButton("3")).toHaveFocus();
++  await press.ShiftTab();
++  expect(getButton("1")).toHaveFocus();
++});
++
++test("shift+tab after the focused button is disabled", async () => {
++  document.body.innerHTML =
++    "<button>1</button><button>2</button><button>3</button>";
++  await click(getButton("2"));
++  getButton("2").disabled = true;
++  await press.ShiftTab();
++  expect(getButton("1")).toHaveFocus();
++});
++
++test("tab skips buttons in a disabled fieldset", async () => {
++  document.body.innerHTML = `
++    <button>1</button>
++    <fieldset disabled>
++      <legend><button>legend</button></legend>
++      <button>2</button>
++    </fieldset>
++    <button>3</button>
++  `;
++  await click(getButton("1"));
++  await press.Tab();
++  expect(getButton("legend")).toHaveFocus();
++  await press.Tab();
++  expect(getButton("3")).toHaveFocus();
++  await press.ShiftTab();
++  expect(getButton("legend")).toHaveFocus();
++});
++
++test("tab follows positive tabindex order", async () => {
++  document.body.innerHTML = `
++    <button>1</button>
++    <button tabindex="2">2</button>
++    <button tabindex="1">3</button>
++    <button>4</button>
++  `;
++  await press.Tab();
++  expect(getButton("3")).toHaveFocus();
++  await press.Tab();
++  expect(getButton("2")).toHaveFocus();
++  await press.Tab();
++  expect(getButton("1")).toHaveFocus();
++  await press.Tab();
++  expect(getButton("4")).toHaveFocus();
++  await press.ShiftTab();
++  expect(getButton("1")).toHaveFocus();
++  await press.ShiftTab();
++  expect(getButton("2")).toHaveFocus();
++});
+diff --git a/packages/ariakit-test/src/press.ts b/packages/ariakit-test/src/press.ts
+index 12b03f3..750aabf 100644
+--- a/packages/ariakit-test/src/press.ts
++++ b/packages/ariakit-test/src/press.ts
+@@ -1,5 +1,6 @@
+ import { isTextField, setSelectionRange } from "@ariakit/core/utils/dom";
+ import {
++  getAllTabbable,
+   getNextTabbable,
+   getPreviousTabbable,
+   isFocusable,
+@@ -59,9 +60,52 @@ async function incrementNumberInput(element: HTMLInputElement, by = 1) {
+   await dispatch.change(element);
+ }
+ 
++function getSequentialTabIndex(element: HTMLElement) {
++  return element.tabIndex > 0 ? element.tabIndex : Number.POSITIVE_INFINITY;
++}
++
++function getNextTabbableFrom(element: Element, backwards?: boolean) {
++  const allTabbable = getAllTabbable();
++  const hasPositiveTabIndex = allTabbable.some((el) => el.tabIndex > 0);
++  const isStartingPoint = isFocusable(element) || element.tagName === "BODY";
++  if (isStartingPoint && !hasPositiveTabIndex) {
++    return backwards ? getPreviousTabbable() : getNextTabbable();
++  }
++  // Browsers navigate through elements with a positive tabindex first, in
++  // ascending order, and then through the rest of them in document order.
++  const sequence = [...allTabbable].sort(
++    (a, b) => getSequentialTabIndex(a) - getSequentialTabIndex(b),
++  );
++  if (backwards) {
++    sequence.reverse();
++  }
++  if (element.tagName === "BODY") {
++    return sequence[0] || null;
++  }
++  const index = sequence.indexOf(element as HTMLElement);
++  if (index !== -1) {
++    return sequence[index + 1] || null;
++  }
++  // The focused element isn't part of the sequence (for example, it has
++  // tabindex="-1" or it has just been disabled). Browsers keep it as the
++  // sequential focus navigation starting point, so we look for the closest
++  // tabbable element in document order.
++  const position = backwards
++    ? Node.DOCUMENT_POSITION_PRECEDING
++    : Node.DOCUMENT_POSITION_FOLLOWING;
++  return (
++    sequence.find(
++      (el) =>
++        el.tabIndex <= 0 &&
++        !element.contains(el) &&
++        element.compareDocumentPosition(el) & position,
++    ) || null
++  );
++}
++
+ const keyDownMap: KeyActionMap = {
+-  async Tab(_, { shiftKey }) {
+-    const nextElement = shiftKey ? getPreviousTabbable() : getNextTabbable();
++  async Tab(element, { shiftKey }) {
++    const nextElement = getNextTabbableFrom(element, shiftKey);
+     if (nextElement) {
+       await focus(nextElement);
+     }
+@@ -201,8 +245,15 @@ export function press(
+ 
+     if (!element) return;
+ 
+-    // We can't press on elements that aren't focusable
+-    if (!isFocusable(element) && element.tagName !== "BODY") return;
++    // We can't press on elements that aren't focusable, unless the element
++    // still has focus (for example, it was disabled while focused).
++    if (
++      !isFocusable(element) &&
++      element.tagName !== "BODY" &&
++      element.ownerDocument?.activeElement !== element
++    ) {
++      return;
++    }
+ 
+     // If it's a printable character, we type it
+     if (isTextField(element)) {

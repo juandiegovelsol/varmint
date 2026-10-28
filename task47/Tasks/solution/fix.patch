@@ -1,0 +1,480 @@
+diff --git a/app/eventyay/orga/forms/event.py b/app/eventyay/orga/forms/event.py
+index ba7536c8f24..0d185a60ce5 100644
+--- a/app/eventyay/orga/forms/event.py
++++ b/app/eventyay/orga/forms/event.py
+@@ -4,13 +4,13 @@
+ from django import forms
+ from django.core.files.base import ContentFile
+ from django.forms import inlineformset_factory
+-from django.utils.html import format_html
+-from django.utils.text import format_lazy
+ from django.utils.translation import gettext_lazy as _
+ from django_scopes.forms import SafeModelMultipleChoiceField
+ from i18nfield.fields import I18nFormField, I18nTextarea
+ from i18nfield.forms import I18nFormMixin, I18nFormSetMixin, I18nModelForm
+ 
++from eventyay.base.models import Event, EventExtraLink, ReviewPhase, ReviewScore, ReviewScoreCategory
++from eventyay.base.settings import GlobalSettingsObject
+ from eventyay.common.forms.mixins import (
+     HierarkeyMixin,
+     I18nHelpText,
+@@ -25,10 +25,8 @@
+ )
+ from eventyay.common.text.css import validate_css
+ from eventyay.common.text.phrases import phrases
+-from eventyay.base.models import Event, EventExtraLink
+-from eventyay.base.settings import GlobalSettingsObject
+ from eventyay.orga.forms.widgets import HeaderSelect
+-from eventyay.base.models import ReviewPhase, ReviewScore, ReviewScoreCategory
++
+ 
+ SCHEDULE_DISPLAY_CHOICES = (
+     ('grid', _('Grid')),
+@@ -387,6 +385,9 @@ def strip_zeroes(value):
+     return Decimal(value.rstrip('0'))
+ 
+ 
++DEFAULT_SCORE_COUNT = 3
++
++
+ class ReviewScoreCategoryForm(I18nHelpText, I18nModelForm):
+     new_scores = forms.CharField(required=False, initial='')
+ 
+@@ -409,9 +410,13 @@ def __init__(self, *args, event=None, **kwargs):
+                 self.label_fields.append(
+                     {
+                         'score': score,
+-                        'label_field': score._meta.get_field('label').formfield(initial=score.label),
++                        'label_field': score._meta.get_field('label').formfield(
++                            initial=score.label,
++                            widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': _('Label')})
++                        ),
+                         'value_field': score._meta.get_field('value').formfield(
+-                            initial=strip_zeroes(score.value), required=False
++                            initial=strip_zeroes(score.value), required=False,
++                            widget=forms.NumberInput(attrs={'step': '0.1', 'class': 'form-control', 'placeholder': _('Score')})
+                         ),
+                     }
+                 )
+@@ -420,14 +425,44 @@ def __init__(self, *args, event=None, **kwargs):
+             self.fields[f'value_{score_id}'] = score['value_field']
+             self.fields[f'label_{score_id}'] = score['label_field']
+ 
++        self.protected_score_ids = {
++            score['score'].id
++            for score in sorted(self.label_fields, key=lambda s: s['score'].pk)[:DEFAULT_SCORE_COUNT]
++        }
++
+     def _add_score_fields(self, label_id):
+-        self.fields[f'value_{label_id}'] = ReviewScore._meta.get_field('value').formfield()
+-        self.fields[f'label_{label_id}'] = ReviewScore._meta.get_field('label').formfield()
++        self.fields[f'value_{label_id}'] = ReviewScore._meta.get_field('value').formfield(
++            required=False,
++            widget=forms.NumberInput(attrs={'step': '0.1', 'class': 'form-control', 'placeholder': _('Score')})
++        )
++        self.fields[f'label_{label_id}'] = ReviewScore._meta.get_field('label').formfield(
++            required=False,
++            widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': _('Label')})
++        )
+ 
+     def get_label_fields(self):
+         for score in self.label_fields:
+             score_id = score['score'].id
+-            yield (self[f'value_{score_id}'], self[f'label_{score_id}'])
++            deletable = score_id not in self.protected_score_ids
++            yield (self[f'value_{score_id}'], self[f'label_{score_id}'], score_id, deletable)
++        for score_id in self.new_label_ids:
++            yield (self[f'value_{score_id}'], self[f'label_{score_id}'], score_id, True)
++
++    def clean(self):
++        data = super().clean()
++        existing_ids = [score['score'].id for score in self.label_fields]
++        for score_id in [*existing_ids, *self.new_label_ids]:
++            value = data.get(f'value_{score_id}')
++            label = data.get(f'label_{score_id}')
++            value_empty = value is None or value == ''
++
++            if value_empty and not label:
++                continue
++            if value_empty and label:
++                self.add_error(f'value_{score_id}', _('Please provide a numeric score.'))
++            elif not value_empty and not label:
++                self.add_error(f'label_{score_id}', _('Please provide a label for the score.'))
++        return data
+ 
+     def save(self, *args, **kwargs):
+         instance = super().save(*args, **kwargs)
+diff --git a/app/eventyay/orga/templates/orga/settings/review.html b/app/eventyay/orga/templates/orga/settings/review.html
+index 28d8106ace2..0638c7f9830 100644
+--- a/app/eventyay/orga/templates/orga/settings/review.html
++++ b/app/eventyay/orga/templates/orga/settings/review.html
+@@ -123,7 +123,6 @@
+                                 {{ form.DELETE }}
+                             </div>
+                             <div class="score-row flip score-input{% if action == 'view' %} disabled{% endif %}">
+-                                {% include "common/forms/errors.html" %}
+                                 {{ form.is_independent.as_field_group }}
+                                 {{ form.weight.as_field_group }}
+                                 {{ form.required.as_field_group }}
+@@ -140,16 +139,31 @@
+                                         {% else %}
+                                             <div class="col-md-3"></div>
+                                         {% endif %}
+-                                        <div class="col-md-9 d-flex hide-label">
+-                                            <div class="mr-2 score-score">
++                                        <div class="col-md-9 d-flex align-items-start hide-label mb-1">
++                                            <div class="mr-2 score-score{% if label_pair.0.errors %} has-error{% endif %}">
+                                                 {{ label_pair.0 }}
++                                                {% if label_pair.0.errors %}
++                                                    <div class="score-error-tooltip" role="alert">
++                                                        {% for error in label_pair.0.errors %}{{ error }} {% endfor %}
++                                                    </div>
++                                                {% endif %}
+                                             </div>
+-                                            <div class="score-label">
++                                            <div class="score-label{% if label_pair.1.errors %} has-error{% endif %}">
+                                                 {{ label_pair.1 }}
++                                                {% if label_pair.1.errors %}
++                                                    <div class="score-error-tooltip" role="alert">
++                                                        {% for error in label_pair.1.errors %}{{ error }} {% endfor %}
++                                                    </div>
++                                                {% endif %}
++                                            </div>
++                                            <div class="ml-auto d-flex">
++                                                {% if label_pair.3 %}
++                                                    <div role="button" class="delete-score btn btn-danger flip align-self-start" data-score="{{ label_pair.2 }}"><i class="fa fa-trash"></i></div>
++                                                {% endif %}
++                                                {% if forloop.last %}
++                                                    <div role="button" class="new-score btn btn-info flip ml-2 align-self-start"><i class="fa fa-plus"></i></div>
++                                                {% endif %}
+                                             </div>
+-                                            {% if forloop.first %}
+-                                                <div role="button" class="new-score btn btn-info flip ml-auto align-self-start"><i class="fa fa-plus"></i></div>
+-                                            {% endif %}
+                                         </div>
+                                     </div>
+                                 {% empty %}
+@@ -198,7 +212,9 @@
+                             <div class="col-md-9 d-flex hide-label">
+                             <div class="mr-2 score-score"></div>
+                             <div class="score-label"></div>
+-                            <div role="button" class="new-score btn btn-info flip ml-auto"><i class="fa fa-plus"></i></div>
++                            <div class="ml-auto d-flex">
++                                <div role="button" class="new-score btn btn-info flip align-self-start"><i class="fa fa-plus"></i></div>
++                            </div>
+                             </div>
+                             </div>
+                             </div>
+diff --git a/app/eventyay/orga/views/event.py b/app/eventyay/orga/views/event.py
+index 00935c986b2..07d7ab18472 100644
+--- a/app/eventyay/orga/views/event.py
++++ b/app/eventyay/orga/views/event.py
+@@ -1,12 +1,9 @@
+ from datetime import timedelta
+-from pathlib import Path
+ 
+ from csp.decorators import csp_update
+-from django.conf import settings
+ from django.contrib import messages
+ from django.contrib.auth import login
+ from django.core.exceptions import ValidationError
+-from django.core.files.storage import FileSystemStorage
+ from django.db import models, transaction
+ from django.forms.models import inlineformset_factory
+ from django.shortcuts import get_object_or_404, redirect
+@@ -18,22 +15,18 @@
+ from django.utils.translation import ngettext_lazy
+ from django.views.generic import FormView, ListView, TemplateView, UpdateView, View
+ from django_context_decorator import context
+-from django_scopes import scope, scopes_disabled
+-from formtools.wizard.views import SessionWizardView
+ 
+-
+-from eventyay.common.forms import I18nEventFormSet, I18nFormSet
+-from eventyay.base.models import LogEntry
++from eventyay.agenda.views.utils import get_schedule_exporters
++from eventyay.base.models import Event, LogEntry, ReviewPhase, ReviewScoreCategory, TeamInvite, User
+ from eventyay.base.models.base import CachedFile
++from eventyay.common.forms import I18nEventFormSet, I18nFormSet
+ from eventyay.common.text.phrases import phrases
+ from eventyay.common.views.mixins import (
+     ActionConfirmMixin,
+     ActionFromUrl,
+     EventPermissionRequired,
+     PermissionRequired,
+-    SensibleBackWizardMixin,
+ )
+-from eventyay.base.models import Event, Team, TeamInvite
+ from eventyay.orga.forms import EventForm
+ from eventyay.orga.forms.event import (
+     MailSettingsForm,
+@@ -44,13 +37,12 @@
+     WidgetSettingsForm,
+ )
+ from eventyay.orga.forms.importers import CSVImportForm
++from eventyay.orga.forms.review import ReviewExportForm
+ from eventyay.orga.forms.schedule import ScheduleExportForm
+ from eventyay.orga.forms.speaker import SpeakerExportForm
+-from eventyay.orga.forms.review import ReviewExportForm
+ from eventyay.person.forms import UserForm
+-from eventyay.base.models import ReviewPhase, ReviewScoreCategory, User
+-from eventyay.agenda.views.utils import get_schedule_exporters
+ from eventyay.submission.tasks import recalculate_all_review_scores
++
+ from .speaker import SpeakerImportProcessView
+ from .submission import SubmissionImportProcessView
+ 
+@@ -157,6 +149,7 @@ def form_valid(self, form):
+             messages.error(self.request, e.message)
+             return self.get(self.request, *self.args, **self.kwargs)
+         if not phases or not scores:
++            messages.error(self.request, phrases.base.error_saving_changes)
+             return self.get(self.request, *self.args, **self.kwargs)
+         form.save()
+         if self.scores_formset.has_changed():
+@@ -164,6 +157,7 @@ def form_valid(self, form):
+                 kwargs={'event_id': self.request.event.pk},
+                 ignore_result=True,
+             )
++        messages.success(self.request, phrases.base.saved)
+         return super().form_valid(form)
+ 
+     @context
+@@ -198,7 +192,7 @@ def save_phases(self):
+             extra_forms = [
+                 form
+                 for form in self.phases_formset.extra_forms
+-                if form.has_changed and not self.phases_formset._should_delete_form(form)
++                if form.has_changed() and not self.phases_formset._should_delete_form(form)
+             ]
+             for form in extra_forms:
+                 form.instance.event = self.request.event
+@@ -251,7 +245,8 @@ def save_scores(self):
+             return False
+         weights_changed = False
+         for form in self.scores_formset.initial_forms:
+-            # Deleting is handled elsewhere, so we skip it here
++            if self.scores_formset._should_delete_form(form):
++                continue
+             if form.has_changed():
+                 if 'weight' in form.changed_data:
+                     weights_changed = True
+@@ -261,7 +256,7 @@ def save_scores(self):
+         extra_forms = [
+             form
+             for form in self.scores_formset.extra_forms
+-            if form.has_changed and not self.scores_formset._should_delete_form(form)
++            if form.has_changed() and not self.scores_formset._should_delete_form(form)
+         ]
+         for form in extra_forms:
+             form.instance.event = self.request.event
+diff --git a/app/eventyay/static/orga/css/_layout.css b/app/eventyay/static/orga/css/_layout.css
+index affc7ffe483..95c67e0757a 100644
+--- a/app/eventyay/static/orga/css/_layout.css
++++ b/app/eventyay/static/orga/css/_layout.css
+@@ -1079,6 +1079,43 @@ table .color-square {
+   }
+ }
+ 
++.score-score,
++.score-label {
++  position: relative;
++}
++
++.score-score.has-error input,
++.score-label.has-error input {
++  border-color: var(--color-danger);
++  box-shadow: 0 0 0 1px var(--color-danger);
++}
++
++.score-error-tooltip {
++  position: absolute;
++  top: calc(100% + 7px);
++  left: 0;
++  z-index: 30;
++  width: max-content;
++  max-width: 240px;
++  padding: 0.35rem 0.55rem;
++  border-radius: var(--size-border-radius, 4px);
++  background: var(--color-danger);
++  color: #fff;
++  font-size: 0.8125rem;
++  line-height: 1.35;
++  box-shadow: var(--shadow-light, 0 2px 8px rgba(0, 0, 0, 0.25));
++  pointer-events: none;
++}
++
++.score-error-tooltip::before {
++  content: "";
++  position: absolute;
++  bottom: 100%;
++  left: 14px;
++  border: 6px solid transparent;
++  border-bottom-color: var(--color-danger);
++}
++
+ #stats {
+   display: flex;
+   flex-wrap: wrap;
+diff --git a/app/eventyay/static/orga/js/reviewSettings.js b/app/eventyay/static/orga/js/reviewSettings.js
+index 902d85dae1b..a9e429a17e1 100644
+--- a/app/eventyay/static/orga/js/reviewSettings.js
++++ b/app/eventyay/static/orga/js/reviewSettings.js
+@@ -28,7 +28,7 @@ const updateIndependentScoreWeight = () => {
+ }
+ 
+ const addNewScores = (ev) => {
+-    const parentElement = event.target.closest(".score-group")
++    const parentElement = ev.target.closest(".score-group")
+     const scoresList = parentElement.querySelector(
+         "input[type=text][id$=new_scores]",
+     )
+@@ -36,23 +36,34 @@ const addNewScores = (ev) => {
+         .querySelector("input[type=number]")
+         .id.split("-")[1]
+     const newID = `new` + Math.floor(Math.random() * 1000)
++    
++    // Remove the plus button from the old row
++    const oldPlus = parentElement.querySelector(".new-score");
++    if (oldPlus) {
++        oldPlus.remove();
++    }
++    
+     const newRow = `
+     <div class="row form-group">
+         <div class="col-md-3"></div>
+         <div class="col-md-9 d-flex hide-label mb-1">
+             <div class="mr-2 score-score">
+-                <input type="number" name="scores-${formID}-value_${newID}" step="0.1" class="form-control" id="id_scores-${formID}-value_${newID}" placeholder="2">
++                <input type="number" name="scores-${formID}-value_${newID}" step="0.1" class="form-control" id="id_scores-${formID}-value_${newID}" placeholder="Score">
+             </div>
+             <div class="score-label">
+-                <input type="text" name="scores-${formID}-label_${newID}" maxlength="20" class="form-control" id="id_scores-${formID}-label_${newID}" placeholder="👍">
++                <input type="text" name="scores-${formID}-label_${newID}" maxlength="20" class="form-control" id="id_scores-${formID}-label_${newID}" placeholder="Label">
++            </div>
++            <div class="ml-auto d-flex">
++                <div role="button" class="delete-score btn btn-danger flip align-self-start" data-score="${newID}"><i class="fa fa-trash"></i></div>
++                <div role="button" class="new-score btn btn-info flip ml-2 align-self-start"><i class="fa fa-plus"></i></div>
+             </div>
+-            <div role="button" class="delete-score btn btn-danger flip ml-auto" data-score="${newID}"><i class="fa fa-trash"></i></div>
+         </div>
+     </div>`
+     const newElement = document.createElement("div")
+     newElement.innerHTML = newRow
+     parentElement.querySelector(".score-input").appendChild(newElement)
+     scoresList.value += `,${newID}`
++    addListener()
+ }
+ 
+ document
+@@ -62,44 +73,92 @@ document
+             element.value = element.value.slice(0, element.value.length - 2)
+         }
+     })
++const bindDeleteScore = (element) => {
++    element.addEventListener("click", (ev) => {
++        const scoreID = ev.currentTarget.dataset.score
++        const row = ev.currentTarget.closest(".row.form-group")
++        const parentElement = ev.currentTarget.closest(".score-group")
++        const scoresList = parentElement.querySelector(
++            "input[type=text][id$=new_scores]",
++        )
++        if (row) {
++            row.remove()
++            updateTotal()
++            
++            // If we deleted the row with the plus button, add it back to the new last row
++            if (parentElement.querySelectorAll(".new-score").length === 0) {
++                const rows = parentElement.querySelectorAll(".score-input .row.form-group");
++                if (rows.length > 0) {
++                    const lastRow = rows[rows.length - 1];
++                    let btnContainer = lastRow.querySelector(".ml-auto.d-flex");
++                    if (!btnContainer) {
++                        btnContainer = document.createElement("div");
++                        btnContainer.className = "ml-auto d-flex";
++                        const oldDelete = lastRow.querySelector(".delete-score");
++                        if (oldDelete) {
++                            oldDelete.classList.remove("ml-2");
++                            oldDelete.classList.add("align-self-start");
++                            oldDelete.parentNode.insertBefore(btnContainer, oldDelete);
++                            btnContainer.appendChild(oldDelete);
++                        } else {
++                            lastRow.querySelector(".col-md-9").appendChild(btnContainer);
++                        }
++                    }
++                    const plusBtnHTML = `<div role="button" class="new-score btn btn-info flip ml-2 align-self-start"><i class="fa fa-plus"></i></div>`;
++                    btnContainer.insertAdjacentHTML('beforeend', plusBtnHTML);
++                    addListener();
++                }
++            }
++        }
++        if (scoresList && scoreID) {
++            scoresList.value = scoresList.value
++                .split(",")
++                .filter((v) => v !== scoreID && v !== "")
++                .join(",")
++        }
++    })
++}
++
+ const addListener = () => {
+     document
+         .querySelectorAll(
+             "#score-formset input[type=text], #score-formset input[type=number]",
+         )
+         .forEach((element) => {
++            element.removeEventListener("input", updateTotal)
+             element.addEventListener("input", updateTotal)
+         })
+     document
+         .querySelectorAll("#score-formset div.btn.new-score")
+         .forEach((element) => {
++            element.removeEventListener("click", addNewScores)
+             element.addEventListener("click", addNewScores)
+         })
+     document
+         .querySelectorAll("#score-formset div.btn.delete-score")
+         .forEach((element) => {
+-            element.addEventListener("click", (ev) => {
+-                const scoreID = ev.currentTarget.dataset.score
+-                const row = ev.currentTarget.closest(".row.form-group")
+-                const parentElement = ev.currentTarget.closest(".score-group")
+-                const scoresList = parentElement.querySelector(
+-                    "input[type=text][id$=new_scores]",
+-                )
+-                if (row) row.remove()
+-                if (scoresList) {
+-                    scoresList.value = scoresList.value
+-                        .split(",")
+-                        .filter((v) => v !== scoreID)
+-                        .join(",")
+-                }
+-            })
++            element.replaceWith(element.cloneNode(true)) // remove old listeners
+         })
++    document
++        .querySelectorAll("#score-formset div.btn.delete-score")
++        .forEach(bindDeleteScore)
+ }
+ 
+ const clearOldNewScores = () => {
+-    document
+-        .querySelectorAll("input[type=text][id$=new_scores]")
+-        .forEach((input) => (input.value = ""))
++    document.querySelectorAll(".score-group").forEach((group) => {
++        const scoresList = group.querySelector("input[type=text][id$=new_scores]")
++        if (scoresList) {
++            const newScores = Array.from(
++                group.querySelectorAll('input[id*="-value_new"]'),
++            )
++                .map((input) => {
++                    const match = input.id.match(/-value_(new\d+)$/)
++                    return match ? match[1] : null
++                })
++                .filter(Boolean)
++            scoresList.value = newScores.join(",")
++        }
++    })
+ }
+ 
+ document

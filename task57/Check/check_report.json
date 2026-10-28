@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "checks": {
+        "behavior_in_task_description": {
+          "explanation": "instruction.md explicitly names the two images as the exact rendering spec ('The two images below show how these two panels are meant to read') and states both required behaviors that the tests check: the text must match the images, and every number in them must be displayed 'the same way as every other number a player sees, under whichever display style they have selected' (i.e. consistent with the app's existing number-display system), plus that other latent problems in that same display system must be found and fixed ('fix them all'). The tests (exact wording match, formatInt call-site checks, thousands-grouping, per-notation rendering) are a direct, non-surprising operationalization of those two stated requirements, even though the task intentionally withholds file names/locations as the difficulty mechanism.",
+          "outcome": "pass"
+        },
+        "behavior_in_tests": {
+          "explanation": "Every behavior described in instruction.md is exercised: exact-wording matches for both panels (Effarig and Pelle unlock tests), numbers routed through the shared display helper rather than raw interpolation (formatInt spy assertions, including zero/falsy-guard and non-hardcoded-binding traps), and the 'display system has its own problems' clause is covered by the thousands-grouping test and the all-notations readability test. p2p tests guard untouched helpers in the same file (pluralize/makeEnumeration/isSingular) so unrelated regressions are also penalized.",
+          "outcome": "pass"
+        },
+        "informative_test_structure": {
+          "explanation": "tests/test.patch is organized into clearly named describe/test blocks ('Whole-number display', 'Display helpers', 'Notation formatting in celestial descriptions', 'Notation formatting in Pelle unlock requirements') with extensive inline comments explaining what each assertion guards against (falsy-guard traps, hardcoded copies, boundary cases), making the intent of each check easy to follow.",
+          "outcome": "pass"
+        },
+        "anti_cheating_measures": {
+          "explanation": "The Dockerfile applies the bug patches from a /tmp path never exposed to the agent, deletes the bug diffs from the visible assets directory, strips .git and reinitializes a single 'harbor_base' commit so the agent cannot inspect the real fix PR/history, and does not copy tests/ or solution/ into the image. The agent runs with network_mode=no-network (cannot look up the real GitHub issue/PR fix online), while the verifier separately has public network only to install pinned test-only npm packages. Tests exercise the real production code path (real notation library, real Vue template) rather than string-matching source, so trivial shortcuts are discouraged.",
+          "outcome": "pass"
+        },
+        "structured_data_schema": {
+          "explanation": "This task is a UI text/number-formatting bug fix, not an API/JSON/CSV output task; there is no structured data schema for the agent to produce.",
+          "outcome": "not_applicable"
+        },
+        "pinned_dependencies": {
+          "explanation": "Test-only dependencies are pinned to exact versions in tests/test.sh ('vitest@1.6.0 jsdom@24.1.3'), matching tests/config.json's declared test_framework string. The base image uses node:18-bookworm and the repo's own package-lock.json governs its regular dependencies, which is standard practice for apt/base-image and lockfile-controlled dependencies.",
+          "outcome": "pass"
+        },
+        "typos": {
+          "explanation": "No typos found in instruction.md, task.toml, evidence_bundle.json, the bug patches, fix.patch, solve.sh, test.sh, verifier.py, or test.patch after close reading; file paths and command names are consistent throughout.",
+          "outcome": "pass"
+        },
+        "tests_or_solution_in_image": {
+          "explanation": "The Dockerfile only COPYs environment/assets/ (screenshots) into the image, explicitly deletes the bugs/ subdirectory afterward, and its comments state tests/ and solution/ are intentionally not copied because the harness supplies them at verify time.",
+          "outcome": "pass"
+        },
+        "test_deps_in_image": {
+          "explanation": "vitest and jsdom are installed at verify time inside tests/test.sh via 'npm install --no-save --no-package-lock ... vitest@1.6.0 jsdom@24.1.3', not baked into the Dockerfile build.",
+          "outcome": "pass"
+        },
+        "hardcoded_solution": {
+          "explanation": "solution/solve.sh applies solution/fix.patch, a genuine source-code diff that rewords two template strings, wraps numeric values in formatInt(...), adds a computed property, fixes the comma-grouping regex, and restores the 'painful' wrapper for the Blobs notation — a real code fix rather than a script that prints/echoes the expected test output.",
+          "outcome": "pass"
+        },
+        "file_reference_mentioned": {
+          "explanation": "The task requires editing existing in-repo source files (celestials.js, format.js, notations.js, PelleTab.vue) rather than producing new output artifacts for the tests to locate and check, so there is no separate 'output filename' the instruction needs to disclose; withholding which existing files are involved is the intended difficulty mechanism, not a missing file reference.",
+          "outcome": "not_applicable"
+        }
+      },
+      "cost_usd": 0.7586977500000001,
+      "task_name": "Tasks",
+      "error": null
+    }
+  ]
+}

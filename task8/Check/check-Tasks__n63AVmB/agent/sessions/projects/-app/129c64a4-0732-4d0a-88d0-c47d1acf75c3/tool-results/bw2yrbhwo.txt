@@ -1,0 +1,1121 @@
+=== instruction.md ===
+# Layout regression after upgrading: the app no longer renders the way it did
+
+## What is the current behavior?
+
+An app puts a data table above a row of controls. Neither the application code nor
+its stylesheet changed. After upgrading the framework, it renders like this:
+
+![The app as it renders after the upgrade](/app/.harbor_assets/after.png)
+
+## What is the expected behavior?
+
+It should render the way it did before the upgrade:
+
+![The app as it rendered before the upgrade](/app/.harbor_assets/before.png)
+
+The two screenshots are the only description of what regressed: which element is
+mis-sized, and where its contents end up, is visible there and stated nowhere else.
+Compare them, work out what changed, and fix the layout engine so the app renders as
+it did before. The application code and its stylesheet are correct and must not change.
+
+Everything the layout engine gets right today must keep working — in particular,
+containers that set an explicit minimum or maximum size must go on placing their
+contents exactly as they do now.
+
+=== task.toml ===
+version = "1.0"
+
+[metadata]
+task_id = "textualize__textual-5550-mm"
+title = "Textual 2.0 Regression - Auto-sized container renders its contents in the wrong place"
+repository_name = "Textualize/textual"
+repo_url = "https://github.com/Textualize/textual"
+issue_number = 5550
+pr_number = 5552
+base_commit = "4ec7d38b612ab672ee45c6de5b3b9372f0b09254"
+fix_commit = "baab54ccbeac86d913b2f9ddad562c7466fdede0"
+task_type = "visual_bug_fix"
+language = "Python"
+framework = "pytest-textual-snapshot (snap_compare)"
+cross_file = false
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = """The instruction says only that an app with a table above a row of controls stopped rendering the way it used to. It names no CSS, no sizing mode and no symptom: which element is mis-sized, by how much, and the fact that its contents end up centred inside the oversized band rather than filling it are all readable only from the before/after screenshots. An agent that does not open them has nothing to localize from — the text alone cannot distinguish "the row is too tall" from "the row is in the wrong place" or "the table shrank", and it is the centring visible in the poster that points at the alignment branch of the layout engine rather than at the box model. Localizing then means tracing the arrangement code to the point where the alignment size is taken from the full dock region even for auto-sized containers. The widely-known one-line correction (zeroing auto dimensions, the form merged upstream in PR #5552) is not sufficient: it destroys alignment inside containers that also set an explicit minimum, which two regression tests guard on both axes. Going further and resolving the extrema properly is also not free — doing it in the box model puts the candidate inside `_get_box_model`, whose width/height/min/max contract the repo's own box-model suite now guards as p2p, so a fix that resolves minimums against the wrong container or forgets the gutter regresses those and scores below 1.0. `solution/fix.patch` implements the refined form (resolving the minimum size for auto dimensions instead of zeroing them), which upstream itself only landed in a later rework; `fix_commit` records the PR the bundle was harvested from, not a byte-identical copy of the golden."""
+files_edited = ["src/textual/_arrange.py"]
+f2p = ["test_auto_in_auto"]
+p2p = [
+  "test_align_center_respects_min_height",
+  "test_align_center_respects_min_width",
+  "test_arrange::test_arrange_empty",
+  "test_arrange::test_arrange_dock_top",
+  "test_arrange::test_arrange_dock_left",
+  "test_arrange::test_arrange_dock_right",
+  "test_arrange::test_arrange_dock_bottom",
+  "test_arrange::test_arrange_dock_badly",
+  "test_box_model::test_content_box",
+  "test_box_model::test_width",
+  "test_box_model::test_height",
+  "test_box_model::test_min",
+  "test_box_model::test_max",
+]
+tags = ["multimodal", "visual_bug_fix", "pytest-textual-snapshot"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "no-network"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"
+
+=== evidence_bundle.json ===
+[
+  {
+    "role": "before",
+    "url": "https://github.com/user-attachments/assets/34e96444-7bd3-4526-88c9-0d71d01a453a",
+    "local_path": "/app/.harbor_assets/before.png",
+    "description": "Screenshot of the correct/expected behaviour in a prior version, shown for comparison."
+  },
+  {
+    "role": "after",
+    "url": "https://github.com/user-attachments/assets/d768bd7c-9c90-4438-aa08-611bb663e5ff",
+    "local_path": "/app/.harbor_assets/after.png",
+    "description": "Screenshot showing the bug/regression in the affected version \u2014 the defect to be fixed is visible here."
+  }
+]
+=== solution/fix.patch ===
+diff --git a/src/textual/_arrange.py b/src/textual/_arrange.py
+index 280e57c..1e96255 100644
+--- a/src/textual/_arrange.py
++++ b/src/textual/_arrange.py
+@@ -99,8 +99,24 @@ def arrange(
+             # Perform any alignment of the widgets.
+             if styles.align_horizontal != "left" or styles.align_vertical != "top":
+                 bounding_region = WidgetPlacement.get_bounds(layout_placements)
++                container_width, container_height = dock_region.size
++                if styles.is_auto_width:
++                    min_width = styles.min_width
++                    container_width = (
++                        0
++                        if min_width is None
++                        else int(min_width.resolve(dock_region.size, viewport))
++                    )
++                if styles.is_auto_height:
++                    min_height = styles.min_height
++                    container_height = (
++                        0
++                        if min_height is None
++                        else int(min_height.resolve(dock_region.size, viewport))
++                    )
+                 placement_offset += styles._align_size(
+-                    bounding_region.size, dock_region.size
++                    bounding_region.size,
++                    Size(container_width, container_height),
+                 ).clamped
+ 
+             if placement_offset:
+
+=== solution/solve.sh ===
+#!/usr/bin/env bash
+# Oracle solution: apply the human developer's fix (source files only; no test files).
+set -euxo pipefail
+cd /app
+
+apply_if_nonempty() {
+  local p="$1"
+  if [ -f "$p" ] && grep -q '[^[:space:]]' "$p"; then
+    git apply "$p" 2>/dev/null || patch -p1 < "$p"
+  fi
+}
+
+apply_if_nonempty /solution/fix.patch
+echo "Applied fix.patch."
+
+=== tests/config.json ===
+{
+  "task_id": "textualize__textual-5550-mm",
+  "rubric_file": "rubrics.json",
+  "verifier_mode": "test_execution",
+  "test_framework": "pytest-textual-snapshot",
+  "test_files": [
+    "tests/snapshot_tests/test_snapshots.py",
+    "tests/test_align_min.py",
+    "tests/test_arrange.py",
+    "tests/test_box_model.py"
+  ],
+  "f2p": [
+    "test_auto_in_auto"
+  ],
+  "p2p": [
+    "test_align_center_respects_min_height",
+    "test_align_center_respects_min_width",
+    "test_arrange::test_arrange_empty",
+    "test_arrange::test_arrange_dock_top",
+    "test_arrange::test_arrange_dock_left",
+    "test_arrange::test_arrange_dock_right",
+    "test_arrange::test_arrange_dock_bottom",
+    "test_arrange::test_arrange_dock_badly",
+    "test_box_model::test_content_box",
+    "test_box_model::test_width",
+    "test_box_model::test_height",
+    "test_box_model::test_min",
+    "test_box_model::test_max"
+  ]
+}
+
+=== tests/judge.py ===
+#!/usr/bin/env python3
+"""
+Rubric judge — sub-agent backend. NO API KEY, NO NETWORK.
+
+Binary and unweighted: every criterion is PASS/FAIL and every one is mandatory, so the
+rubric passes only if all pass.
+
+Two-phase, mirroring ProjectBench's tier3 sub-agent backend:
+
+  Phase 1 (during the verifier run)
+      No verdict exists yet, so this writes a self-contained judge request into the judge
+      dir -- criteria_payload.json, source.txt (the candidate diff), changed_files.txt (the
+      FULL text of every file the diff touched), and PROMPT.md -- prints nothing, and exits 0.
+      The verifier then scores on tests alone.
+
+      What the judge deliberately does NOT get: the task instruction (a criterion that has to
+      defer to the prompt is a Major "not self-contained" rubric defect -- handing the judge the
+      prompt would let such a criterion pass and hide the defect), the golden solution/fix.patch
+      (seeing it turns
+      the judge into a similarity checker, reintroducing the very overfitting the rubric exists
+      to catch), the tests/test.patch (same failure mode, and the tests already score that),
+      the before/after images (UI-evaluation criteria are out of scope by definition), and
+      browse access to the wider repo (unavailable at rescore time, so it would work in phase 1
+      and silently not in phase 2).
+
+  Phase 2 (after the run, orchestrated outside the container)
+      A judge sub-agent reads PROMPT.md and writes verdict.json next to it. Re-running this
+      script (or `mm_run.sh <task> rescore`) reads that verdict and prints "pass" or "fail".
+
+Because the judge never calls out, there is no proxy, no bridge, no credentials, and no
+[verifier.env] block anywhere.
+
+Contract (test.sh depends on all three):
+  * prints "pass" or "fail" on stdout, or NOTHING when no verdict is available yet
+  * writes the per-criterion detail to <judge dir>/summary.json
+  * ALWAYS exits 0, so the judge can never fail the run
+
+Env:
+  PB_JUDGE_DIR      where the request/verdict live (default /logs/verifier/judge)
+  PB_JUDGE_VERDICT  explicit path to verdict.json (overrides the default location)
+
+IMPORTANT: never name a file in tests/ after a stdlib module (select.py, json.py, types.py,
+io.py, queue.py). It shadows the real module and the failure surfaces somewhere unrelated.
+The sys.path strip below defends against it.
+"""
+import os
+import sys
+
+_self_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path[:] = [p for p in sys.path if os.path.abspath(p or os.getcwd()) != _self_dir]
+
+import argparse
+import json
+import re
+import subprocess
+from pathlib import Path
+
+DEFAULT_JUDGE_DIR = "/logs/verifier/judge"
+# Hunks for these paths never reach the judge: it must grade the fix, not the harness the
+# submission may have edited.
+EXCLUDE_RE = re.compile(
+    r"(\.test\.[jt]sx?$|\.spec\.[jt]sx?$|(^|/)tests?/|(^|/)__tests__/|"
+    r"(^|/)__snapshots__/|(^|/)node_modules/|(^|/)\.git/)"
+)
+BASE_REFS = ("harbor_base", "HEAD")
+
+JUDGE_SYSTEM = (
+    "You are a strict senior engineer grading the APPROACH of a code change -- not whether "
+    "its tests pass. Score each rubric criterion STRICTLY BINARY: 1 = fully satisfied, "
+    "0 = not satisfied. There is NO partial credit: if a criterion is only partially met, "
+    "ambiguous, or has no clear evidence, score 0. Be strict; when unsure, score 0."
+)
+
+
+def judge_dir() -> Path:
+    return Path(os.environ.get("PB_JUDGE_DIR") or DEFAULT_JUDGE_DIR)
+
+
+def candidate_diff(repo: str, budget: int = 120_000) -> str:
+    for ref in BASE_REFS:
+        try:
+            out = subprocess.run(["git", "-C", repo, "diff", ref],
+                                 capture_output=True, text=True, timeout=120)
+        except Exception as exc:
+            sys.stderr.write("[judge] git diff failed: %s\n" % exc)
+            return ""
+        if out.returncode == 0 and out.stdout.strip():
+            sys.stderr.write("[judge] diffing against %s\n" % ref)
+            return filter_diff(out.stdout, budget)
+    sys.stderr.write("[judge] no non-empty diff found\n")
+    return ""
+
+
+def filter_diff(diff: str, budget: int) -> str:
+    kept, cur, keep = [], [], True
+    for line in diff.splitlines(keepends=True):
+        if line.startswith("diff --git "):
+            if keep and cur:
+                kept.extend(cur)
+            parts = line.split()
+            path = parts[-1][2:] if len(parts) >= 4 else ""
+            keep = not EXCLUDE_RE.search(path)
+            cur = [line]
+        else:
+            cur.append(line)
+    if keep and cur:
+        kept.extend(cur)
+    blob = "".join(kept)
+    return blob[:budget] + "\n[... truncated ...]\n" if len(blob) > budget else blob
+
+
+def changed_paths(diff: str) -> list:
+    """Paths touched by the (already harness-filtered) diff, in order."""
+    out = []
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            parts = line.split()
+            if len(parts) >= 4:
+                p = parts[-1][2:]                  # strip the b/ prefix
+                if p and p not in out:
+                    out.append(p)
+    return out
+
+
+def collect_changed_files(repo: str, diff: str, budget: int = 200_000) -> str:
+    """Full current text of every file the diff touched.
+
+    A hunk shows three lines of context, which is often too little to decide a criterion that
+    is genuinely true of the change (e.g. "the helper is defined in the same module"). Whole
+    files remove that class of false 0 while staying bounded by the size of the change.
+    """
+    blob, used = [], 0
+    for rel in changed_paths(diff):
+        fp = Path(repo) / rel
+        if not fp.is_file():                       # deleted or renamed away
+            continue
+        try:
+            text = fp.read_text(errors="replace")
+        except Exception:
+            continue
+        chunk = "\n===== %s =====\n%s" % (rel, text)
+        if used + len(chunk) > budget:
+            blob.append("\n[... remaining changed files omitted for length ...]\n")
+            break
+        blob.append(chunk); used += len(chunk)
+    return "".join(blob)
+
+
+def write_request(criteria, diff, jdir: Path, changed: str = "") -> None:
+    """Lay down everything a judge sub-agent needs, with no further context."""
+    jdir.mkdir(parents=True, exist_ok=True)
+    payload = [{"id": c["id"], "criterion": c["criterion"]} for c in criteria]
+    (jdir / "criteria_payload.json").write_text(json.dumps(payload, indent=2))
+    (jdir / "source.txt").write_text(diff)
+    extra = []
+    if changed.strip():
+        (jdir / "changed_files.txt").write_text(changed)
+        extra.append("- `changed_files.txt` — the FULL current text of every file the diff "
+                     "touched. Use it when a hunk alone is too little context to decide a "
+                     "criterion.")
+    extra_block = ("\n" + "\n".join(extra)) if extra else ""
+    verdict = jdir / "verdict.json"
+    ids = ", ".join(c["id"] for c in criteria)
+    (jdir / "PROMPT.md").write_text(f"""# Rubric judge (sub-agent)
+
+You are the rubric judge. Grade the APPROACH of a code change, not whether its tests pass.
+
+System contract:
+{JUDGE_SYSTEM}
+
+Inputs in this directory ({jdir}):
+- `criteria_payload.json` — {len(criteria)} criteria, each {{id, criterion}}.
+- `source.txt` — the candidate diff. Test, spec and snapshot files are already stripped out,
+  so everything you see is product code the submission changed.{extra_block}
+
+You are NOT given the task instruction, the reference/golden fix, the tests, or the rest of the
+repository. Judge only what is here. If a criterion cannot be decided from these inputs, score it 0 — but note that a
+criterion which is undecidable here is a defect in the rubric, not in the submission.
+
+Score each criterion **1 or 0 — never 0.5 or any fraction**. 1 = fully satisfied,
+0 = not satisfied, ambiguous, or no clear evidence. Be strict; when unsure, score 0.
+
+The rubric is unweighted and every criterion is mandatory: a single 0 fails the whole rubric,
+so do not withhold a 1 over style preferences the criterion does not actually state.
+
+Write ONLY this JSON to `{verdict}`:
+
+    {{"scores": {{"<criterion id>": {{"score": 0|1}}, ...}}}}
+
+All {len(criteria)} ids must appear: {ids}. Verify the file parses before you finish.
+""")
+
+
+def read_verdict(criteria, jdir: Path):
+    """Return ("pass"|"fail", failed_ids) or None when no usable verdict exists."""
+    vp = Path(os.environ.get("PB_JUDGE_VERDICT") or (jdir / "verdict.json"))
+    if not vp.is_file():
+        return None
+    try:
+        obj = json.loads(vp.read_text())
+    except Exception as exc:
+        sys.stderr.write("[judge] verdict unreadable (%s)\n" % exc)
+        return None
+    scores = obj.get("scores", obj)
+    if not isinstance(scores, dict):
+        sys.stderr.write("[judge] verdict has no scores map\n")
+        return None
+    failed, graded = [], 0
+    for c in criteria:
+        raw = scores.get(c["id"])
+        if raw is None:
+            failed.append(c["id"])            # not graded == not demonstrated == fail
+            continue
+        try:
+            v = float(raw.get("score") if isinstance(raw, dict) else raw)
+        except (TypeError, ValueError, AttributeError):
+            failed.append(c["id"])
+            continue
+        graded += 1
+        if v < 1.0:                            # strictly binary: only a full 1 passes
+            failed.append(c["id"])
+    if graded == 0:
+        sys.stderr.write("[judge] verdict contained no usable scores\n")
+        return None
+    return ("fail" if failed else "pass"), failed
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--rubrics", required=True)
+    ap.add_argument("--repo", default="/app")
+    ap.add_argument("--judge-dir", default=None)
+    a = ap.parse_args()
+
+    jdir = Path(a.judge_dir) if a.judge_dir else judge_dir()
+    try:
+        doc = json.load(open(a.rubrics))
+    except Exception as exc:
+        sys.stderr.write("[judge] cannot read %s: %s\n" % (a.rubrics, exc))
+        return 0
+    criteria = [c for c in (doc.get("criteria") or []) if c.get("id") and c.get("criterion")]
+    if not criteria:
+        sys.stderr.write("[judge] no criteria in %s\n" % a.rubrics)
+        return 0
+
+    # Phase 2: a verdict is already there -> score it.
+    res = read_verdict(criteria, jdir)
+    if res is not None:
+        verdict, failed = res
+        try:
+            jdir.mkdir(parents=True, exist_ok=True)
+            json.dump({"rubric": verdict, "failed": failed,
+                       "criteria_total": len(criteria)},
+                      open(jdir / "summary.json", "w"), indent=2)
+        except Exception:
+            pass
+        sys.stderr.write("[judge] verdict=%s%s\n"
+                         % (verdict, (" failed=%s" % ", ".join(failed)) if failed else ""))
+        print(verdict)
+        return 0
+
+    # Phase 1: no verdict yet -> lay down the request and stay silent.
+    diff = candidate_diff(a.repo)
+    if not diff.strip():
+        sys.stderr.write("[judge] empty candidate diff; nothing to grade\n")
+        return 0
+    changed = collect_changed_files(a.repo, diff)
+    write_request(criteria, diff, jdir, changed=changed)
+    sys.stderr.write(
+        "[judge] no verdict at %s yet; wrote the judge request to %s (%s). Have the judge "
+        "sub-agent produce verdict.json, then rescore. Scoring on tests alone until then.\n"
+        % (jdir / "verdict.json", jdir, ", ".join(sorted(f.name for f in jdir.iterdir()))))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+
+=== tests/rubrics.json ===
+{
+  "schema": "rubrics.schema/v1",
+  "task": "textualize__textual-5550-mm",
+  "description": "No rubric needed: this task is fully covered by behavioral tests. The regression itself is graded by the snapshot f2p (test_auto_in_auto) and the minimum-box requirement by the p2p (test_align_center_respects_min_height), so no code-only change is left un-graded and there is nothing a judge could add that a test does not already decide.",
+  "criteria": [
+    { "id": "always_pass-remove_if_other_rubrics_are_created", "criterion": "The response is written in English." }
+  ]
+}
+
+=== tests/test.patch ===
+diff --git a/tests/snapshot_tests/__snapshots__/test_snapshots/test_auto_in_auto.svg b/tests/snapshot_tests/__snapshots__/test_snapshots/test_auto_in_auto.svg
+new file mode 100644
+index 0000000..6044220
+--- /dev/null
++++ b/tests/snapshot_tests/__snapshots__/test_snapshots/test_auto_in_auto.svg
+@@ -0,0 +1,157 @@
++<svg class="rich-terminal" viewBox="0 0 994 635.5999999999999" xmlns="http://www.w3.org/2000/svg">
++    <!-- Generated with Rich https://www.textualize.io -->
++    <style>
++
++    @font-face {
++        font-family: "Fira Code";
++        src: local("FiraCode-Regular"),
++                url("https://cdnjs.cloudflare.com/ajax/libs/firacode/6.2.0/woff2/FiraCode-Regular.woff2") format("woff2"),
++                url("https://cdnjs.cloudflare.com/ajax/libs/firacode/6.2.0/woff/FiraCode-Regular.woff") format("woff");
++        font-style: normal;
++        font-weight: 400;
++    }
++    @font-face {
++        font-family: "Fira Code";
++        src: local("FiraCode-Bold"),
++                url("https://cdnjs.cloudflare.com/ajax/libs/firacode/6.2.0/woff2/FiraCode-Bold.woff2") format("woff2"),
++                url("https://cdnjs.cloudflare.com/ajax/libs/firacode/6.2.0/woff/FiraCode-Bold.woff") format("woff");
++        font-style: bold;
++        font-weight: 700;
++    }
++
++    .terminal-2005357618-matrix {
++        font-family: Fira Code, monospace;
++        font-size: 20px;
++        line-height: 24.4px;
++        font-variant-east-asian: full-width;
++    }
++
++    .terminal-2005357618-title {
++        font-size: 18px;
++        font-weight: bold;
++        font-family: arial;
++    }
++
++    .terminal-2005357618-r1 { fill: #c5c8c6 }
++.terminal-2005357618-r2 { fill: #e0e0e0 }
++.terminal-2005357618-r3 { fill: #e0e0e0;font-weight: bold }
++.terminal-2005357618-r4 { fill: #ddedf9;font-weight: bold }
++.terminal-2005357618-r5 { fill: #6db2ff }
++.terminal-2005357618-r6 { fill: #e76580 }
++.terminal-2005357618-r7 { fill: #f5e5e9;font-weight: bold }
++.terminal-2005357618-r8 { fill: #004295 }
++.terminal-2005357618-r9 { fill: #780028 }
++    </style>
++
++    <defs>
++    <clipPath id="terminal-2005357618-clip-terminal">
++      <rect x="0" y="0" width="975.0" height="584.5999999999999" />
++    </clipPath>
++    <clipPath id="terminal-2005357618-line-0">
++    <rect x="0" y="1.5" width="976" height="24.65"/>
++            </clipPath>
++<clipPath id="terminal-2005357618-line-1">
++    <rect x="0" y="25.9" width="976" height="24.65"/>
++            </clipPath>
++<clipPath id="terminal-2005357618-line-2">
++    <rect x="0" y="50.3" width="976" height="24.65"/>
++            </clipPath>
++<clipPath id="terminal-2005357618-line-3">
++    <rect x="0" y="74.7" width="976" height="24.65"/>
++            </clipPath>
++<clipPath id="terminal-2005357618-line-4">
++    <rect x="0" y="99.1" width="976" height="24.65"/>
++            </clipPath>
++<clipPath id="terminal-2005357618-line-5">
++    <rect x="0" y="123.5" width="976" height="24.65"/>
++            </clipPath>
++<clipPath id="terminal-2005357618-line-6">
++    <rect x="0" y="147.9" width="976" height="24.65"/>
++            </clipPath>
++<clipPath id="terminal-2005357618-line-7">
++    <rect x="0" y="172.3" width="976" height="24.65"/>
++            </clipPath>
++<clipPath id="terminal-2005357618-line-8">
++    <rect x="0" y="196.7" width="976" height="24.65"/>
++            </clipPath>
++<clipPath id="terminal-2005357618-line-9">
++    <rect x="0" y="221.1" width="976" height="24.65"/>
++            </clipPath>
++<clipPath id="terminal-2005357618-line-10">
++    <rect x="0" y="245.5" width="976" height="24.65"/>
++            </clipPath>
++<clipPath id="terminal-2005357618-line-11">
++    <rect x="0" y="269.9" width="976" height="24.65"/>
++            </clipPath>
++<clipPath id="terminal-2005357618-line-12">
++    <rect x="0" y="294.3" width="976" height="24.65"/>
++            </clipPath>
++<clipPath id="terminal-2005357618-line-13">
++    <rect x="0" y="318.7" width="976" height="24.65"/>
++            </clipPath>
++<clipPath id="terminal-2005357618-line-14">
++    <rect x="0" y="343.1" width="976" height="24.65"/>
++            </clipPath>
++<clipPath id="terminal-2005357618-line-15">
++    <rect x="0" y="367.5" width="976" height="24.65"/>
++            </clipPath>
++<clipPath id="terminal-2005357618-line-16">
++    <rect x="0" y="391.9" width="976" height="24.65"/>
++            </clipPath>
++<clipPath id="terminal-2005357618-line-17">
++    <rect x="0" y="416.3" width="976" height="24.65"/>
++            </clipPath>
++<clipPath id="terminal-2005357618-line-18">
++    <rect x="0" y="440.7" width="976" height="24.65"/>
++            </clipPath>
++<clipPath id="terminal-2005357618-line-19">
++    <rect x="0" y="465.1" width="976" height="24.65"/>
++            </clipPath>
++<clipPath id="terminal-2005357618-line-20">
++    <rect x="0" y="489.5" width="976" height="24.65"/>
++            </clipPath>
++<clipPath id="terminal-2005357618-line-21">
++    <rect x="0" y="513.9" width="976" height="24.65"/>
++            </clipPath>
++<clipPath id="terminal-2005357618-line-22">
++    <rect x="0" y="538.3" width="976" height="24.65"/>
++            </clipPath>
++    </defs>
++
++    <rect fill="#292929" stroke="rgba(255,255,255,0.35)" stroke-width="1" x="1" y="1" width="992" height="633.6" rx="8"/><text class="terminal-2005357618-title" fill="#c5c8c6" text-anchor="middle" x="496" y="27">MyApp</text>
++            <g transform="translate(26,22)">
++            <circle cx="0" cy="0" r="7" fill="#ff5f57"/>
++            <circle cx="22" cy="0" r="7" fill="#febc2e"/>
++            <circle cx="44" cy="0" r="7" fill="#28c840"/>
++            </g>
++        
++    <g transform="translate(9, 41)" clip-path="url(#terminal-2005357618-clip-terminal)">
++    <rect fill="#242f38" x="0" y="1.5" width="12.2" height="24.65" shape-rendering="crispEdges"/><rect fill="#242f38" x="12.2" y="1.5" width="12.2" height="24.65" shape-rendering="crispEdges"/><rect fill="#242f38" x="24.4" y="1.5" width="61" height="24.65" shape-rendering="crispEdges"/><rect fill="#242f38" x="85.4" y="1.5" width="12.2" height="24.65" shape-rendering="crispEdges"/><rect fill="#242f38" x="97.6" y="1.5" width="341.6" height="24.65" shape-rendering="crispEdges"/><rect fill="#242f38" x="439.2" y="1.5" width="61" height="24.65" shape-rendering="crispEdges"/><rect fill="#242f38" x="500.2" y="1.5" width="353.8" height="24.65" shape-rendering="crispEdges"/><rect fill="#242f38" x="854" y="1.5" width="12.2" height="24.65" shape-rendering="crispEdges"/><rect fill="#242f38" x="866.2" y="1.5" width="0" height="24.65" shape-rendering="crispEdges"/><rect fill="#242f38" x="866.2" y="1.5" width="109.8" height="24.65" shape-rendering="crispEdges"/><rect fill="#2d3740" x="0" y="25.9" width="73.2" height="24.65" shape-rendering="crispEdges"/><rect fill="#2d3740" x="73.2" y="25.9" width="207.4" height="24.65" shape-rendering="crispEdges"/><rect fill="#2d3740" x="280.6" y="25.9" width="109.8" height="24.65" shape-rendering="crispEdges"/><rect fill="#2b3339" x="390.4" y="25.9" width="585.6" height="24.65" shape-rendering="crispEdges"/><rect fill="#0178d4" x="0" y="50.3" width="73.2" height="24.65" shape-rendering="crispEdges"/><rect fill="#272727" x="73.2" y="50.3" width="207.4" height="24.65" shape-rendering="crispEdges"/><rect fill="#272727" x="280.6" y="50.3" width="109.8" height="24.65" shape-rendering="crispEdges"/><rect fill="#272727" x="390.4" y="50.3" width="585.6" height="24.65" shape-rendering="crispEdges"/><rect fill="#272727" x="0" y="74.7" width="73.2" height="24.65" shape-rendering="crispEdges"/><rect fill="#272727" x="73.2" y="74.7" width="207.4" height="24.65" shape-rendering="crispEdges"/><rect fill="#272727" x="280.6" y="74.7" width="109.8" height="24.65" shape-rendering="crispEdges"/><rect fill="#272727" x="390.4" y="74.7" width="585.6" height="24.65" shape-rendering="crispEdges"/><rect fill="#272727" x="0" y="99.1" width="73.2" height="24.65" shape-rendering="crispEdges"/><rect fill="#272727" x="73.2" y="99.1" width="207.4" height="24.65" shape-rendering="crispEdges"/><rect fill="#272727" x="280.6" y="99.1" width="109.8" height="24.65" shape-rendering="crispEdges"/><rect fill="#272727" x="390.4" y="99.1" width="585.6" height="24.65" shape-rendering="crispEdges"/><rect fill="#272727" x="0" y="123.5" width="976" height="24.65" shape-rendering="crispEdges"/><rect fill="#272727" x="0" y="147.9" width="976" height="24.65" shape-rendering="crispEdges"/><rect fill="#272727" x="0" y="172.3" width="976" height="24.65" shape-rendering="crispEdges"/><rect fill="#272727" x="0" y="196.7" width="976" height="24.65" shape-rendering="crispEdges"/><rect fill="#272727" x="0" y="221.1" width="976" height="24.65" shape-rendering="crispEdges"/><rect fill="#272727" x="0" y="245.5" width="976" height="24.65" shape-rendering="crispEdges"/><rect fill="#272727" x="0" y="269.9" width="976" height="24.65" shape-rendering="crispEdges"/><rect fill="#272727" x="0" y="294.3" width="976" height="24.65" shape-rendering="crispEdges"/><rect fill="#272727" x="0" y="318.7" width="976" height="24.65" shape-rendering="crispEdges"/><rect fill="#272727" x="0" y="343.1" width="976" height="24.65" shape-rendering="crispEdges"/><rect fill="#272727" x="0" y="367.5" width="976" height="24.65" shape-rendering="crispEdges"/><rect fill="#272727" x="0" y="391.9" width="976" height="24.65" shape-rendering="crispEdges"/><rect fill="#272727" x="0" y="416.3" width="976" height="24.65" shape-rendering="crispEdges"/><rect fill="#272727" x="0" y="440.7" width="976" height="24.65" shape-rendering="crispEdges"/><rect fill="#121212" x="0" y="465.1" width="976" height="24.65" shape-rendering="crispEdges"/><rect fill="#121212" x="0" y="489.5" width="183" height="24.65" shape-rendering="crispEdges"/><rect fill="#0178d4" x="183" y="489.5" width="195.2" height="24.65" shape-rendering="crispEdges"/><rect fill="#121212" x="378.2" y="489.5" width="12.2" height="24.65" shape-rendering="crispEdges"/><rect fill="#b93c5b" x="390.4" y="489.5" width="195.2" height="24.65" shape-rendering="crispEdges"/><rect fill="#121212" x="585.6" y="489.5" width="390.4" height="24.65" shape-rendering="crispEdges"/><rect fill="#121212" x="0" y="513.9" width="183" height="24.65" shape-rendering="crispEdges"/><rect fill="#0178d4" x="183" y="513.9" width="73.2" height="24.65" shape-rendering="crispEdges"/><rect fill="#0178d4" x="256.2" y="513.9" width="48.8" height="24.65" shape-rendering="crispEdges"/><rect fill="#0178d4" x="305" y="513.9" width="73.2" height="24.65" shape-rendering="crispEdges"/><rect fill="#121212" x="378.2" y="513.9" width="12.2" height="24.65" shape-rendering="crispEdges"/><rect fill="#b93c5b" x="390.4" y="513.9" width="48.8" height="24.65" shape-rendering="crispEdges"/><rect fill="#b93c5b" x="439.2" y="513.9" width="97.6" height="24.65" shape-rendering="crispEdges"/><rect fill="#b93c5b" x="536.8" y="513.9" width="48.8" height="24.65" shape-rendering="crispEdges"/><rect fill="#121212" x="585.6" y="513.9" width="183" height="24.65" shape-rendering="crispEdges"/><rect fill="#121212" x="768.6" y="513.9" width="207.4" height="24.65" shape-rendering="crispEdges"/><rect fill="#121212" x="0" y="538.3" width="183" height="24.65" shape-rendering="crispEdges"/><rect fill="#0178d4" x="183" y="538.3" width="195.2" height="24.65" shape-rendering="crispEdges"/><rect fill="#121212" x="378.2" y="538.3" width="12.2" height="24.65" shape-rendering="crispEdges"/><rect fill="#b93c5b" x="390.4" y="538.3" width="195.2" height="24.65" shape-rendering="crispEdges"/><rect fill="#121212" x="585.6" y="538.3" width="390.4" height="24.65" shape-rendering="crispEdges"/><rect fill="#121212" x="0" y="562.7" width="976" height="24.65" shape-rendering="crispEdges"/>
++    <g class="terminal-2005357618-matrix">
++    <text class="terminal-2005357618-r2" x="12.2" y="20" textLength="12.2" clip-path="url(#terminal-2005357618-line-0)">⭘</text><text class="terminal-2005357618-r2" x="439.2" y="20" textLength="61" clip-path="url(#terminal-2005357618-line-0)">MyApp</text><text class="terminal-2005357618-r1" x="976" y="20" textLength="12.2" clip-path="url(#terminal-2005357618-line-0)">
++</text><text class="terminal-2005357618-r3" x="0" y="44.4" textLength="73.2" clip-path="url(#terminal-2005357618-line-1)">&#160;Name&#160;</text><text class="terminal-2005357618-r3" x="73.2" y="44.4" textLength="207.4" clip-path="url(#terminal-2005357618-line-1)">&#160;Occupation&#160;&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-2005357618-r3" x="280.6" y="44.4" textLength="109.8" clip-path="url(#terminal-2005357618-line-1)">&#160;Country&#160;</text><text class="terminal-2005357618-r1" x="976" y="44.4" textLength="12.2" clip-path="url(#terminal-2005357618-line-1)">
++</text><text class="terminal-2005357618-r4" x="0" y="68.8" textLength="73.2" clip-path="url(#terminal-2005357618-line-2)">&#160;Mike&#160;</text><text class="terminal-2005357618-r2" x="73.2" y="68.8" textLength="207.4" clip-path="url(#terminal-2005357618-line-2)">&#160;Python&#160;Wrangler&#160;</text><text class="terminal-2005357618-r2" x="280.6" y="68.8" textLength="109.8" clip-path="url(#terminal-2005357618-line-2)">&#160;USA&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-2005357618-r1" x="976" y="68.8" textLength="12.2" clip-path="url(#terminal-2005357618-line-2)">
++</text><text class="terminal-2005357618-r2" x="0" y="93.2" textLength="73.2" clip-path="url(#terminal-2005357618-line-3)">&#160;Bill&#160;</text><text class="terminal-2005357618-r2" x="73.2" y="93.2" textLength="207.4" clip-path="url(#terminal-2005357618-line-3)">&#160;Engineer&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-2005357618-r2" x="280.6" y="93.2" textLength="109.8" clip-path="url(#terminal-2005357618-line-3)">&#160;UK&#160;&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-2005357618-r1" x="976" y="93.2" textLength="12.2" clip-path="url(#terminal-2005357618-line-3)">
++</text><text class="terminal-2005357618-r2" x="0" y="117.6" textLength="73.2" clip-path="url(#terminal-2005357618-line-4)">&#160;Dee&#160;&#160;</text><text class="terminal-2005357618-r2" x="73.2" y="117.6" textLength="207.4" clip-path="url(#terminal-2005357618-line-4)">&#160;Manager&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;</text><text class="terminal-2005357618-r2" x="280.6" y="117.6" textLength="109.8" clip-path="url(#terminal-2005357618-line-4)">&#160;Germany&#160;</text><text class="terminal-2005357618-r1" x="976" y="117.6" textLength="12.2" clip-path="url(#terminal-2005357618-line-4)">
++</text><text class="terminal-2005357618-r1" x="976" y="142" textLength="12.2" clip-path="url(#terminal-2005357618-line-5)">
++</text><text class="terminal-2005357618-r1" x="976" y="166.4" textLength="12.2" clip-path="url(#terminal-2005357618-line-6)">
++</text><text class="terminal-2005357618-r1" x="976" y="190.8" textLength="12.2" clip-path="url(#terminal-2005357618-line-7)">
++</text><text class="terminal-2005357618-r1" x="976" y="215.2" textLength="12.2" clip-path="url(#terminal-2005357618-line-8)">
++</text><text class="terminal-2005357618-r1" x="976" y="239.6" textLength="12.2" clip-path="url(#terminal-2005357618-line-9)">
++</text><text class="terminal-2005357618-r1" x="976" y="264" textLength="12.2" clip-path="url(#terminal-2005357618-line-10)">
++</text><text class="terminal-2005357618-r1" x="976" y="288.4" textLength="12.2" clip-path="url(#terminal-2005357618-line-11)">
++</text><text class="terminal-2005357618-r1" x="976" y="312.8" textLength="12.2" clip-path="url(#terminal-2005357618-line-12)">
++</text><text class="terminal-2005357618-r1" x="976" y="337.2" textLength="12.2" clip-path="url(#terminal-2005357618-line-13)">
++</text><text class="terminal-2005357618-r1" x="976" y="361.6" textLength="12.2" clip-path="url(#terminal-2005357618-line-14)">
++</text><text class="terminal-2005357618-r1" x="976" y="386" textLength="12.2" clip-path="url(#terminal-2005357618-line-15)">
++</text><text class="terminal-2005357618-r1" x="976" y="410.4" textLength="12.2" clip-path="url(#terminal-2005357618-line-16)">
++</text><text class="terminal-2005357618-r1" x="976" y="434.8" textLength="12.2" clip-path="url(#terminal-2005357618-line-17)">
++</text><text class="terminal-2005357618-r1" x="976" y="459.2" textLength="12.2" clip-path="url(#terminal-2005357618-line-18)">
++</text><text class="terminal-2005357618-r1" x="976" y="483.6" textLength="12.2" clip-path="url(#terminal-2005357618-line-19)">
++</text><text class="terminal-2005357618-r5" x="183" y="508" textLength="195.2" clip-path="url(#terminal-2005357618-line-20)">▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔</text><text class="terminal-2005357618-r6" x="390.4" y="508" textLength="195.2" clip-path="url(#terminal-2005357618-line-20)">▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔</text><text class="terminal-2005357618-r1" x="976" y="508" textLength="12.2" clip-path="url(#terminal-2005357618-line-20)">
++</text><text class="terminal-2005357618-r4" x="256.2" y="532.4" textLength="48.8" clip-path="url(#terminal-2005357618-line-21)">&#160;OK&#160;</text><text class="terminal-2005357618-r7" x="439.2" y="532.4" textLength="97.6" clip-path="url(#terminal-2005357618-line-21)">&#160;Cancel&#160;</text><text class="terminal-2005357618-r2" x="768.6" y="532.4" textLength="207.4" clip-path="url(#terminal-2005357618-line-21)">Last&#160;Updated:&#160;NOW</text><text class="terminal-2005357618-r1" x="976" y="532.4" textLength="12.2" clip-path="url(#terminal-2005357618-line-21)">
++</text><text class="terminal-2005357618-r8" x="183" y="556.8" textLength="195.2" clip-path="url(#terminal-2005357618-line-22)">▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁</text><text class="terminal-2005357618-r9" x="390.4" y="556.8" textLength="195.2" clip-path="url(#terminal-2005357618-line-22)">▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁</text><text class="terminal-2005357618-r1" x="976" y="556.8" textLength="12.2" clip-path="url(#terminal-2005357618-line-22)">
++</text>
++    </g>
++    </g>
++</svg>
+diff --git a/tests/snapshot_tests/test_snapshots.py b/tests/snapshot_tests/test_snapshots.py
+index 875dd64..9400660 100644
+--- a/tests/snapshot_tests/test_snapshots.py
++++ b/tests/snapshot_tests/test_snapshots.py
+@@ -3628,3 +3628,95 @@ def test_auto_rich_log_width(snap_compare):
+             title_rich_log.write("This is the Title Slide RichLog")
+ 
+     assert snap_compare(MinimalApp())
++
++
++def test_auto_in_auto(snap_compare):
++    """Regression test for https://github.com/Textualize/textual/issues/5550
++
++    You should see a table, with a bar at the bottom.
++
++    The bottom bar should have some text right aligned, and two centered buttons in the center of
++    the remaining space.
++
++    """
++
++    class MyApp(App):
++
++        CSS = """
++
++            MyApp {
++                align: center middle;
++                #datatable {
++                    height: 1fr;
++                }
++
++                Horizontal {
++                    height: auto;
++
++                }
++
++                #button_row {
++                    align: center middle;
++                }
++
++                Button {
++                    margin: 1;
++                    height: auto;
++                }
++
++                #last_updated {
++                    dock: right;
++                    offset: 0 2;
++                }
++
++                Label {
++
++                    height: auto;
++                }
++            }
++        """
++
++        def compose(self) -> ComposeResult:
++            """
++            Create the user interface
++            """
++
++            self.last_updated = Label(f"Last Updated: NOW", id="last_updated")
++
++            yield Header()
++            yield Vertical(
++                DataTable(id="datatable"),
++                Horizontal(
++                    Button("OK", variant="primary", id="ok"),
++                    Button("Cancel", variant="error", id="cancel"),
++                    self.last_updated,
++                    id="button_row",
++                ),
++                id="main_tab",
++            )
++
++        def on_mount(self) -> None:
++            rows = [
++                (
++                    "Name",
++                    "Occupation",
++                    "Country",
++                ),
++                (
++                    "Mike",
++                    "Python Wrangler",
++                    "USA",
++                ),
++                (
++                    "Bill",
++                    "Engineer",
++                    "UK",
++                ),
++                ("Dee", "Manager", "Germany"),
++            ]
++            table = self.query_one(DataTable)
++            table.clear(columns=True)
++            table.add_columns(*rows[0])
++            table.add_rows(rows[1:])
++
++    assert snap_compare(MyApp())
+diff --git a/tests/test_align_min.py b/tests/test_align_min.py
+new file mode 100644
+index 0000000..834e3f7
+--- /dev/null
++++ b/tests/test_align_min.py
+@@ -0,0 +1,63 @@
++"""Regression guard: alignment inside an auto-sized container must respect an
++explicit minimum dimension. A container with `height: auto` and a `min-height`
++renders a box of at least that height, and `align` must position its children
++within that box; the same must hold for `width: auto` with a `min-width`, which
++the height case on its own does not cover."""
++from textual.app import App
++from textual.containers import Horizontal
++from textual.widgets import Label
++
++
++class MinAlignApp(App):
++    CSS = """
++    Horizontal {
++        width: auto;
++        height: auto;
++        min-height: 9;
++        align: center middle;
++    }
++    Label { width: auto; height: 1; }
++    """
++
++    def compose(self):
++        yield Horizontal(Label("hello"))
++
++
++class MinWidthAlignApp(App):
++    CSS = """
++    Horizontal {
++        width: auto;
++        height: auto;
++        min-width: 20;
++        align: center middle;
++    }
++    Label { width: auto; height: 1; }
++    """
++
++    def compose(self):
++        yield Horizontal(Label("hello"))
++
++
++async def test_align_center_respects_min_height():
++    app = MinAlignApp()
++    async with app.run_test(size=(40, 24)):
++        container = app.query_one(Horizontal)
++        label = app.query_one(Label)
++        assert container.region.height == 9
++        vertical_offset = label.region.y - container.region.y
++        assert vertical_offset == 4
++
++
++async def test_align_center_respects_min_width():
++    app = MinWidthAlignApp()
++    async with app.run_test(size=(40, 24)):
++        container = app.query_one(Horizontal)
++        label = app.query_one(Label)
++        # The minimum box must still be honoured ...
++        assert container.region.width >= 20
++        left = label.region.x - container.region.x
++        right = ((container.region.x + container.region.width)
++                 - (label.region.x + label.region.width))
++        # ... and the child must sit centred inside it, not flush against its edge.
++        assert left > 0
++        assert abs(left - right) <= 1
+
+=== tests/test.sh ===
+#!/usr/bin/env bash
+# Behavioral verifier for textualize__textual-5550-mm. Resets test files from harbor_base,
+# applies test.patch (which includes SVG baselines from the fixed rendering),
+# runs f2p+p2p snap_compare tests, and computes reward. Never greps source.
+set -uo pipefail
+STDOUT_LOG=/logs/verifier/test-stdout.txt
+STDERR_LOG=/logs/verifier/test-stderr.txt
+REPORT=/logs/verifier/report.xml
+mkdir -p /logs/verifier
+: > "$STDOUT_LOG"; : > "$STDERR_LOG"
+
+ensure_reward() { [ -f /logs/verifier/reward.txt ] || echo 0 > /logs/verifier/reward.txt; }
+trap ensure_reward EXIT
+
+cd /app || { echo "no /app" | tee -a "$STDERR_LOG"; exit 1; }
+
+# Reset every path touched by test.patch to pristine harbor_base state.
+# Read diff --git headers (present for ALL entry types incl. binary/renamed/deleted).
+_patch_paths=$(
+  { sed -n 's#^diff --git a/\(.*\) b/.*#\1#p' /tests/test.patch
+     sed -n 's#^diff --git a/.* b/\(.*\)#\1#p' /tests/test.patch
+  } | sort -u )
+for _p in $_patch_paths; do
+  git -C /app checkout harbor_base -- "$_p" 2>/dev/null || rm -f "/app/$_p" 2>/dev/null || true
+done
+# Restore the whole tracked test tree and the pytest configuration, then drop any
+# untracked file added under tests/ (e.g. a conftest.py that neuters snap_compare).
+# The submission is graded on source behavior, never on a harness it can edit.
+git -C /app checkout harbor_base -- tests/ pyproject.toml 2>/dev/null || true
+git -C /app clean -fdq tests/ 2>/dev/null || true
+
+echo "== applying test.patch ==" | tee -a "$STDOUT_LOG"
+git apply --binary /tests/test.patch 2>>"$STDERR_LOG" \
+  || git apply /tests/test.patch 2>>"$STDERR_LOG" \
+  || patch -p1 -i /tests/test.patch 2>>"$STDERR_LOG" \
+  || { echo "ERROR: could not apply test.patch" | tee -a "$STDERR_LOG"; exit 1; }
+
+
+
+echo "== installing pinned test dependencies (offline) ==" | tee -a "$STDOUT_LOG"
+# Test-only tooling is staged in the image as pinned wheels but NOT installed there: an
+# importable pytest / snapshot plugin would hint at how the fix is graded. Install it now,
+# in the test stage only. --no-index is mandatory: verify time has no network.
+python3 -m pip install -q --no-index --find-links=/opt/verifier-deps \
+  pytest==8.4.2 \
+  pytest-asyncio==1.4.0 \
+  pytest-textual-snapshot==1.1.0 \
+  syrupy==4.8.0 \
+  jinja2==3.1.6 \
+  >>"$STDOUT_LOG" 2>>"$STDERR_LOG" \
+  || { echo "ERROR: could not install pinned test dependencies from /opt/verifier-deps" \
+         | tee -a "$STDERR_LOG"; exit 1; }
+
+# pytest-textual-snapshot declares `textual>=0.28.0`, which the editable /app install
+# already satisfies, so pip leaves it alone. Assert that rather than trust it: if a
+# resolver ever swapped in the PyPI wheel, the suite would silently test the wrong
+# textual and the snapshot mismatch would be unexplainable.
+python3 -c "import textual,os,sys; sys.exit(0 if os.path.realpath(textual.__file__).startswith('/app') else 1)" \
+  || { echo "ERROR: the imported 'textual' is not the /app working tree - a dependency install replaced it" \
+         | tee -a "$STDERR_LOG"; exit 1; }
+
+echo "== running tests ==" | tee -a "$STDOUT_LOG"
+# TEXTUAL_HEADLESS=1 disables the alternate-screen driver so Textual renders headlessly.
+TEXTUAL_HEADLESS=1 PYTEST_ADDOPTS="" python -m pytest "tests/snapshot_tests/test_snapshots.py::test_auto_in_auto" tests/test_align_min.py tests/test_arrange.py tests/test_box_model.py \
+  --junitxml="$REPORT" --tb=short -q --no-header \
+  >>"$STDOUT_LOG" 2>>"$STDERR_LOG" || echo "(tests exited non-zero; parsing report)" | tee -a "$STDOUT_LOG"
+
+echo "== computing reward ==" | tee -a "$STDOUT_LOG"
+# Rubric judge - SUB-AGENT backend: no API key, no network. On the first pass there is no
+# verdict yet, so judge.py writes a judge request under /logs/verifier/judge/ and prints
+# nothing. The `|| echo ""` is load-bearing: the judge must never be able to fail the run.
+RUBRIC=""
+if [ -f /tests/rubrics.json ]; then
+  RUBRIC=$(python3 /tests/judge.py --rubrics /tests/rubrics.json --repo /app \
+             2>/logs/verifier/judge.log || echo "")
+  echo "Rubric verdict: ${RUBRIC:-pending (judge request written; rescore after grading)}"
+fi
+
+python3 /tests/verifier.py "$REPORT" --rubric "${RUBRIC:-}" 2>>"$STDERR_LOG" | tee -a "$STDOUT_LOG"
+echo "reward=$(cat /logs/verifier/reward.txt 2>/dev/null)" | tee -a "$STDOUT_LOG"
+
+=== tests/verifier.py ===
+#!/usr/bin/env python3
+"""Behavioral verifier: parses pytest JUnit XML report → computes reward.
+NEVER inspects source code. Reward is purely from test outcomes; a rubric
+verdict, when one has been folded in, can only withhold a 1.0 and turn it
+into 0.5 — it never pushes a score toward 0.0.
+"""
+import json, os, re, sys
+import xml.etree.ElementTree as ET
+
+CONF        = json.load(open('/tests/config.json'))
+F2P         = CONF['f2p']
+P2P         = CONF['p2p']
+REPORT      = '/logs/verifier/report.xml'
+REWARD_PATH = '/logs/verifier/reward.txt'
+REWARD_JSON = '/logs/verifier/reward.json'
+RUBRIC_JSON = '/logs/verifier/rubric.json'
+
+def load_results(report_paths):
+    """Return ({identifier: 'pass'|'fail'|'skip'}, testcase_count) from JUnit XML.
+    Normalises pytest's -contentN parametrize suffix so matching is stable.
+    """
+    results, count = {}, 0
+    for path in report_paths:
+        if not os.path.exists(path):
+            continue
+        try:
+            tree = ET.parse(path)
+        except ET.ParseError:
+            continue
+        for tc in tree.iter('testcase'):
+            count    += 1
+            classname = tc.get('classname', '')
+            name      = tc.get('name', '')
+            # Normalise: remove the "-contentN" pytest parametrize counter suffix
+            # e.g. "test_foo[bar-content15]" -> "test_foo[bar]"
+            norm_name = re.sub(r'-content\d+\]$', ']', name)
+            key       = f"{classname}::{norm_name}" if classname else norm_name
+            # Also store with original name for exact matches
+            key_raw   = f"{classname}::{name}" if classname else name
+            failed    = any(c.tag in ('failure', 'error') for c in tc)
+            skipped   = any(c.tag == 'skipped' for c in tc)
+            status    = 'skip' if skipped else ('fail' if failed else 'pass')
+            results[key]     = status
+            results[key_raw] = status
+    return results, count
+
+def matched(idents, results):
+    """Match each config identifier against reported keys (substring tolerant)."""
+    out = {}
+    for ident in idents:
+        hit = None
+        # 1. Exact substring
+        for k, v in results.items():
+            if ident in k:
+                hit = v
+                break
+        # 2. If ident ends with ], try without trailing ] (handles un-normalised keys)
+        if hit is None and ident.endswith(']'):
+            relaxed = ident[:-1]
+            for k, v in results.items():
+                if relaxed in k:
+                    hit = v
+                    break
+        # 3. Regex fallback (with escaped special chars)
+        if hit is None:
+            try:
+                pat = re.compile(re.escape(ident))
+                for k, v in results.items():
+                    if pat.search(k):
+                        hit = v
+                        break
+            except re.error:
+                pass
+        out[ident] = hit or 'missing'
+    return out
+
+def write_reward(value, tests_passed=None, f2p=None, p2p=None, rubric=None):
+    """reward.txt stays a BARE FLOAT in {0.0, 0.5, 1.0}; reward.json carries the detail.
+
+    CRITICAL - reward.json MUST be a FLAT map of numbers. harbor parses it as
+    VerifierResult.rewards: dict[str, float] and takes it in PREFERENCE to reward.txt,
+    so a nested object, a list or a null raises a pydantic ValidationError that aborts
+    the trial BEFORE any reward is recorded - while reward.txt still gets written inside
+    the container, making the run look scored when harbor in fact stored nothing.
+
+    Per-test outcomes therefore ride along as flat `f2p::<name>` / `p2p::<name>` entries
+    (1.0 pass, 0.0 otherwise), so the decisive QC question - "did this specific f2p test
+    pass on the nop run?" - stays answerable in a shape harbor accepts.
+    """
+    os.makedirs(os.path.dirname(REWARD_PATH), exist_ok=True)
+    with open(REWARD_PATH, 'w') as handle:
+        handle.write(f"{value}\n")
+
+    detail = {"reward": value,
+              "tests_passed": value if tests_passed is None else tests_passed}
+    if f2p is not None:
+        detail["f2p_passed"] = sum(1 for v in f2p.values() if v)
+        detail["f2p_total"]  = len(f2p)
+    if p2p is not None:
+        detail["p2p_passed"] = sum(1 for v in p2p.values() if v)
+        detail["p2p_total"]  = len(p2p)
+    # "pass" -> 1, "fail" -> 0, None/unavailable -> -1
+    detail["rubric_pass"] = {"pass": 1, "fail": 0}.get(rubric, -1)
+    failed = []
+    if os.path.isfile(RUBRIC_JSON):
+        try:
+            failed = json.load(open(RUBRIC_JSON)).get("failed", [])
+        except Exception:
+            failed = []
+    detail["rubric_failed_count"] = len(failed)
+    for name, passed in (f2p or {}).items():
+        detail[f"f2p::{name}"] = 1.0 if passed else 0.0
+    for name, passed in (p2p or {}).items():
+        detail[f"p2p::{name}"] = 1.0 if passed else 0.0
+    try:
+        with open(REWARD_JSON, 'w') as handle:
+            json.dump(detail, handle, indent=2)
+    except Exception as exc:
+        print(f"WARNING: could not write {REWARD_JSON}: {exc}", file=sys.stderr)
+    print(f"\nREWARD: {value}")
+
+def main():
+    argv   = sys.argv[1:]
+    rubric = None                                  # None = judge unavailable
+    if "--rubric" in argv:
+        i     = argv.index("--rubric")
+        value = argv[i + 1].strip() if i + 1 < len(argv) else ""
+        argv  = argv[:i] + argv[i + 2:]
+        rubric = value if value in ("pass", "fail") else None
+    report_paths = argv or [REPORT]
+
+    results, case_count = load_results(report_paths)
+    f2p_map = matched(F2P, results)
+    p2p_map = matched(P2P, results)
+
+    # Per-identifier booleans: each test is graded individually.
+    f2p_results = {k: v == 'pass' for k, v in f2p_map.items()}
+    p2p_results = {k: v == 'pass' for k, v in p2p_map.items()}
+
+    all_f2p = bool(F2P) and all(f2p_results.values())
+    all_p2p = all(p2p_results.values())
+    any_f2p = any(f2p_results.values())
+
+    # Reward policy (rubric-template contract):
+    # 0.0 — any p2p fails (regression), or nothing passed / the suite failed to run
+    # 0.5 — some but not all f2p pass
+    # 1.0 — all f2p pass and no p2p regressed
+    if not all_p2p:
+        tests_passed = 0.0
+    elif all_f2p:
+        tests_passed = 1.0
+    elif any_f2p:
+        tests_passed = 0.5
+    else:
+        tests_passed = 0.0
+
+    # The rubric is a gate, not a term in an average: it can only withhold a 1.0
+    # and turn it into 0.5, and with no verdict the run scores on tests alone.
+    if tests_passed >= 1.0 and rubric == "fail":
+        reward = 0.5
+    else:
+        reward = tests_passed
+
+    write_reward(reward, tests_passed=tests_passed, f2p=f2p_results,
+                 p2p=p2p_results, rubric=rubric)
+    print(json.dumps({
+        'reward': reward,
+        'tests_passed': tests_passed,
+        'rubric': rubric,
+        'f2p': f2p_map,
+        'p2p': p2p_map,
+        'all_results_count': case_count,
+    }))
+
+if __name__ == '__main__':
+    main()
+
+=== environment/Dockerfile ===
+FROM python:3.11-bookworm
+
+RUN apt-get update && apt-get install -y --no-install-recommends git curl build-essential libffi-dev libssl-dev \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Clone, pin to base commit, strip .git (anti-cheat: agent cannot inspect fix PR/future history).
+# Re-init a single base commit + immutable tag so the verifier can reset test files;
+# git apply still works without upstream history.
+RUN git clone https://github.com/Textualize/textual /app \
+ && git -C /app checkout 4ec7d38b612ab672ee45c6de5b3b9372f0b09254 \
+ && rm -rf /app/.git \
+ && git -C /app init -q \
+ && git -C /app -c user.email=h@l -c user.name=h add -A \
+ && git -C /app -c user.email=h@l -c user.name=h commit -q -m base \
+ && git -C /app tag harbor_base
+
+# The repo's own RUNTIME dependencies, so verify time does not wait on the network.
+# rich is pinned because it renders the SVG the snapshot baseline was captured from —
+# an unpinned upgrade would change that rendering and silently invalidate the baseline.
+# It is a runtime dependency of textual itself, not test tooling.
+RUN pip install --upgrade pip setuptools wheel -q \
+ && pip install -e . -q \
+ && pip install -q rich==15.0.0
+
+# TEST-ONLY tooling is deliberately NOT installed into this image. Leaving pytest and
+# pytest-textual-snapshot importable would tell the agent the fix is graded by an SVG
+# snapshot comparison before it has diagnosed anything, and it would put the harness in
+# the environment instead of in the test stage. Only the pinned wheels are staged here;
+# tests/test.sh installs them at verify time, which has no network
+# (task.toml [verifier] network_mode = "no-network") — hence download now, install later.
+# Pinning keeps the snapshot comparison stable across rebuilds. No `|| true`: a failed
+# download must break the build loudly rather than surface later as a missing plugin.
+RUN mkdir -p /opt/verifier-deps \
+ && pip download -q --dest /opt/verifier-deps \
+      pytest==8.4.2 \
+      pytest-asyncio==1.4.0 \
+      pytest-textual-snapshot==1.1.0 \
+      syrupy==4.8.0 \
+      jinja2==3.1.6 \
+ && chmod 700 /opt/verifier-deps
+
+# Visual evidence, readable by the agent at /app/.harbor_assets/.
+# tests/ and solution/ are intentionally NOT copied into the image —
+# the harness supplies them at verify time.
+RUN mkdir -p /logs /app/.harbor_assets
+COPY assets/ /app/.harbor_assets/
+
+CMD ["bash"]
+
+=== environment/assets/ASSET_MANIFEST.json ===
+[
+  {
+    "file": "before.png",
+    "role": "before",
+    "container_path": "/app/.harbor_assets/before.png"
+  },
+  {
+    "file": "after.png",
+    "role": "after",
+    "container_path": "/app/.harbor_assets/after.png"
+  }
+]

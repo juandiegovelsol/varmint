@@ -1,0 +1,167 @@
+diff --git a/packages/widgets/Source/VoxelInspector/VoxelInspectorViewModel.js b/packages/widgets/Source/VoxelInspector/VoxelInspectorViewModel.js
+index ad4efb2..d7c3515 100644
+--- a/packages/widgets/Source/VoxelInspector/VoxelInspectorViewModel.js
++++ b/packages/widgets/Source/VoxelInspector/VoxelInspectorViewModel.js
+@@ -101,7 +101,7 @@ function VoxelInspectorViewModel(scene) {
+           }
+         }
+         if (typeof initialValue === "boolean" && typeof value === "number") {
+-          value = value === 0 ? true : false;
++          value = value === 1 ? true : false;
+         }
+         knock(value);
+         if (defined(setPrimitiveFunction) && defined(that._voxelPrimitive)) {
+@@ -229,14 +229,14 @@ function VoxelInspectorViewModel(scene) {
+     name: "shapeIsEllipsoid",
+     getPrimitiveFunction: function () {
+       const shapeType = that._voxelPrimitive.shape;
+-      that.shapeIsEllipsoid = shapeType === VoxelShapeType.CYLINDER;
++      that.shapeIsEllipsoid = shapeType === VoxelShapeType.ELLIPSOID;
+     },
+   });
+   addProperty({
+     name: "shapeIsCylinder",
+     getPrimitiveFunction: function () {
+       const shapeType = that._voxelPrimitive.shape;
+-      that.shapeIsCylinder = shapeType === VoxelShapeType.ELLIPSOID;
++      that.shapeIsCylinder = shapeType === VoxelShapeType.CYLINDER;
+     },
+   });
+   addProperty({
+@@ -352,35 +352,35 @@ function VoxelInspectorViewModel(scene) {
+     },
+   });
+   addProperty({
+-    name: "boundsCylinderMaxHeight",
++    name: "boundsCylinderMaxAngle",
+     initialValue: 0.0,
+     setPrimitiveFunction: getBoundSetter("maxBounds", "y"),
+     getPrimitiveFunction: function () {
+-      that.boundsCylinderMaxHeight = that._voxelPrimitive.maxBounds.y;
++      that.boundsCylinderMaxAngle = that._voxelPrimitive.maxBounds.y;
+     },
+   });
+   addProperty({
+-    name: "boundsCylinderMinHeight",
++    name: "boundsCylinderMinAngle",
+     initialValue: 0.0,
+     setPrimitiveFunction: getBoundSetter("minBounds", "y"),
+     getPrimitiveFunction: function () {
+-      that.boundsCylinderMinHeight = that._voxelPrimitive.minBounds.y;
++      that.boundsCylinderMinAngle = that._voxelPrimitive.minBounds.y;
+     },
+   });
+   addProperty({
+-    name: "boundsCylinderMaxAngle",
++    name: "boundsCylinderMaxHeight",
+     initialValue: 0.0,
+     setPrimitiveFunction: getBoundSetter("maxBounds", "z"),
+     getPrimitiveFunction: function () {
+-      that.boundsCylinderMaxAngle = that._voxelPrimitive.maxBounds.z;
++      that.boundsCylinderMaxHeight = that._voxelPrimitive.maxBounds.z;
+     },
+   });
+   addProperty({
+-    name: "boundsCylinderMinAngle",
++    name: "boundsCylinderMinHeight",
+     initialValue: 0.0,
+     setPrimitiveFunction: getBoundSetter("minBounds", "z"),
+     getPrimitiveFunction: function () {
+-      that.boundsCylinderMinAngle = that._voxelPrimitive.minBounds.z;
++      that.boundsCylinderMinHeight = that._voxelPrimitive.minBounds.z;
+     },
+   });
+   addProperty({
+@@ -502,35 +502,35 @@ function VoxelInspectorViewModel(scene) {
+     },
+   });
+   addProperty({
+-    name: "clippingCylinderMaxHeight",
++    name: "clippingCylinderMaxAngle",
+     initialValue: 0.0,
+     setPrimitiveFunction: getBoundSetter("maxClippingBounds", "y"),
+     getPrimitiveFunction: function () {
+-      that.clippingCylinderMaxHeight = that._voxelPrimitive.maxClippingBounds.y;
++      that.clippingCylinderMaxAngle = that._voxelPrimitive.maxClippingBounds.y;
+     },
+   });
+   addProperty({
+-    name: "clippingCylinderMinHeight",
++    name: "clippingCylinderMinAngle",
+     initialValue: 0.0,
+     setPrimitiveFunction: getBoundSetter("minClippingBounds", "y"),
+     getPrimitiveFunction: function () {
+-      that.clippingCylinderMinHeight = that._voxelPrimitive.minClippingBounds.y;
++      that.clippingCylinderMinAngle = that._voxelPrimitive.minClippingBounds.y;
+     },
+   });
+   addProperty({
+-    name: "clippingCylinderMaxAngle",
++    name: "clippingCylinderMaxHeight",
+     initialValue: 0.0,
+     setPrimitiveFunction: getBoundSetter("maxClippingBounds", "z"),
+     getPrimitiveFunction: function () {
+-      that.clippingCylinderMaxAngle = that._voxelPrimitive.maxClippingBounds.z;
++      that.clippingCylinderMaxHeight = that._voxelPrimitive.maxClippingBounds.z;
+     },
+   });
+   addProperty({
+-    name: "clippingCylinderMinAngle",
++    name: "clippingCylinderMinHeight",
+     initialValue: 0.0,
+     setPrimitiveFunction: getBoundSetter("minClippingBounds", "z"),
+     getPrimitiveFunction: function () {
+-      that.clippingCylinderMinAngle = that._voxelPrimitive.minClippingBounds.z;
++      that.clippingCylinderMinHeight = that._voxelPrimitive.minClippingBounds.z;
+     },
+   });
+ 
+@@ -677,8 +677,8 @@ function setModelMatrix(viewModel) {
+   );
+   const hpr = scratchHeadingPitchRoll;
+   hpr.heading = viewModel.angleX;
+-  hpr.pitch = viewModel.angleZ;
+-  hpr.roll = viewModel.angleY;
++  hpr.pitch = viewModel.angleY;
++  hpr.roll = viewModel.angleZ;
+   const rotation = Matrix3.fromHeadingPitchRoll(hpr, scratchRotation);
+   const rotationScale = Matrix3.multiplyByScale(rotation, scale, rotation);
+   viewModel._voxelPrimitive.modelMatrix = Matrix4.fromRotationTranslation(
+@@ -720,21 +720,22 @@ Object.defineProperties(VoxelInspectorViewModel.prototype, {
+         this._voxelPrimitive = voxelPrimitive;
+ 
+         const that = this;
+-        that._voxelPrimitive.customShaderCompilationEvent.addEventListener(
+-          function (error) {
+-            const shaderString =
+-              that._voxelPrimitive.customShader.fragmentShaderText;
+-            that.shaderString = formatShaderString(shaderString);
+-
+-            if (!defined(error)) {
+-              that.shaderCompilationMessage = "Shader compiled successfully!";
+-              that.shaderCompilationSuccess = true;
+-            } else {
+-              that.shaderCompilationMessage = error.message;
+-              that.shaderCompilationSuccess = false;
+-            }
+-          },
+-        );
++        that._customShaderCompilationRemoveCallback =
++          that._voxelPrimitive.customShaderCompilationEvent.addEventListener(
++            function (error) {
++              const shaderString =
++                that._voxelPrimitive.customShader.fragmentShaderText;
++              that.shaderString = formatShaderString(shaderString);
++
++              if (!defined(error)) {
++                that.shaderCompilationMessage = "Shader compiled successfully!";
++                that.shaderCompilationSuccess = true;
++              } else {
++                that.shaderCompilationMessage = error.message;
++                that.shaderCompilationSuccess = false;
++              }
++            },
++          );
+         that._modelMatrixReady = false;
+         for (let i = 0; i < that._getPrimitiveFunctions.length; i++) {
+           that._getPrimitiveFunctions[i]();

@@ -1,0 +1,119 @@
+version = "1.0"
+
+[metadata]
+task_id = "trezor__trezor-suite-30020-mm"
+title = "Multi-share Backup option disappears from Settings after closing the Create multi-share backup modal"
+repository_name = "trezor/trezor-suite"
+repo_url = "https://github.com/trezor/trezor-suite"
+issue_number = 30020
+pr_number = 30281
+base_commit = "a79489da9278f6b4b1a76c380945f1c34a7a18e3"
+fix_commit = "130b54099a518225808cdcef91b0f5f5b74b5117"
+task_type = "visual_bug_fix"
+language = "TypeScript"
+framework = "React/Redux Toolkit monorepo (yarn 4 workspaces); jest 29 + @swc/jest for tests"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = """
+LOCALIZATION IS NOW POSTER-BOUND. instruction.md is deliberately written as a vague user report,
+stripped to symptom + poster per the hardening guidance: no steps-to-reproduce recipe, no
+"expected behavior" section (the earlier draft's "backing out is not the same as having finished"
+line was a direct giveaway of the fix's own reasoning and was cut), and no trace of the project.
+The prose never uses the words backup, share, Shamir or Trezor at all -- it says only that
+"something" vanished from "the device settings page" after a dialog was closed part-way, and that
+it stays gone while the device remains connected in that state. Everything needed to place the
+defect lives in the two frames instead:
+bug_screenshot_1.png shows the abandoned dialog is the one that creates SHARES (the only on-screen
+signal that this is the Shamir/multi-share flow rather than the plain seed backup), and
+bug_screenshot_2.png shows Settings -> Device -> Wallet backup holding a single row, "Check wallet
+backup", where a second row belongs. A solver working from the prose alone cannot tell which of
+this repo's several backup-related settings rows is missing (CheckRecoverySeed,
+BackupRecoverySeed, CreateWalletBackup and MultiShareBackup all render in or near that area), so
+the posters are load-bearing rather than corroborating -- hence visual_essentiality = "required".
+
+TWO INDEPENDENT GATES ARE WRONG, IN TWO DIFFERENT WORKSPACES, AND EITHER ONE ALONE STILL LEAVES
+THE REPORTED SYMPTOM ON SCREEN. The settings row renders only when the component's availability
+gate passes AND `doesSupportMultiShare(features)` holds. The second of those resolves through
+`BACKUP_TYPE_EXTENDABILITY` in suite-common/backup/src/shamir.ts, where
+`Slip39_Advanced_Extendable` is marked NOT extendable -- contradicting both its own name and its
+two sibling `*_Extendable` entries, so an entire class of Shamir-capable devices can never show
+the row no matter what the availability gate does. A solver who repairs only the availability
+gate -- the whole of the upstream PR, and the obvious read of the component -- still ships a
+settings page with the row missing for that class, and scores 0.0 under this task's binary
+reward. The signal that one gate is not enough is in instruction.md without anything being named:
+the reporter says a colleague whose device was "set up differently" reaches the same dead end and
+asks for both to work. Backup type is precisely what "set up differently" ranges over here, and it
+is the posters that establish this is the Shamir/multi-share flow at all -- frame 1's "Create
+shares on Trezor" wording, and frame 2's Wallet backup section holding a single row on a connected
+device -- so the prose alone still cannot place the defect.
+The repo's own suites cannot be used as a shortcut here -- suite-common/backup/src/shamir.test.ts
+exercises only Slip39_Basic_Extendable and Bip39, so it stays green on the shipped state and the
+contradiction has to be found by reading, not by running the existing tests.
+
+Each defect is individually tiny (one boolean recomputed, one guard clause flipped, one lookup
+entry wrong), which is the point: the difficulty is in localizing both and in not stopping at the
+first one that looks like the whole answer. The easy, wrong fixes all look plausible at a glance:
+(1) delete the availability check entirely so the option always shows -- this passes the reported
+repro but wrongly ALSO shows the option when the user has not done any backup at all yet
+(backup_availability === 'Required'), which the PR's own QA notes explicitly say must stay
+hidden; (2) naively invert the existing comparison to `!== 'NotAvailable'` -- a single-character
+fix that looks identical to the real one but is backwards, hiding the option in the ordinary
+already-backed-up case and showing it when a backup is actually required; (3) special-case
+"the modal was cancelled" with a dismiss-handler side effect, missing that `backup_availability`
+is a three-valued device-reported enum (`NotAvailable` / `Required` / `Available`, confirmed in
+the protobuf definitions and already used elsewhere in this exact package for
+`isAdditionalShamirBackupInProgress`) and that the real bug is which of those three values the
+component's OWN gate was keying off of, not a one-off event to intercept. The real fix requires
+recognizing that `'Available'` is a legitimate, already-meaningful device state -- reached whenever
+a multi-share backup was started and interrupted -- and that only `'Required'` (no backup done at
+all) should hide the option, not "anything other than NotAvailable".
+
+Over-broad repairs of the second gate are caught too. Two pass-to-pass cases pair a Shamir-capable
+device with a backup type that genuinely cannot be extended (`Slip39_Advanced`, and `Bip39`) and
+require the row to STAY hidden, so "return true for every Shamir-capable device" or "treat every
+Slip39 type as extendable" both fail. Between them and the `'Required'` guard, neither gate can be
+widened into an always-show.
+"""
+files_edited = [
+  "suite/backup/src/MultiShareBackup.tsx",
+  "suite-common/backup/src/shamir.ts",
+]
+f2p = [
+  "src/__tests__/multiShareBackupAvailability.test.tsx > Multi-share Backup option visibility (issue #30020) > an interrupted multi-share backup must not hide the option (fail-to-pass) > shows the option when the flow was started and then cancelled (backup_availability 'Available', Slip39 Advanced Extendable)",
+  "src/__tests__/multiShareBackupAvailability.test.tsx > Multi-share Backup option visibility (issue #30020) > an interrupted multi-share backup must not hide the option (fail-to-pass) > also shows the option for a different extendable Shamir backup type ('Slip39_Single_Extendable'), proving the fix is not keyed to one specific backup_type",
+  "src/__tests__/multiShareBackupAvailability.test.tsx > Multi-share Backup option visibility (issue #30020) > an interrupted multi-share backup must not hide the option (fail-to-pass) > shows the option (disabled, with its tooltip active) even while the device is locked, when backup_availability is Available",
+]
+p2p = [
+  "src/__tests__/multiShareBackupAvailability.test.tsx > Multi-share Backup option visibility (issue #30020) > what the fix must not touch (pass-to-pass) > still hides the option when no backup has been done at all yet (Required)",
+  "src/__tests__/multiShareBackupAvailability.test.tsx > Multi-share Backup option visibility (issue #30020) > what the fix must not touch (pass-to-pass) > still shows the option in the ordinary, already-working case (NotAvailable, i.e. a regular backup is already done)",
+  "src/__tests__/multiShareBackupAvailability.test.tsx > Multi-share Backup option visibility (issue #30020) > what the fix must not touch (pass-to-pass) > still hides the option when N4W1 backup is enabled, regardless of backup_availability",
+  "src/__tests__/multiShareBackupAvailability.test.tsx > Multi-share Backup option visibility (issue #30020) > what the fix must not touch (pass-to-pass) > still hides the option when the device does not support multi-share backup at all (no Capability_Shamir, non-extendable backup_type)",
+  "src/__tests__/multiShareBackupAvailability.test.tsx > Multi-share Backup option visibility (issue #30020) > what the fix must not touch (pass-to-pass) > still hides the option for a Shamir-capable device whose backup type cannot be extended (Slip39_Advanced)",
+  "src/__tests__/multiShareBackupAvailability.test.tsx > Multi-share Backup option visibility (issue #30020) > what the fix must not touch (pass-to-pass) > still hides the option for a Shamir-capable device still on a single-share Bip39 backup",
+  "src/__tests__/multiShareBackupAvailability.test.tsx > Multi-share Backup option visibility (issue #30020) > what the fix must not touch (pass-to-pass) > still hides the option when the device has no features loaded yet",
+  "src/__tests__/multiShareBackupAvailability.test.tsx > Multi-share Backup option visibility (issue #30020) > what the fix must not touch (pass-to-pass) > still hides the option when there is no selected device at all",
+  "src/__tests__/multiShareBackupAvailability.test.tsx > Multi-share Backup option visibility (issue #30020) > what the fix must not touch (pass-to-pass) > still reports analytics and navigates to the create-multi-share-backup route when the CTA is clicked",
+]
+tags = ["multimodal", "visual_bug_fix"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+# "public" is the only working value: harbor validates allowed_hosts as literal hostnames and
+# never env-expands them, so an allowlist cannot express a run-time-injected endpoint. This task
+# pre-stages every test dependency at build time and installs nothing at verify time, so the
+# permission is never exercised -- but holding it stops the seal being a trap. The AGENT phase
+# stays sealed ([agent] network_mode = "no-network" above), and test.sh restores the tests from
+# harbor_base before scoring, so egress here cannot help a submission cheat.
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

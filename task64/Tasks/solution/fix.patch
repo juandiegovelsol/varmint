@@ -1,0 +1,100 @@
+diff --git a/packages/editor/src/lib/editor/Editor.ts b/packages/editor/src/lib/editor/Editor.ts
+index cfb2c962ca..ffabb59f11 100644
+--- a/packages/editor/src/lib/editor/Editor.ts
++++ b/packages/editor/src/lib/editor/Editor.ts
+@@ -3100,7 +3100,7 @@ export class Editor extends EventEmitter<TLEventMap> {
+ 
+ 		ourViewport.width = theirViewport.width
+ 		ourViewport.height = ourViewport.width / ourAspectRatio
+-		if (ourViewport.height > theirViewport.height) {
++		if (ourViewport.height < theirViewport.height) {
+ 			ourViewport.height = theirViewport.height
+ 			ourViewport.width = ourViewport.height * ourAspectRatio
+ 		}
+@@ -4482,7 +4482,7 @@ export class Editor extends EventEmitter<TLEventMap> {
+ 					return
+ 				}
+ 				if (
+-					leaderPresence.currentPageId === this.getCurrentPageId() &&
++					leaderPresence.currentPageId !== this.getCurrentPageId() &&
+ 					this.getPage(leaderPresence.currentPageId)
+ 				) {
+ 					// if the page changed, switch page
+diff --git a/packages/tldraw/src/lib/ui.css b/packages/tldraw/src/lib/ui.css
+index 691f1de752..508b705e04 100644
+--- a/packages/tldraw/src/lib/ui.css
++++ b/packages/tldraw/src/lib/ui.css
+@@ -12,9 +12,8 @@
+ 	 * (which creates its own stacking context at z-index 300), so their
+ 	 * z-indices are relative to the layout, not the container.
+ 	 *
+-	 * cursor and following-indicator are rendered inside canvas-in-front
+-	 * (stacking context at z-index 250), so their z-indices are relative
+-	 * to that context.
++	 * cursor is rendered inside canvas-in-front (stacking context at
++	 * z-index 250), so their z-indices are relative to that context.
+ 	 */
+ 	--tl-layer-above: 1;
+ 	--tl-layer-focused-input: 10;
+@@ -24,7 +23,6 @@
+ 	--tl-layer-toasts: 650;
+ 	--tl-layer-cursor: 700;
+ 	--tl-layer-header-footer: 999;
+-	--tl-layer-following-indicator: 1000;
+ }
+ 
+ /* Button */
+@@ -1043,7 +1041,7 @@
+ 	left: 8px;
+ }
+ 
+-/* 
++/*
+  * focusing skip-to-main-content hide top ui buttons to make sure we avoid
+  * z-index clashes on hover (see issue #8328)
+  */
+@@ -2181,7 +2179,6 @@ tldraw? probably.
+ 	inset: 0px;
+ 	border-width: 2px;
+ 	border-style: solid;
+-	z-index: var(--tl-layer-following-indicator);
+ 	pointer-events: none;
+ }
+ 
+diff --git a/packages/tldraw/src/lib/ui/TldrawUi.tsx b/packages/tldraw/src/lib/ui/TldrawUi.tsx
+index 3b6d8de1e5..5b9d8ad394 100644
+--- a/packages/tldraw/src/lib/ui/TldrawUi.tsx
++++ b/packages/tldraw/src/lib/ui/TldrawUi.tsx
+@@ -123,6 +123,7 @@ const TldrawUiContent = React.memo(function TldrawUI() {
+ 		Toasts,
+ 		Dialogs,
+ 		A11y,
++		FollowingIndicator,
+ 	} = useTldrawUiComponents()
+ 
+ 	useEditorEvents()
+@@ -235,6 +236,7 @@ const TldrawUiContent = React.memo(function TldrawUI() {
+ 					</div>
+ 				</>
+ 			)}
++			{FollowingIndicator && <FollowingIndicator />}
+ 			{Toasts && <Toasts />}
+ 			{Dialogs && <Dialogs />}
+ 		</div>
+@@ -243,15 +245,13 @@ const TldrawUiContent = React.memo(function TldrawUI() {
+ 
+ /** @public @react */
+ export function TldrawUiInFrontOfTheCanvas() {
+-	const { RichTextToolbar, ImageToolbar, VideoToolbar, CursorChatBubble, FollowingIndicator } =
+-		useTldrawUiComponents()
++	const { RichTextToolbar, ImageToolbar, VideoToolbar, CursorChatBubble } = useTldrawUiComponents()
+ 
+ 	return (
+ 		<>
+ 			{RichTextToolbar && <RichTextToolbar />}
+ 			{ImageToolbar && <ImageToolbar />}
+ 			{VideoToolbar && <VideoToolbar />}
+-			{FollowingIndicator && <FollowingIndicator />}
+ 			{CursorChatBubble && <CursorChatBubble />}
+ 		</>
+ 	)

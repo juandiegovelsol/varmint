@@ -1,0 +1,51 @@
+version = "1.0"
+
+[metadata]
+task_id = "textualize__textual-5550-mm"
+title = "Textual 2.0 Regression - Auto-sized container renders its contents in the wrong place"
+repository_name = "Textualize/textual"
+repo_url = "https://github.com/Textualize/textual"
+issue_number = 5550
+pr_number = 5552
+base_commit = "4ec7d38b612ab672ee45c6de5b3b9372f0b09254"
+fix_commit = "baab54ccbeac86d913b2f9ddad562c7466fdede0"
+task_type = "visual_bug_fix"
+language = "Python"
+framework = "pytest-textual-snapshot (snap_compare)"
+cross_file = false
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = """The instruction says only that an app with a table above a row of controls stopped rendering the way it used to. It names no CSS, no sizing mode and no symptom: which element is mis-sized, by how much, and the fact that its contents end up centred inside the oversized band rather than filling it are all readable only from the before/after screenshots. An agent that does not open them has nothing to localize from — the text alone cannot distinguish "the row is too tall" from "the row is in the wrong place" or "the table shrank", and it is the centring visible in the poster that points at the alignment branch of the layout engine rather than at the box model. Localizing then means tracing the arrangement code to the point where the alignment size is taken from the full dock region even for auto-sized containers. The widely-known one-line correction (zeroing auto dimensions, the form merged upstream in PR #5552) is not sufficient: it destroys alignment inside containers that also set an explicit minimum, which two regression tests guard on both axes. Going further and resolving the extrema properly is also not free — doing it in the box model puts the candidate inside `_get_box_model`, whose width/height/min/max contract the repo's own box-model suite now guards as p2p, so a fix that resolves minimums against the wrong container or forgets the gutter regresses those and scores below 1.0. `solution/fix.patch` implements the refined form (resolving the minimum size for auto dimensions instead of zeroing them), which upstream itself only landed in a later rework; `fix_commit` records the PR the bundle was harvested from, not a byte-identical copy of the golden."""
+files_edited = ["src/textual/_arrange.py"]
+f2p = ["test_auto_in_auto"]
+p2p = [
+  "test_align_center_respects_min_height",
+  "test_align_center_respects_min_width",
+  "test_arrange::test_arrange_empty",
+  "test_arrange::test_arrange_dock_top",
+  "test_arrange::test_arrange_dock_left",
+  "test_arrange::test_arrange_dock_right",
+  "test_arrange::test_arrange_dock_bottom",
+  "test_arrange::test_arrange_dock_badly",
+  "test_box_model::test_content_box",
+  "test_box_model::test_width",
+  "test_box_model::test_height",
+  "test_box_model::test_min",
+  "test_box_model::test_max",
+]
+tags = ["multimodal", "visual_bug_fix", "pytest-textual-snapshot"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "no-network"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

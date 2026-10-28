@@ -1,0 +1,279 @@
+diff --git a/test/chart/PieChart.spec.tsx b/test/chart/PieChart.spec.tsx
+index 533d2f6..8de2bd6 100644
+--- a/test/chart/PieChart.spec.tsx
++++ b/test/chart/PieChart.spec.tsx
+@@ -5,7 +5,12 @@ import { Cell, Legend, Pie, PieChart, Sector, SectorProps, Tooltip, useChartHeig
+ import { useChartWidth, useViewBox } from '../../src/context/chartLayoutContext';
+ import { useClipPathId } from '../../src/container/ClipPathProvider';
+ import { createSelectorTestCase, rechartsTestRender } from '../helper/createSelectorTestCase';
+-import { expectPieSectorAngles, expectPieSectors, selectPieSectors } from '../helper/expectPieSectors';
++import {
++  expectPieSectorAngles,
++  expectPieSectors,
++  getPieSectorAngles,
++  selectPieSectors,
++} from '../helper/expectPieSectors';
+ import { expectLegendLabels } from '../helper/expectLegendLabels';
+ import { expectLastCalledWith } from '../helper/expectLastCalledWith';
+ import { selectDisplayedData, selectPieLegend } from '../../src/state/selectors/pieSelectors';
+@@ -72,6 +77,260 @@ describe('<PieChart />', () => {
+     ]);
+   });
+ 
++  /**
++   * Angular size, in degrees, of every rendered sector - read back from the SVG paths
++   * only. This makes no assumption about how the angles were arrived at, so any
++   * implementation that draws the same geometry is measured the same way.
++   */
++  function sectorSweeps(container: Element): ReadonlyArray<number> {
++    return getPieSectorAngles(selectPieSectors(container)).map(
++      ({ startAngle, endAngle }) => (((endAngle - startAngle) % 360) + 360) % 360,
++    );
++  }
++
++  test('minAngle does not shift segments when all are already above the threshold', () => {
++    // data [300, 30, 20, 10], sum = 360 -> natural angles = [300, 30, 20, 10] degrees.
++    // Every one of them clears minAngle=9, so no angle should move.
++    const { container } = rechartsTestRender(
++      <PieChart width={800} height={400}>
++        <Pie
++          dataKey="value"
++          isAnimationActive={false}
++          data={[
++            { name: 'A', value: 300 },
++            { name: 'B', value: 30 },
++            { name: 'C', value: 20 },
++            { name: 'D', value: 10 },
++          ]}
++          cx={200}
++          cy={200}
++          outerRadius={80}
++          fill="#ff7300"
++          minAngle={9}
++        />
++      </PieChart>,
++    );
++    expectPieSectorAngles(container, [
++      { startAngle: 0, endAngle: 300 },
++      { startAngle: 300, endAngle: 330 },
++      { startAngle: 330, endAngle: 350 },
++      { startAngle: 350, endAngle: 0 },
++    ]);
++  });
++
++  test('minAngle does not redistribute when a segment equals the threshold exactly', () => {
++    // data [350, 10], sum = 360 -> natural angles = [350, 10] degrees.
++    // B lands exactly on minAngle=10; it is not below the floor, so nothing moves.
++    const { container } = rechartsTestRender(
++      <PieChart width={800} height={400}>
++        <Pie
++          dataKey="value"
++          isAnimationActive={false}
++          data={[
++            { name: 'A', value: 350 },
++            { name: 'B', value: 10 },
++          ]}
++          cx={200}
++          cy={200}
++          outerRadius={80}
++          fill="#ff7300"
++          minAngle={10}
++        />
++      </PieChart>,
++    );
++    expectPieSectorAngles(container, [
++      { startAngle: 0, endAngle: 350 },
++      { startAngle: 350, endAngle: 0 },
++    ]);
++  });
++
++  test('minAngle does not redistribute in a partial pie when all segments are above threshold', () => {
++    // Partial pie: startAngle=180, endAngle=0, so the span is 180 degrees.
++    // data [100, 20], sum = 120 -> natural angles = [150, 30] degrees, both above
++    // minAngle=18, so the boundary must stay at 180 - 150 = 30 degrees.
++    const { container } = rechartsTestRender(
++      <PieChart width={800} height={400}>
++        <Pie
++          dataKey="value"
++          isAnimationActive={false}
++          data={[
++            { name: 'A', value: 100 },
++            { name: 'B', value: 20 },
++          ]}
++          cx={200}
++          cy={200}
++          outerRadius={80}
++          fill="#ff7300"
++          startAngle={180}
++          endAngle={0}
++          minAngle={18}
++        />
++      </PieChart>,
++    );
++    expectPieSectorAngles(container, [
++      { startAngle: 180, endAngle: 30 },
++      { startAngle: 30, endAngle: 0 },
++    ]);
++  });
++
++  test('minAngle does not redistribute when padding is present and every segment clears the threshold', () => {
++    // paddingAngle=6 on a full circle takes 4 * 6 = 24 degrees out of the span, so the
++    // sectors share 336 degrees: data [400, 300, 200, 100] -> [134.4, 100.8, 67.2, 33.6].
++    // All of those clear minAngle=10, so no angle should move, and each gap stays 6.
++    const { container } = rechartsTestRender(
++      <PieChart width={800} height={400}>
++        <Pie
++          dataKey="value"
++          isAnimationActive={false}
++          data={[
++            { name: 'A', value: 400 },
++            { name: 'B', value: 300 },
++            { name: 'C', value: 200 },
++            { name: 'D', value: 100 },
++          ]}
++          cx={200}
++          cy={200}
++          outerRadius={80}
++          fill="#ff7300"
++          paddingAngle={6}
++          minAngle={10}
++        />
++      </PieChart>,
++    );
++    expectPieSectorAngles(container, [
++      { startAngle: 0, endAngle: 134.4 },
++      { startAngle: 140.4, endAngle: 241.2 },
++      { startAngle: 247.2, endAngle: 314.4 },
++      { startAngle: 320.4, endAngle: 354 },
++    ]);
++  });
++
++  test('sectors stay inside the pie span when minAngle cannot be granted to every segment', () => {
++    // 12 non-zero segments each asking for minAngle=40 want 480 degrees out of a circle
++    // that only has 360. Whatever the chart falls back to, the sectors it draws must
++    // still be forward-going and must still fit inside one revolution.
++    const { container } = rechartsTestRender(
++      <PieChart width={800} height={400}>
++        <Pie
++          dataKey="value"
++          isAnimationActive={false}
++          data={[
++            { name: 'big', value: 89 },
++            ...Array.from({ length: 11 }, (_, i) => ({ name: `small-${i}`, value: 1 })),
++          ]}
++          cx={200}
++          cy={200}
++          outerRadius={80}
++          fill="#ff7300"
++          minAngle={40}
++        />
++      </PieChart>,
++    );
++    const sweeps = sectorSweeps(container);
++    expect(sweeps).toHaveLength(12);
++    sweeps.forEach(sweep => {
++      expect(sweep).toBeGreaterThan(0);
++    });
++    const totalSweep = sweeps.reduce((a, b) => a + b, 0);
++    expect(totalSweep).toBeLessThanOrEqual(360.001);
++  });
++
++  test('minAngle still redistributes sectors that fall below the threshold', () => {
++    // data [270, 9, 9, 72], sum = 360. B and C are 9 degrees, below minAngle=10, so the
++    // floor is reserved for all four: 360 - 4 * 10 = 320 left to share proportionally
++    // -> [250, 18, 18, 74] degrees.
++    const { container } = rechartsTestRender(
++      <PieChart width={800} height={400}>
++        <Pie
++          dataKey="value"
++          isAnimationActive={false}
++          data={[
++            { name: 'A', value: 270 },
++            { name: 'B', value: 9 },
++            { name: 'C', value: 9 },
++            { name: 'D', value: 72 },
++          ]}
++          cx={200}
++          cy={200}
++          outerRadius={80}
++          fill="#ff7300"
++          minAngle={10}
++        />
++      </PieChart>,
++    );
++    expectPieSectorAngles(container, [
++      { startAngle: 0, endAngle: 250 },
++      { startAngle: 250, endAngle: 268 },
++      { startAngle: 268, endAngle: 286 },
++      { startAngle: 286, endAngle: 0 },
++    ]);
++  });
++
++  test('every non-zero segment keeps at least minAngle when padding shrinks the available span', () => {
++    // paddingAngle=5 on a full circle takes 4 * 5 = 20 degrees out, leaving 340 to share.
++    // The 96/1000 segment gets 32.64 of those 340 degrees - under minAngle=34 - even
++    // though 96/1000 of the whole 360 degree circle would have been 34.56. The floor is
++    // a promise about what actually gets drawn, so it has to hold here.
++    const { container } = rechartsTestRender(
++      <PieChart width={800} height={400}>
++        <Pie
++          dataKey="value"
++          isAnimationActive={false}
++          data={[
++            { name: 'A', value: 500 },
++            { name: 'B', value: 204 },
++            { name: 'C', value: 200 },
++            { name: 'D', value: 96 },
++          ]}
++          cx={200}
++          cy={200}
++          outerRadius={80}
++          fill="#ff7300"
++          paddingAngle={5}
++          minAngle={34}
++        />
++      </PieChart>,
++    );
++    const sweeps = sectorSweeps(container);
++    expect(sweeps).toHaveLength(4);
++    sweeps.forEach(sweep => {
++      expect(sweep).toBeGreaterThanOrEqual(34 - 0.001);
++    });
++  });
++
++  test('zero-value segments stay collapsed while minAngle is applied to the rest', () => {
++    // data [50, 0, 5], sum = 55. The 5 is worth 32.7 degrees, below minAngle=40, so the
++    // floor is reserved - but only for the two entries that carry a value. The empty one
++    // must take up no arc at all, and the circle must still close.
++    const { container } = rechartsTestRender(
++      <PieChart width={800} height={400}>
++        <Pie
++          dataKey="value"
++          isAnimationActive={false}
++          data={[
++            { name: 'A', value: 50 },
++            { name: 'B', value: 0 },
++            { name: 'C', value: 5 },
++          ]}
++          cx={200}
++          cy={200}
++          outerRadius={80}
++          fill="#ff7300"
++          minAngle={40}
++        />
++      </PieChart>,
++    );
++    const sweeps = sectorSweeps(container);
++    // Exactly the two entries that carry a value occupy arc; whether the empty entry is
++    // drawn as a zero-width sector or skipped entirely is left to the implementation.
++    const occupied = sweeps.filter(sweep => sweep > 0.001);
++    expect(occupied).toHaveLength(2);
++    occupied.forEach(sweep => {
++      expect(sweep).toBeGreaterThanOrEqual(40 - 0.001);
++    });
++    expect(sweeps.reduce((a, b) => a + b, 0)).toBeCloseTo(360, 2);
++  });
++
+   test('Renders 6 sectors circles in simple PieChart', () => {
+     const { container } = rechartsTestRender(
+       <PieChart width={800} height={400}>

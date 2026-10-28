@@ -1,0 +1,181 @@
+diff --git a/package-lock.json b/package-lock.json
+index c3dbc07..4f8e181 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -1,5 +1,5 @@
+ {
+-    "name": "SR5-FoundryVTT",
++    "name": "app",
+     "lockfileVersion": 3,
+     "requires": true,
+     "packages": {
+diff --git a/src/module/item/flows/ActionFlow.ts b/src/module/item/flows/ActionFlow.ts
+index 39b516b..a472516 100644
+--- a/src/module/item/flows/ActionFlow.ts
++++ b/src/module/item/flows/ActionFlow.ts
+@@ -59,9 +59,10 @@ export class ActionFlow {
+             case "divide": {
+                 // Remove base from value by modifying.
+                 ModifiableValue.addUnique(value, 'SR5.BaseValue', value.base * -1);
+-                // Add division result as modifier on zero.
++                // Add division result as modifier on zero. Keep the fractional result so the
++                // final total is only rounded (up) once every modifier has been applied.
+                 const denominator = attribute.value === 0 ? 1 : attribute.value;
+-                ModifiableValue.addUnique(value, 'SR5.Value', Math.floor(value.base / denominator));
++                ModifiableValue.addUnique(value, 'SR5.Value', value.base / denominator);
+                 break;
+             }
+         }
+diff --git a/src/module/mods/ModifiableValue.ts b/src/module/mods/ModifiableValue.ts
+index 866b544..a20adc4 100644
+--- a/src/module/mods/ModifiableValue.ts
++++ b/src/module/mods/ModifiableValue.ts
+@@ -189,8 +189,9 @@ export class ModifiableValue<Field extends ModifiableValueType = ModifiableValue
+             this._field.value = options.min;
+         }
+ 
+-        // SR5#78 - All values are rounded up
+-        this._field.value = Math.trunc(this._field.value);
++        // SR5#78 - All values are rounded up (never down), and only once the whole
++        // modifier stack has been resolved so fractional inputs combine before rounding.
++        this._field.value = Math.ceil(this._field.value);
+ 
+         return this._field.value;
+     }
+diff --git a/src/module/types/item/Action.ts b/src/module/types/item/Action.ts
+index 2bb1e38..084d9ec 100644
+--- a/src/module/types/item/Action.ts
++++ b/src/module/types/item/Action.ts
+@@ -74,7 +74,9 @@ export const DamageData = () => ({
+             choices: SR5.elementTypes
+         }),
+     }),
+-    ap: new ModifiableField(ModifiableValueLinked()),
++    // AP accepts fractional values (e.g. the Elemental Body adept power) so that halving
++    // and other divisions are only rounded when the final total is resolved. See ModifiableValue.calcTotal.
++    ap: new ModifiableField(ModifiableValueLinked({ integer: false })),
+     biofeedback: new StringField({
+         blank: true,
+         required: true,
+diff --git a/src/module/types/template/Base.ts b/src/module/types/template/Base.ts
+index a5da389..12e50af 100644
+--- a/src/module/types/template/Base.ts
++++ b/src/module/types/template/Base.ts
+@@ -18,9 +18,9 @@ export const MatrixAttribute = new StringField({
+     choices: SR5.matrixAttributes,
+ });
+ 
+-export const BaseValuePair = () => ({
+-    value: new NumberField({required: true, nullable: false, integer: true, initial: 0}),
+-    base: new NumberField({required: true, nullable: false, integer: true, initial: 0}),
++export const BaseValuePair = ({ integer = true } = {}) => ({
++    value: new NumberField({required: true, nullable: false, integer, initial: 0}),
++    base: new NumberField({required: true, nullable: false, integer, initial: 0}),
+ });
+ 
+ export const ValueMaxPair = () => ({
+@@ -33,10 +33,10 @@ export const ValueMaxPair = () => ({
+  * The 'key' is implied by the field this is attached to, while 'mode'
+  * and 'priority' follow standard CONST.ACTIVE_EFFECT_MODES behavior.
+  */
+-const ChangeEntry = () => ({
++const ChangeEntry = ({ integer = true } = {}) => ({
+     name: new StringField({ required: true }),
+     mode: new NumberField({ required: true, nullable: false, integer: true, initial: 0 }),
+-    value: new NumberField({ required: true, nullable: false, integer: true, initial: 0 }),
++    value: new NumberField({ required: true, nullable: false, integer, initial: 0 }),
+     priority: new NumberField({ required: true, nullable: false, integer: true, initial: 0 }),
+     effectUuid: new DocumentUUIDField({ required: true, nullable: true }),
+ 
+@@ -47,13 +47,13 @@ const ChangeEntry = () => ({
+ 
+ export const ChangeList = () => new ArrayField(new SchemaField(ChangeEntry()));
+ 
+-export const ModifiableValueSchema = () => ({
+-    ...BaseValuePair(),
+-    changes: new ArrayField(new SchemaField(ChangeEntry())),
++export const ModifiableValueSchema = ({ integer = true } = {}) => ({
++    ...BaseValuePair({ integer }),
++    changes: new ArrayField(new SchemaField(ChangeEntry({ integer }))),
+ });
+ 
+-export const ModifiableValueLinked = () => ({
+-    ...ModifiableValueSchema(),
++export const ModifiableValueLinked = ({ integer = true } = {}) => ({
++    ...ModifiableValueSchema({ integer }),
+     attribute: new StringField({ required: true }),
+     base_formula_operator: new StringField({
+         required: false,
+diff --git a/src/unittests/sr5.Damage.spec.ts b/src/unittests/sr5.Damage.spec.ts
+index 9630f45..7b91042 100644
+--- a/src/unittests/sr5.Damage.spec.ts
++++ b/src/unittests/sr5.Damage.spec.ts
+@@ -3,6 +3,8 @@ import { QuenchBatchContext } from "@ethaks/fvtt-quench";
+ import { DataDefaults } from "../module/data/DataDefaults";
+ import { DamageTypeType } from "@/module/types/item/Action";
+ import { SR5Item } from "@/module/item/SR5Item";
++import { ModifiableValue } from "@/module/mods/ModifiableValue";
++import { ActionFlow } from "@/module/item/flows/ActionFlow";
+ 
+ export const shadowrunDamage = (context: QuenchBatchContext) => {
+     const factory = new SR5TestFactory();
+@@ -95,6 +97,59 @@ export const shadowrunDamage = (context: QuenchBatchContext) => {
+         });
+     });
+ 
++    /**
++     * The AP field accepts fractional values (e.g. the Elemental Body adept power).
++     * Fractions must combine with every other modifier before the total is rounded, the
++     * total must always round up (never down), and deriving a total must not mutate the source.
++     */
++    describe('Fractional Armor Penetration', () => {
++        it('Should keep a fractional base value on the source AP field', () => {
++            const damage = DataDefaults.createData('damage', { ap: { base: -2.5 } });
++            assert.equal(damage.ap.base, -2.5);
++        });
++
++        it('Should round the total up, never down', () => {
++            const positive = DataDefaults.createData('damage', { ap: { base: 2.5 } }).ap;
++            assert.equal(ModifiableValue.calcTotal(positive), 3);
++
++            // -2.5 rounds up (towards zero) to -2, not down to -3.
++            const negative = DataDefaults.createData('damage', { ap: { base: -2.5 } }).ap;
++            assert.equal(ModifiableValue.calcTotal(negative), -2);
++
++            const whole = DataDefaults.createData('damage', { ap: { base: -3 } }).ap;
++            assert.equal(ModifiableValue.calcTotal(whole), -3);
++        });
++
++        it('Should combine fractional base with modifiers before rounding once', () => {
++            const ap = DataDefaults.createData('damage', { ap: { base: -2.5 } }).ap;
++            // Rounding once at the end: -2.5 + 1 = -1.5 -> -1.
++            // Rounding the base first would give -3 + 1 = -2, which is wrong.
++            ModifiableValue.add(ap, 'SR5.TestMod', 1);
++            assert.equal(ModifiableValue.calcTotal(ap), -1);
++        });
++
++        it('Should respect modifier order when a fractional value is present', () => {
++            const ap = DataDefaults.createData('damage', { ap: { base: -1.5 } }).ap;
++            // A higher priority OVERRIDE must mask the lower priority additions regardless of the fraction.
++            ModifiableValue.add(ap, 'SR5.Low', 2, CONST.ACTIVE_EFFECT_MODES.ADD, 10);
++            ModifiableValue.add(ap, 'SR5.Override', -4, CONST.ACTIVE_EFFECT_MODES.OVERRIDE, 50);
++            assert.equal(ModifiableValue.calcTotal(ap), -4);
++        });
++
++        it('Should not alter the source AP when deriving a total from it', async () => {
++            const actor = await factory.createActor({ type: 'character' });
++            const damage = DataDefaults.createData('damage', { ap: { base: 2.5 } });
++
++            const derived = ActionFlow.calcDamageData(damage, actor);
++
++            // The derived copy is resolved and rounded up...
++            assert.equal(derived.ap.value, 3);
++            // ...while the original it came from is untouched (still fractional, no changes added).
++            assert.equal(damage.ap.base, 2.5);
++            assert.equal(damage.ap.changes.length, 0);
++        });
++    });
++
+     describe('Damage on armor', () => {
+         it('Should alter damage for hardened armor');
+     });

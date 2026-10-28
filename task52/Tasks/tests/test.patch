@@ -1,0 +1,408 @@
+diff --git a/tests/test_style_cache_regressions.py b/tests/test_style_cache_regressions.py
+new file mode 100644
+index 0000000..8ba25dc
+--- /dev/null
++++ b/tests/test_style_cache_regressions.py
+@@ -0,0 +1,402 @@
++"""Regression tests for the screen in the report.
++
++Scope rule for this file: every graded assertion below is a difference that is visible
++between the two attached captures, driven by the action their captions name -- the
++window going behind another window and coming back to the front. Nothing here asserts a
++behaviour that the captures do not show, uses a trigger they do not name, or inspects a
++property that is not visible in them.
++
++Capture 1 shows six strips of blocks: the first strip has its end block filled red, the
++second has its start block filled teal, the third has its "off" block filled grey, the
++fourth has its "pinned" block filled blue, the fifth is filled purple end to end, and the
++sixth has its "flagged" block filled amber. Capture 2 is the same screen after the window
++went behind another window and came back: the red, teal, grey, blue and purple fills are
++gone and those blocks are drawn like their neighbours, while the amber one is unchanged.
++
++Everything is asserted against *resolved* style values read back from `widget.styles`
++while the app runs headlessly under `App.run_test()`. No snapshot, no SVG and no stored
++baseline is involved, nothing reads library source text, and every expectation is
++recomputed from the live DOM at assert time -- so any implementation that draws the
++screen the way capture 1 draws it passes.
++"""
++
++from __future__ import annotations
++
++from typing import Mapping
++
++import pytest
++
++from textual import events
++from textual.app import App, ComposeResult
++from textual.color import Color
++from textual.containers import Horizontal, Vertical
++from textual.css.query import NoMatches
++from textual.widget import Widget
++from textual.widgets import Label
++
++# Explicit literal colours (rather than theme variables) so the expected values cannot
++# drift with the active theme. These are the fills visible in capture 1.
++IDLE_CSS = "#1b2b44"
++RED_CSS = "#e5484d"
++TEAL_CSS = "#12a594"
++GREY_CSS = "#5b6270"
++BLUE_CSS = "#3e63dd"
++PURPLE_CSS = "#8e4ec6"
++AMBER_CSS = "#ffb224"
++TEXT_CSS = "#e6e9ef"
++
++IDLE = Color.parse(IDLE_CSS)
++RED = Color.parse(RED_CSS)
++TEAL = Color.parse(TEAL_CSS)
++GREY = Color.parse(GREY_CSS)
++BLUE = Color.parse(BLUE_CSS)
++PURPLE = Color.parse(PURPLE_CSS)
++AMBER = Color.parse(AMBER_CSS)
++
++
++class Strip(Horizontal):
++    """One horizontal strip of blocks, as seen in the captures."""
++
++
++class Board(Vertical):
++    """The column the strips are stacked in."""
++
++
++# --------------------------------------------------------------------------------------
++# Helpers
++# --------------------------------------------------------------------------------------
++def assert_fills(expected: Mapping[Widget, Color], context: str) -> None:
++    """Every block in `expected` is filled with exactly the colour mapped to it.
++
++    Pinning every block to a named fill, rather than only checking that the special ones
++    are special, matters: a block that ended up with no fill at all must not be able to
++    slip through as "not highlighted".
++    """
++    wrong = {
++        block: (block.styles.background, colour)
++        for block, colour in expected.items()
++        if block.styles.background != colour
++    }
++    assert not wrong, "\n".join(
++        [f"{context}: {len(wrong)} block(s) drawn with the wrong fill:"]
++        + [
++            f"  {block!r}: got {got!r}, expected {want!r}"
++            for block, (got, want) in wrong.items()
++        ]
++    )
++
++
++async def window_goes_behind_and_returns(app: App, pilot) -> None:
++    """The action the caption of capture 2 names, and the only one used in this file."""
++    app.post_message(events.AppBlur())
++    await pilot.pause()
++    app.post_message(events.AppFocus())
++    await pilot.pause()
++
++
++# --------------------------------------------------------------------------------------
++# The screen from the captures, and the same six strips in isolation. Each isolated app
++# reproduces exactly one strip of the captures -- same block count, same block texts,
++# same fill -- so a failure names which of the six looks was lost.
++# --------------------------------------------------------------------------------------
++BASE_CSS = f"""
++Board {{ height: auto; }}
++Strip {{ height: 3; }}
++Strip > Label {{
++    width: 11; height: 3; content-align: center middle;
++    background: {IDLE_CSS}; color: {TEXT_CSS};
++}}
++"""
++
++
++class BoardApp(App):
++    """The whole screen from the captures."""
++
++    CSS = (
++        BASE_CSS
++        + f"""
++    #strip-a > Label:last-of-type {{ background: {RED_CSS}; }}
++    #strip-b > Label:first-of-type {{ background: {TEAL_CSS}; }}
++    Strip > Label:disabled {{ background: {GREY_CSS}; }}
++    #pinned {{ background: {BLUE_CSS}; }}
++    #strip-e > Label {{ background: {PURPLE_CSS}; }}
++    Strip > Label.flagged {{ background: {AMBER_CSS}; }}
++    """
++    )
++
++    def compose(self) -> ComposeResult:
++        with Board():
++            with Strip(id="strip-a"):
++                for text in ("one", "two", "three", "four"):
++                    yield Label(text)
++            with Strip(id="strip-b"):
++                for text in ("one", "two", "three", "four"):
++                    yield Label(text)
++            with Strip(id="strip-c"):
++                for text in ("on", "on", "off", "on"):
++                    yield Label(text, disabled=text == "off")
++            with Strip(id="strip-d"):
++                yield Label("note")
++                yield Label("pinned", id="pinned")
++                yield Label("note")
++                yield Label("note")
++            with Strip(id="strip-e"):
++                for text in ("x", "y", "z", "w"):
++                    yield Label(text)
++            with Strip(id="strip-f"):
++                for text in ("tag", "tag", "flagged", "tag"):
++                    yield Label(text, classes="flagged" if text == "flagged" else "")
++
++
++def board_expectation(app: App) -> dict[Widget, Color]:
++    """Recompute, from the live DOM, the fill every block on the screen must have.
++
++    Each branch restates one fill visible in capture 1 in terms of facts read off the DOM
++    at call time -- which strip the block is in, its position among its siblings, whether
++    it is the disabled "off" block, whether it is the block named "pinned", whether it
++    carries the "flagged" marker -- never a stored index or a previously observed value.
++    """
++    expected: dict[Widget, Color] = {}
++    for strip in app.query(Strip):
++        blocks = [child for child in strip.children if isinstance(child, Label)]
++        for block in blocks:
++            if strip.id == "strip-e":
++                colour = PURPLE
++            elif block.has_class("flagged"):
++                colour = AMBER
++            elif block.id == "pinned":
++                colour = BLUE
++            elif block.disabled:
++                colour = GREY
++            elif strip.id == "strip-a" and block is blocks[-1]:
++                colour = RED
++            elif strip.id == "strip-b" and block is blocks[0]:
++                colour = TEAL
++            else:
++                colour = IDLE
++            expected[block] = colour
++    assert expected, "scenario is broken: the screen has no blocks"
++    return expected
++
++
++class EndBlockApp(App):
++    """Strip 1 of the captures on its own: four blocks, the end one filled red."""
++
++    CSS = BASE_CSS + f"Strip > Label:last-of-type {{ background: {RED_CSS}; }}"
++
++    def compose(self) -> ComposeResult:
++        with Board():
++            with Strip():
++                for text in ("one", "two", "three", "four"):
++                    yield Label(text)
++
++
++class StartBlockApp(App):
++    """Strip 2 of the captures on its own: four blocks, the start one filled teal."""
++
++    CSS = BASE_CSS + f"Strip > Label:first-of-type {{ background: {TEAL_CSS}; }}"
++
++    def compose(self) -> ComposeResult:
++        with Board():
++            with Strip():
++                for text in ("one", "two", "three", "four"):
++                    yield Label(text)
++
++
++class OffBlockApp(App):
++    """Strip 3 of the captures on its own: the switched-off block is filled grey."""
++
++    CSS = BASE_CSS + f"Strip > Label:disabled {{ background: {GREY_CSS}; }}"
++
++    def compose(self) -> ComposeResult:
++        with Board():
++            with Strip():
++                for text in ("on", "on", "off", "on"):
++                    yield Label(text, disabled=text == "off")
++
++
++class PinnedBlockApp(App):
++    """Strip 4 of the captures on its own: the block named 'pinned' is filled blue."""
++
++    CSS = BASE_CSS + f"#pinned {{ background: {BLUE_CSS}; }}"
++
++    def compose(self) -> ComposeResult:
++        with Board():
++            with Strip():
++                yield Label("note")
++                yield Label("pinned", id="pinned")
++                yield Label("note")
++                yield Label("note")
++
++
++class SingleColourStripApp(App):
++    """Strip 5 of the captures beside a plain one: it is filled purple end to end while
++    the neighbouring strip is not, exactly as the captures show them stacked."""
++
++    CSS = BASE_CSS + f"#strip-e > Label {{ background: {PURPLE_CSS}; }}"
++
++    def compose(self) -> ComposeResult:
++        with Board():
++            with Strip(id="strip-a"):
++                for text in ("one", "two", "three", "four"):
++                    yield Label(text)
++            with Strip(id="strip-e"):
++                for text in ("x", "y", "z", "w"):
++                    yield Label(text)
++
++
++# --------------------------------------------------------------------------------------
++# f2p -- the difference between capture 1 and capture 2
++# --------------------------------------------------------------------------------------
++async def test_board_keeps_its_look_after_the_window_goes_behind_and_returns():
++    """Capture 1 and capture 2 must be the same screen: after the window goes behind
++    another window and comes back, every block is still drawn as it was first drawn."""
++    app = BoardApp()
++    async with app.run_test(size=(100, 34)) as pilot:
++        assert_fills(board_expectation(app), "as first drawn")
++        await window_goes_behind_and_returns(app, pilot)
++        assert_fills(board_expectation(app), "after the window came back")
++
++
++async def test_end_highlight_survives_the_window_going_behind_and_returning():
++    """Strip 1: the red fill on the end block is still there afterwards."""
++    app = EndBlockApp()
++    async with app.run_test(size=(100, 10)) as pilot:
++        strip = app.query_one(Strip)
++
++        def expectation() -> dict[Widget, Color]:
++            blocks = list(strip.children)
++            return {block: (RED if block is blocks[-1] else IDLE) for block in blocks}
++
++        assert_fills(expectation(), "as first drawn")
++        await window_goes_behind_and_returns(app, pilot)
++        assert_fills(expectation(), "after the window came back")
++
++
++async def test_start_highlight_survives_the_window_going_behind_and_returning():
++    """Strip 2: the teal fill on the start block is still there afterwards."""
++    app = StartBlockApp()
++    async with app.run_test(size=(100, 10)) as pilot:
++        strip = app.query_one(Strip)
++
++        def expectation() -> dict[Widget, Color]:
++            blocks = list(strip.children)
++            return {block: (TEAL if block is blocks[0] else IDLE) for block in blocks}
++
++        assert_fills(expectation(), "as first drawn")
++        await window_goes_behind_and_returns(app, pilot)
++        assert_fills(expectation(), "after the window came back")
++
++
++async def test_off_block_keeps_its_fill_when_the_window_goes_behind_and_returns():
++    """Strip 3: the grey fill on the switched-off block is still there afterwards."""
++    app = OffBlockApp()
++    async with app.run_test(size=(100, 10)) as pilot:
++        strip = app.query_one(Strip)
++
++        def expectation() -> dict[Widget, Color]:
++            return {
++                block: (GREY if block.disabled else IDLE) for block in strip.children
++            }
++
++        assert_fills(expectation(), "as first drawn")
++        await window_goes_behind_and_returns(app, pilot)
++        assert_fills(expectation(), "after the window came back")
++
++
++async def test_pinned_block_keeps_its_fill_when_the_window_goes_behind_and_returns():
++    """Strip 4: the blue fill on the block named 'pinned' is still there afterwards."""
++    app = PinnedBlockApp()
++    async with app.run_test(size=(100, 10)) as pilot:
++        strip = app.query_one(Strip)
++
++        def expectation() -> dict[Widget, Color]:
++            return {
++                block: (BLUE if block.id == "pinned" else IDLE)
++                for block in strip.children
++            }
++
++        assert_fills(expectation(), "as first drawn")
++        await window_goes_behind_and_returns(app, pilot)
++        assert_fills(expectation(), "after the window came back")
++
++
++async def test_single_colour_strip_survives_the_window_going_behind_and_returning():
++    """Strip 5: the strip that is filled purple end to end still is afterwards, and the
++    plain strip stacked with it still is not."""
++    app = SingleColourStripApp()
++    async with app.run_test(size=(100, 14)) as pilot:
++        purple_strip = app.query_one("#strip-e", Strip)
++        plain_strip = app.query_one("#strip-a", Strip)
++
++        def expectation() -> dict[Widget, Color]:
++            expected: dict[Widget, Color] = {
++                block: PURPLE for block in purple_strip.children
++            }
++            expected.update({block: IDLE for block in plain_strip.children})
++            return expected
++
++        assert_fills(expectation(), "as first drawn")
++        await window_goes_behind_and_returns(app, pilot)
++        assert_fills(expectation(), "after the window came back")
++
++
++# --------------------------------------------------------------------------------------
++# p2p -- these already hold before any change here, and must keep holding
++# --------------------------------------------------------------------------------------
++async def test_board_looks_right_when_it_is_first_drawn():
++    """Capture 1 itself. Anti-band-aid: dropping the affected fills altogether, so that
++    the screen is merely consistent, is not a fix."""
++    app = BoardApp()
++    async with app.run_test(size=(100, 34)):
++        assert_fills(board_expectation(app), "as first drawn")
++
++
++async def test_flagged_block_is_the_one_that_is_never_affected():
++    """The amber fill on the "flagged" block is the same in both captures; it must stay
++    that way, before and after any change here."""
++    app = BoardApp()
++    async with app.run_test(size=(100, 34)) as pilot:
++        strip = app.query_one("#strip-f", Strip)
++
++        def expectation() -> dict[Widget, Color]:
++            return {
++                block: (AMBER if block.has_class("flagged") else IDLE)
++                for block in strip.children
++            }
++
++        assert_fills(expectation(), "as first drawn")
++        await window_goes_behind_and_returns(app, pilot)
++        assert_fills(expectation(), "after the window came back")
++
++
++async def test_scenario_is_non_vacuous():
++    """Guards against the screen degenerating into something the assertions hold for
++    trivially."""
++    app = BoardApp()
++    async with app.run_test(size=(100, 34)) as pilot:
++        expected = board_expectation(app)
++
++        # The screen really does show the six different fills of capture 1, so neither
++        # "everything is idle" nor "everything is highlighted" can satisfy it.
++        assert len(set(expected.values())) == 7, (
++            f"scenario is broken: the screen only uses {set(expected.values())}"
++        )
++
++        # The strips whose fill depends on a block's position really do hold blocks that
++        # nothing else tells apart: same type, no id, no marker.
++        for strip_id in ("strip-a", "strip-b"):
++            blocks = list(app.query_one(f"#{strip_id}", Strip).children)
++            assert len(blocks) == 4
++            assert len({type(block) for block in blocks}) == 1
++            assert all(block.id is None and not block.classes for block in blocks)
++
++        # Every block really is painted after the window comes back -- the assertions are
++        # not passing over blocks that were left blank.
++        await window_goes_behind_and_returns(app, pilot)
++        assert all(
++            block.styles.background is not None for block in app.query(Label)
++        ), "some block ended up with no fill at all"
++
++        with pytest.raises(NoMatches):
++            app.query_one("#no-such-block-exists")

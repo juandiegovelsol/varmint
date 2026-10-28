@@ -1,0 +1,46 @@
+{
+  "behavior_in_task_description": {
+    "outcome": "pass",
+    "explanation": "instruction.md is intentionally minimal prose ('something bad happens... see the attached screenshots') but explicitly directs the agent to read the two screenshots before making changes, and screenshot 2 contains the actual crash traceback (IndexError: pop index out of range in scripts/ui/focus_matrix.py:121 adjust_row, called from add_to_map, called during fullscreen startup). That traceback is the exact behavior the f2p tests exercise (adjust_row/add_to_map misbehaving at scaled/fullscreen resolutions), and the p2p tests just guard existing windowed behavior, which is implicit expected non-regression. For this visual_bug_fix task type the screenshots serve as the normative description, and they carry the file/line/exception details needed to reproduce and scope the fix."
+  },
+  "behavior_in_tests": {
+    "outcome": "pass",
+    "explanation": "The only behavior described (the fullscreen startup crash) is directly exercised by the f2p tests (AdjustRowAtScale, BuildMapAtScale at 1080p/1440p/4K), and the implicit requirement that windowed play must keep working is covered by the p2p WindowedBehaviourUnchanged tests. No described behavior is left untested."
+  },
+  "informative_test_structure": {
+    "outcome": "pass",
+    "explanation": "tests/test_focus_matrix.py (added via test.patch) is well organized into clearly named classes (AdjustRowAtScale, BuildMapAtScale, WindowedBehaviourUnchanged) each carrying a docstring labeling it as f2p or p2p, a module docstring explaining the root cause, and per-assertion failure messages explaining what is being checked."
+  },
+  "anti_cheating_measures": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile clones the repo, checks out the base commit, then deletes .git and re-inits a single-commit repo so the agent cannot inspect the future fix commit/PR history. tests/ and solution/ are not copied into the image (only supplied at verify time). The agent runs with network_mode = 'no-network' (task.toml), preventing it from fetching the real upstream fix or diff from GitHub. The screenshots reveal only the crash symptom/location, not the fix itself."
+  },
+  "structured_data_schema": {
+    "outcome": "not_applicable",
+    "explanation": "This is a source-code bug-fix task verified by running a pytest suite against library functions; there is no API/JSON/CSV output schema the agent must produce."
+  },
+  "pinned_dependencies": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile pins all Python dependencies to specific compatible-release or exact versions (e.g. pygame-ce~=2.2, pygame-gui==0.6.13, ujson~=5.7, pytest~=8.2, etc.), consistent with (and in the pygame-gui case, tighter than) the project's own pyproject.toml constraints, so the environment build is reproducible."
+  },
+  "typos": {
+    "outcome": "pass",
+    "explanation": "No typos found in filenames, commands, or identifiers. Asset paths (/app/.harbor_assets/bug_screenshot_{1,2}.png) are consistent across the Dockerfile, ASSET_MANIFEST.json, evidence_bundle.json, and instruction.md. Commit hashes are valid 40-character SHAs and were verified against the real upstream repository."
+  },
+  "tests_or_solution_in_image": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile only copies environment/assets/ into the image and explicitly comments that tests/ and solution/ are intentionally not copied in, relying on the harness to bind-mount them at verify time."
+  },
+  "test_deps_in_image": {
+    "outcome": "pass",
+    "explanation": "pytest, pygame-ce, and pygame-gui are pre-installed in the Dockerfile image build (needed for both the app and running tests), and test.sh explicitly notes it installs nothing further and simply checks the already-pinned versions, consistent with the verifier's no-network mode."
+  },
+  "hardcoded_solution": {
+    "outcome": "pass",
+    "explanation": "solution/solve.sh applies solution/fix.patch, a real unified diff against scripts/ui/focus_matrix.py that changes the actual computation (using scripts.game_structure.screen_settings.screen_x instead of a hard-coded 800) rather than printing or hardcoding a final answer. The patch was verified to be byte-for-byte identical to the real upstream fix commit 7a8d420b (PR #5226)."
+  },
+  "file_reference_mentioned": {
+    "outcome": "not_applicable",
+    "explanation": "The task does not require the agent to produce new output files for the tests to check; the tests validate behavior of existing source functions (scripts/ui/focus_matrix.py) after the agent edits them in place."
+  }
+}

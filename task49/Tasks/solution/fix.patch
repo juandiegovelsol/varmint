@@ -1,0 +1,38 @@
+diff --git a/opencti-platform/opencti-front/src/private/components/data/connectors/ConnectorWorkLine.tsx b/opencti-platform/opencti-front/src/private/components/data/connectors/ConnectorWorkLine.tsx
+index 854840f37ec6..0c7b2b9beeab 100644
+--- a/opencti-platform/opencti-front/src/private/components/data/connectors/ConnectorWorkLine.tsx
++++ b/opencti-platform/opencti-front/src/private/components/data/connectors/ConnectorWorkLine.tsx
+@@ -40,10 +40,11 @@ interface ConnectorWorkLineProps {
+   workProcessedNumber: number | null | undefined;
+   workErrors: WorkMessages | null | undefined;
+   readOnly?: boolean | undefined;
++  statusLabel?: string;
+ }
+ const ConnectorWorkLine: FunctionComponent<
+   ConnectorWorkLineProps
+-> = ({ workId, workName, workStatus, workReceivedTime, workEndTime, workExpectedNumber, workProcessedNumber, workErrors, readOnly }) => {
++> = ({ workId, workName, workStatus, workReceivedTime, workEndTime, workExpectedNumber, workProcessedNumber, workErrors, readOnly, statusLabel }) => {
+   const { t_i18n, nsdt } = useFormatter();
+ 
+   const [commit] = useApiMutation(connectorWorksWorkDeletionMutation);
+@@ -96,7 +97,7 @@ const ConnectorWorkLine: FunctionComponent<
+             </Grid>
+             <Grid item xs={4}>
+               <Label>
+-                {t_i18n('Status')}
++                {statusLabel ?? t_i18n('Status')}
+               </Label>
+               <TaskStatus status={workStatus} label={t_i18n(workStatus)} />
+             </Grid>
+diff --git a/opencti-platform/opencti-front/src/private/components/drafts/DraftRoot.tsx b/opencti-platform/opencti-front/src/private/components/drafts/DraftRoot.tsx
+index 1da7aa3d8527..d036a61ffc38 100644
+--- a/opencti-platform/opencti-front/src/private/components/drafts/DraftRoot.tsx
++++ b/opencti-platform/opencti-front/src/private/components/drafts/DraftRoot.tsx
+@@ -190,6 +190,7 @@ const RootDraftComponent = ({ draftId, queryRef, refetch }: RootDraftComponentPr
+                 workExpectedNumber={validationWork.tracking?.import_processed_number}
+                 workProcessedNumber={validationWork.tracking?.import_expected_number}
+                 workErrors={validationWork.errors}
++                statusLabel={t_i18n('Validation progress')}
+                 readOnly
+               />
+             </Paper>

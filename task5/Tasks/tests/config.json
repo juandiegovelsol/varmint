@@ -1,0 +1,21 @@
+{
+  "task_id": "ivark__antimatterdimensionssourcecode-2808-mm",
+  "verifier_mode": "test_execution",
+  "test_framework": "jest@27 + custom SFC transformer (script + compiled template) + jsdom (synthetic)",
+  "test_files": [
+    "src/components/tabs/celestial-pelle/__tests__/PelleRiftBar.reactivity.spec.js"
+  ],
+  "f2p": [
+    "PelleRiftBar_tooltip_description_tracks_cycling_word_across_ticks",
+    "PelleRiftBar_tooltip_resource_text_tracks_drain_source_across_ticks",
+    "PelleRiftBar_tooltip_highlight_tracks_milestone_unlock_across_ticks",
+    "PelleRiftBar_bar_markers_track_milestone_unlock_across_ticks"
+  ],
+  "p2p": [
+    "PelleRiftBar_tooltip_shows_milestone_description_after_tick",
+    "PelleRiftBar_renders_percentage_readout",
+    "PelleRiftBar_tooltip_follows_newly_hovered_milestone_without_tick",
+    "PelleRiftBar_tooltip_element_is_not_rebuilt_each_tick"
+  ],
+  "notes": "Synthetic behavioral tests. The component is truly mounted together with the real CustomizeableTooltip (templates compiled by the custom transformer via vue-template-compiler, already in node_modules); the game tick is driven by calling vm.update() as GameUI does, hovering goes through the component's own mousemove handler, and assertions read only rendered output. f2p: all four milestone-derived surfaces must track their untracked sources across ticks - the tooltip's description line, its resource line, its own highlight, and the markers along the bar (the last one flips a milestone the pointer is NOT on, so a fix that refreshes only the hovered milestone still fails). All four are frozen on base b07bff4e. p2p: the description renders, the percentage readout renders, the tooltip follows a newly hovered milestone without waiting for a tick (passes on base - guards against a tick-only cache), and the tooltip element survives across ticks rather than being rebuilt (guards against forcing refreshes by re-keying and tearing the tooltip down)."
+}

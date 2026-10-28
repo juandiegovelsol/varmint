@@ -1,0 +1,60 @@
+version = "1.0"
+
+[metadata]
+task_id = "recharts__recharts-5099-mm"
+title = "Full-circle polar chart puts the wrong series on the wrong spoke"
+repository_name = "recharts/recharts"
+repo_url = "https://github.com/recharts/recharts"
+issue_number = 5099
+pr_number = 7550
+base_commit = "1552fe08a39632ebff75882b0f765c239809fbba"
+fix_commit = "553e77b3b3ab71457c417795c41285fba37b1608"
+task_type = "data_viz_correctness"
+language = "TypeScript"
+framework = "React / recharts"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = """Two defects share one root cause and the prompt describes neither of them. It states only the invariant that must hold - label, drawn series and hovered series agree on every spoke - and then shows two renders. Every symptom, and therefore the entire diagnosis, has to be read off the pixels; there is no corrected-state render to compare against either.
+
+bug.png carries three separate signals that exist nowhere in the text: the cursor sits beside one spoke while the tooltip names another, the tooltip box is parked in the top-left corner of the plot rather than near the cursor, and the readout resolves to the plot origin. Together they identify a failed interval lookup falling through to a sentinel, not a styling or rendering problem, and the cursor's position is the only indication of which arc of the circle is affected. mismatch.png supplies the second defect with no pointer involved at all: next to the data table, the spoke labelled with the largest value is plotted shortest. Recognising that the displacement is a whole number of spokes - and therefore an offset applied in the wrong direction rather than an arithmetic slip - is what points at the band offset. Neither screenshot is described in words, so an agent that does not read them has only "the chart is inconsistent with its own axis" to work from.
+
+Localizing means finding that the offset is computed independently in three places that must agree: the rendered axis ticks, the tooltip's own tick list, and the graphical item's points. Only the last one is right. The two wrong ones derive the offset's sign from the axis range direction, so they agree with each other and with the geometry on a descending circle (the default) and drift two full bands away from it on an ascending one. Fixing only the axis ticks leaves the tooltip disagreeing with the labels; fixing only the tooltip leaves the labels disagreeing with the data. The pass-to-pass consistency guard fails on either half, so a partial fix cannot score 1.0.
+
+The wrap-around arc is the more discoverable half, and a general nearest-tick rewrite of the interval search closes it - that alone passes all five pointer-attribution tests and still fails both placement tests, because it never touches the offset. Hardcoding the arc from the screenshot fails three of the five pointer tests, which use layouts whose dead arcs sit in three other places (4, 5 and 6 series over 0..360, 45..405 and 90..450)."""
+files_edited = [
+  "src/state/selectors/axisSelectors.ts",
+  "src/state/selectors/tooltipSelectors.ts",
+  "src/util/getActiveCoordinate.ts",
+]
+f2p = [
+  "resolves every pointer angle to the nearest spoke with 4 series laid out over 0..360",
+  "resolves every pointer angle to the nearest spoke with 5 series laid out over 0..360",
+  "resolves every pointer angle to the nearest spoke with 6 series laid out over 45..405",
+  "resolves every pointer angle to the nearest spoke with 4 series laid out over 90..450",
+  "renders the nearest series in the tooltip for a pointer near where the circle wraps",
+  "plots each series on the spoke carrying its own axis label over 0..360",
+  "plots each series on the spoke carrying its own axis label over 45..405",
+]
+p2p = [
+  "agrees with the tooltip: hovering a labelled spoke names the series plotted there",
+  "places each series on its own labelled spoke in the default orientation",
+  "sweeps a default-orientation radar and reaches every series",
+  "keeps per-slice hovering on a pie working",
+]
+tags = ["multimodal", "data_viz_correctness", "recharts", "react", "typescript"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "no-network"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

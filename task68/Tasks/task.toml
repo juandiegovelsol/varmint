@@ -1,0 +1,142 @@
+version = "1.0"
+
+[metadata]
+task_id = "CesiumGS__cesium-12521-mm"
+title = "Cylinder bounds are mislabeled in Voxel Inspector"
+repository_name = "CesiumGS/cesium"
+repo_url = "https://github.com/CesiumGS/cesium"
+issue_number = 12521
+pr_number = 12522
+base_commit = "88bfd9547927bbdcb2cbdfd1950ba8b0d275ff32"
+fix_commit = "466f780f3a50d6edd17b1f27e1cde5f86ce10128"
+task_type = "visual_bug_fix"
+language = "JavaScript"
+framework = "Cesium's own Karma/Jasmine spec harness (headless Chromium, real DOM; no WebGL context needed). From-scratch spec (no VoxelInspectorViewModelSpec.js existed before this task -- the pre-existing VoxelInspectorSpec.js only covers construction/destruction) driving the real VoxelInspectorViewModel class with a lightweight mock scene + mock voxel primitive."
+cross_file = false
+visual_essentiality = "essential"
+difficulty = "hard"
+difficulty_explanation = """
+This task bundles the real, historical #12521 regression with four additional hand-authored
+regressions, all confined to the same file so the fix stays single-file but the model cannot
+stop after addressing the one defect the issue text and screenshots describe -- the test suite
+holds it to all five.
+
+1. (The reported issue.) A prior change (#12432) redefined a cylinder voxel shape's bound
+   Cartesian3 components from (radius, height, angle) to (radius, angle, height) -- confirmed
+   directly in VoxelCylinderShape's own (unchanged-by-this-bug) constructor, which already reads
+   _minimumAngle from DefaultMinBounds.y and _minimumHeight from DefaultMinBounds.z at this base
+   commit. VoxelInspectorViewModel.js's cylinder "Bounds"/"Clipping" editor properties
+   (boundsCylinderMax/MinHeight, boundsCylinderMax/MinAngle, and their clipping* counterparts)
+   were never updated to match: the "Height" properties still read/wrote the "y" (angle)
+   component and the "Angle" properties still read/wrote the "z" (height) component. Not a
+   cosmetic label swap (as the issue reporter initially guessed) but a genuine functional
+   cross-wiring: dragging "Height" changes the angular extent and dragging "Angle" changes the
+   height, exactly as shown in the attached screenshots (a "Max Height" field displaying pi, the
+   angle range; dragging "Max Height" visibly carving an angular wedge out of the rendered
+   cylinder). This is the ONLY defect the instruction text and screenshots describe, and the
+   screenshots are the only way to know which fields are swapped and by which component --
+   nothing in the text says "height" or "angle" or "y"/"z". The fix is 8 one-line component
+   swaps across 8 addProperty blocks (4 "Bounds", 4 "Clipping"); easy to under-fix (partially
+   forgetting Clipping, the min variants, or a single component argument) since Box and
+   Ellipsoid properties reuse the exact same getBoundSetter("boundKey", "y"|"z") helper with
+   different property names and must be left untouched.
+
+2. (Injected; named only by symptom in instruction.md, not by mechanism.) The shared addProperty() setter's numeric-to-boolean coercion
+   (used by every boolean property fed a numeric 0/1, e.g. from a checkbox: show, depthTest,
+   disableUpdate, debugDraw, jitter, nearestSampling) has its 0/1 check inverted, so numeric 1
+   turns a boolean property off and numeric 0 turns it on. Easy to miss because it lives in the
+   generic property-definition helper, not in any single named property, and a narrow fix that
+   only patches one call site (e.g. "show") still fails the parallel test on a different
+   property (jitter).
+
+3. (Injected; named only by symptom in instruction.md, not by mechanism.) shapeIsEllipsoid and shapeIsCylinder -- the two Display-panel flags
+   that pick which shape's Bounds/Clipping editor is shown -- have their VoxelShapeType
+   comparisons swapped, so a cylinder primitive reports shapeIsEllipsoid and vice versa. shapeIsBox
+   is untouched and must stay that way.
+
+4. (Injected; named only by symptom in instruction.md, not by mechanism.) setModelMatrix()'s
+   HeadingPitchRoll construction has pitch and roll cross-wired (angleZ feeds pitch, angleY feeds
+   roll), so the Transform panel's "Pitch" and "Roll" sliders (bound to angleY/angleZ
+   respectively) rotate the wrong axis of the primitive -- the same species of bug as the
+   reported issue (two UI-adjacent numeric channels swapped) but in the rotation math instead of
+   the bounds, and only detectable by reconstructing the expected rotation matrix independently
+   (Matrix3.fromHeadingPitchRoll) and comparing it against the primitive's actual modelMatrix,
+   not by reading back a stored field. angleX (heading) is untouched and must stay that way.
+
+5. (Injected; named only by symptom in instruction.md, not by mechanism.) The voxelPrimitive setter drops the assignment of the handle
+   returned by customShaderCompilationEvent.addEventListener(...) onto
+   this._customShaderCompilationRemoveCallback, so the very next `if (defined(...))` cleanup
+   check at the top of the same setter is permanently false: every previously-attached
+   shader-compilation listener leaks forever across primitive swaps, instead of being removed
+   before the next one attaches. The addEventListener call itself is untouched, so the new
+   listener still fires correctly -- only the old one's cleanup silently never happens, which is
+   why this is easy to leave in place even after everything else is fixed.
+
+instruction.md's "Other things noticed while investigating" section names the observable symptom
+of each of defects 2-5 in one plain sentence apiece (inverted checkboxes, the swapped
+Cylinder/Ellipsoid editor, the wrong rotation axis, stale shader-compile status after a primitive
+swap) -- exactly enough to tell a solver that behavior is wrong and where to start looking,
+without naming the property, the helper, the swapped component, or the fix. Fixing only defect 1
+(the one shown in the screenshots) leaves 4/5 defects in place and scores well under half of f2p;
+a correct submission must still independently locate and fix each of defects 2-5 in source, since
+instruction.md never names which property/line is wrong or how to fix it -- only that the
+described behavior is.
+"""
+files_edited = [
+  "packages/widgets/Source/VoxelInspector/VoxelInspectorViewModel.js",
+]
+f2p = [
+  "reads boundsCylinderMaxHeight from the height (z) component of maxBounds, not the angle (y) component (regression #12521)",
+  "setting boundsCylinderMaxHeight writes the height (z) component of maxBounds, leaving the angle (y) component unchanged (regression #12521)",
+  "reads boundsCylinderMinHeight from the height (z) component of minBounds, not the angle (y) component (regression #12521)",
+  "setting boundsCylinderMinHeight writes the height (z) component of minBounds, leaving the angle (y) component unchanged (regression #12521)",
+  "reads boundsCylinderMaxAngle from the angle (y) component of maxBounds, not the height (z) component (regression #12521)",
+  "setting boundsCylinderMaxAngle writes the angle (y) component of maxBounds, leaving the height (z) component unchanged (regression #12521)",
+  "reads boundsCylinderMinAngle from the angle (y) component of minBounds, not the height (z) component (regression #12521)",
+  "setting boundsCylinderMinAngle writes the angle (y) component of minBounds, leaving the height (z) component unchanged (regression #12521)",
+  "reads clippingCylinderMaxHeight from the height (z) component of maxClippingBounds, not the angle (y) component (regression #12521)",
+  "setting clippingCylinderMaxHeight writes the height (z) component of maxClippingBounds, leaving the angle (y) component unchanged (regression #12521)",
+  "reads clippingCylinderMinHeight from the height (z) component of minClippingBounds, not the angle (y) component (regression #12521)",
+  "setting clippingCylinderMinHeight writes the height (z) component of minClippingBounds, leaving the angle (y) component unchanged (regression #12521)",
+  "reads clippingCylinderMaxAngle from the angle (y) component of maxClippingBounds, not the height (z) component (regression #12521)",
+  "setting clippingCylinderMaxAngle writes the angle (y) component of maxClippingBounds, leaving the height (z) component unchanged (regression #12521)",
+  "reads clippingCylinderMinAngle from the angle (y) component of minClippingBounds, not the height (z) component (regression #12521)",
+  "setting clippingCylinderMinAngle writes the angle (y) component of minClippingBounds, leaving the height (z) component unchanged (regression #12521)",
+  "setting a boolean property to the numeric value 1 turns it on (show)",
+  "setting a boolean property to the numeric value 0 turns it off (show)",
+  "setting a different boolean property to the numeric value 1 turns it on (jitter), confirming the fix is not special-cased to a single property name",
+  "shapeIsCylinder is true and shapeIsEllipsoid is false when the primitive's shape is CYLINDER",
+  "shapeIsEllipsoid is true and shapeIsCylinder is false when the primitive's shape is ELLIPSOID",
+  "the model matrix's rotation reflects angleX/angleY/angleZ as heading/pitch/roll respectively",
+  "setting only angleY rotates the model matrix as a pure pitch, not a pure roll (regression risk: pitch/roll cross-wired)",
+  "setting only angleZ rotates the model matrix as a pure roll, not a pure pitch (regression risk: pitch/roll cross-wired)",
+  "removes the previous primitive's shader-compilation listener when a new voxelPrimitive is assigned",
+  "continues removing the immediately-previous primitive's listener on further swaps, not just the first one",
+]
+p2p = [
+  "still reads boundsCylinderMaxRadius from the radius (x) component of maxBounds (unaffected by the height/angle fix)",
+  "still reads clippingCylinderMinRadius from the radius (x) component of minClippingBounds (unaffected by the height/angle fix)",
+  "still writes boundsBoxMaxY to the box shape's maxBounds.y component (a distinct, box-only property sharing the same getBoundSetter('maxBounds','y') helper; must not be swapped by a fix scoped to cylinder-only properties)",
+  "still reads boundsEllipsoidMaxHeight from the ellipsoid shape's maxBounds.z component (ellipsoid already used z for height before this bug; must remain unaffected by the cylinder fix)",
+  "still updates the primitive's modelMatrix translation when translationX changes (unrelated ViewModel functionality, unaffected by the bounds/clipping fix)",
+  "still stores a plain numeric property (screenSpaceError) as the number itself, not coerced to a boolean, when set via a number (unaffected by the boolean-coercion fix)",
+  "still reports shapeIsBox correctly, with shapeIsCylinder and shapeIsEllipsoid both false, for a BOX-shaped primitive (unaffected by the cylinder/ellipsoid fix)",
+  "still rotates the model matrix as a pure heading rotation when only angleX changes (unaffected by the pitch/roll fix)",
+  "still invokes the newly-assigned primitive's own shader-compilation callback correctly after a swap (unaffected by the listener-cleanup fix)",
+]
+tags = ["multimodal", "ui_bug_fix", "widget", "tier_b_static_gate"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

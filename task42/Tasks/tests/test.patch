@@ -1,0 +1,470 @@
+diff --git a/tests/test_scroll_frame_updates.py b/tests/test_scroll_frame_updates.py
+new file mode 100644
+index 0000000..79c19d1
+--- /dev/null
++++ b/tests/test_scroll_frame_updates.py
+@@ -0,0 +1,464 @@
++"""Frame-update contract for scrolling containers.
++
++The compositor is free to write the terminal in small pieces instead of
++redrawing the whole screen every frame.  The contract that makes that safe is
++simply this: *whatever the app writes in a frame must leave the terminal
++showing the same thing a complete redraw of that frame would have shown*.  A
++frame that changes the composition but writes nothing for the changed cells
++leaves the previous frame's characters stranded on screen.
++
++These tests model the terminal by replaying the update renderables the app
++hands to its driver, and compare that model with a fresh full render of the
++same composition.  Nothing here asserts *how* a frame is produced -- only that
++the bytes written and the composition agree.
++
++Every expectation is recomputed at run time from the app that was built, so
++the tests carry no transcribed screen dumps.
++"""
++
++from __future__ import annotations
++
++from rich.control import ControlType
++
++from textual._cells import cell_len
++from textual.app import App, ComposeResult
++from textual.containers import HorizontalScroll, VerticalScroll
++from textual.geometry import Region
++from textual.widgets import Static
++
++# ---------------------------------------------------------------------------
++# Terminal model
++# ---------------------------------------------------------------------------
++
++
++class TerminalModel:
++    """A model of the cells an app has actually written to the terminal.
++
++    Update renderables position the cursor with a move-to control code and then
++    emit text; replaying those two things is enough to know exactly what a real
++    terminal would be showing.
++    """
++
++    def __init__(self, width: int, height: int) -> None:
++        self.width = width
++        self.height = height
++        self.cells: list[list[str]] = [[" "] * width for _ in range(height)]
++        self.frames: list[set[tuple[int, int]]] = []
++
++    def apply(self, renderable, console) -> None:
++        """Replay one update renderable on to the model."""
++        if renderable is None:
++            return
++        painted: set[tuple[int, int]] = set()
++        cursor_x = cursor_y = 0
++        options = console.options.update(width=self.width, height=self.height)
++        for segment in console.render(renderable, options):
++            if segment.control:
++                for code in segment.control:
++                    if code[0] is ControlType.CURSOR_MOVE_TO:
++                        cursor_x, cursor_y = int(code[1]), int(code[2])
++                continue
++            for character in segment.text:
++                if character in "\n\r":
++                    continue
++                width = max(cell_len(character), 1)
++                for column in range(cursor_x, cursor_x + width):
++                    if 0 <= cursor_y < self.height and 0 <= column < self.width:
++                        self.cells[cursor_y][column] = (
++                            character if column == cursor_x else ""
++                        )
++                        painted.add((column, cursor_y))
++                cursor_x += width
++        if painted:
++            self.frames.append(painted)
++
++    def lines(self) -> list[str]:
++        return ["".join(row) for row in self.cells]
++
++    def rows(self, region: Region) -> list[str]:
++        """The modelled text inside a region of the screen."""
++        out = []
++        for y in range(region.y, region.y + region.height):
++            if 0 <= y < self.height:
++                out.append("".join(self.cells[y][region.x : region.x + region.width]))
++        return out
++
++    def mark(self) -> int:
++        return len(self.frames)
++
++    def painted_since(self, mark: int) -> set[tuple[int, int]]:
++        painted: set[tuple[int, int]] = set()
++        for frame in self.frames[mark:]:
++            painted |= frame
++        return painted
++
++
++class WatchedApp(App[None]):
++    """An app that records everything it writes to its driver."""
++
++    SIZE = (40, 14)
++
++    def __init__(self) -> None:
++        super().__init__()
++        self.terminal = TerminalModel(*self.SIZE)
++
++    def _display(self, screen, renderable) -> None:  # noqa: D102
++        self.terminal.apply(renderable, self.console)
++        super()._display(screen, renderable)
++
++
++def composited_lines(app: WatchedApp) -> list[str]:
++    """A complete redraw of the current composition -- what the screen should show."""
++    return [strip.text for strip in app.screen._compositor.render_strips()]
++
++
++def composited_rows(app: WatchedApp, region: Region) -> list[str]:
++    lines = composited_lines(app)
++    return [
++        lines[y][region.x : region.x + region.width]
++        for y in range(region.y, region.y + region.height)
++        if 0 <= y < len(lines)
++    ]
++
++
++def changed_cells(before: list[str], after: list[str]) -> set[tuple[int, int]]:
++    cells: set[tuple[int, int]] = set()
++    for y, (old, new) in enumerate(zip(before, after)):
++        for x, (old_char, new_char) in enumerate(zip(old, new)):
++            if old_char != new_char:
++                cells.add((x, y))
++    return cells
++
++
++async def settle(pilot, frames: int = 6) -> None:
++    """Let the app run several frames so nothing is judged mid-update."""
++    for _ in range(frames):
++        await pilot.pause()
++
++
++# ---------------------------------------------------------------------------
++# Palette one: a tall column of crates in a vertically scrolling box
++# ---------------------------------------------------------------------------
++
++
++class CargoApp(WatchedApp):
++    SIZE = (40, 14)
++    CSS = """
++    Screen { layout: vertical; }
++    #hold { height: 8; width: 30; margin: 1 4; }
++    #hold > Static { height: 3; width: 100%; }
++    #tally { height: 2; width: 30; margin: 0 4; }
++    """
++
++    def compose(self) -> ComposeResult:
++        with VerticalScroll(id="hold"):
++            for index in range(12):
++                yield Static(f"crate-{index:02d} " + "=" * (index + 1), id=f"crate{index:02d}")
++        yield Static("tally alpha", id="tally")
++
++
++# ---------------------------------------------------------------------------
++# Palette two: a strip of tape segments in a horizontally scrolling box
++# ---------------------------------------------------------------------------
++
++
++class TapeApp(WatchedApp):
++    SIZE = (52, 11)
++    CSS = """
++    Screen { layout: vertical; }
++    #deck { height: 5; width: 26; margin: 2 3; }
++    #deck > Static { width: 12; height: 100%; }
++    #gauge { height: 2; width: 26; margin: 0 3; }
++    """
++
++    def compose(self) -> ComposeResult:
++        with HorizontalScroll(id="deck"):
++            for letter in "ABCDEFGH":
++                yield Static(
++                    f"seg{letter}\n{letter * 8}\n{letter.lower() * 6}", id=f"t{letter}"
++                )
++        yield Static("gauge one", id="gauge")
++
++
++# ---------------------------------------------------------------------------
++# f2p -- a scroll and a layout that land in the same frame
++# ---------------------------------------------------------------------------
++
++
++async def test_vertical_box_has_no_stale_cells_when_a_layout_shares_the_frame():
++    """Returning to a previously laid-out offset must still redraw the box."""
++    app = CargoApp()
++    async with app.run_test(size=CargoApp.SIZE) as pilot:
++        await settle(pilot)
++        box = app.query_one("#hold", VerticalScroll)
++        anchor, away = 0, 9
++
++        box.scroll_y = anchor
++        await settle(pilot)
++        box.refresh(layout=True, repaint=False)
++        await settle(pilot)
++        assert app.terminal.lines() == composited_lines(app)
++
++        box.scroll_y = away
++        await settle(pilot)
++        assert app.terminal.lines() == composited_lines(app)
++        assert box.scroll_offset.y == away
++
++        # A scroll back to the anchor and a layout request in the same frame.
++        box.scroll_y = anchor
++        box.refresh(layout=True, repaint=False)
++        await settle(pilot)
++
++        assert box.scroll_offset.y == anchor
++        assert app.terminal.lines() == composited_lines(app)
++
++
++async def test_vertical_box_shows_the_anchor_rows_when_a_layout_shares_the_frame():
++    """The crates on screen must be the ones at the offset we scrolled back to."""
++    app = CargoApp()
++    async with app.run_test(size=CargoApp.SIZE) as pilot:
++        await settle(pilot)
++        box = app.query_one("#hold", VerticalScroll)
++        anchor, away = 0, 9
++
++        box.scroll_y = anchor
++        await settle(pilot)
++        box.refresh(layout=True, repaint=False)
++        await settle(pilot)
++        region = box.region
++        expected_anchor_rows = composited_rows(app, region)
++
++        box.scroll_y = away
++        await settle(pilot)
++        away_rows = app.terminal.rows(region)
++        # The scenario is only meaningful if the two offsets look different.
++        assert away_rows != expected_anchor_rows
++
++        box.scroll_y = anchor
++        box.refresh(layout=True, repaint=False)
++        await settle(pilot)
++
++        assert app.terminal.rows(region) == expected_anchor_rows
++
++
++async def test_every_cell_the_shared_frame_changed_was_written_to_the_terminal():
++    """The frame's writes must cover every cell whose content moved on."""
++    app = CargoApp()
++    async with app.run_test(size=CargoApp.SIZE) as pilot:
++        await settle(pilot)
++        box = app.query_one("#hold", VerticalScroll)
++        anchor, away = 0, 9
++
++        box.scroll_y = anchor
++        await settle(pilot)
++        box.refresh(layout=True, repaint=False)
++        await settle(pilot)
++
++        box.scroll_y = away
++        await settle(pilot)
++        before = app.terminal.lines()
++
++        mark = app.terminal.mark()
++        box.scroll_y = anchor
++        box.refresh(layout=True, repaint=False)
++        await settle(pilot)
++
++        after = composited_lines(app)
++        must_be_painted = changed_cells(before, after)
++        assert must_be_painted, "the two offsets are indistinguishable"
++        assert must_be_painted <= app.terminal.painted_since(mark)
++
++
++async def test_a_neighbours_layout_change_does_not_swallow_the_pending_scroll():
++    """The layout request may come from an entirely different widget."""
++    app = CargoApp()
++    async with app.run_test(size=CargoApp.SIZE) as pilot:
++        await settle(pilot)
++        box = app.query_one("#hold", VerticalScroll)
++        tally = app.query_one("#tally", Static)
++        anchor, away = 0, 9
++
++        box.scroll_y = anchor
++        await settle(pilot)
++        box.refresh(layout=True, repaint=False)
++        await settle(pilot)
++        region = box.region
++        expected_anchor_rows = composited_rows(app, region)
++
++        box.scroll_y = away
++        await settle(pilot)
++        assert app.terminal.rows(region) != expected_anchor_rows
++
++        box.scroll_y = anchor
++        tally.update("tally beta")
++        await settle(pilot)
++
++        assert app.terminal.rows(region) == expected_anchor_rows
++        assert app.terminal.lines() == composited_lines(app)
++
++
++async def test_horizontal_box_has_no_stale_cells_when_a_layout_shares_the_frame():
++    app = TapeApp()
++    async with app.run_test(size=TapeApp.SIZE) as pilot:
++        await settle(pilot)
++        box = app.query_one("#deck", HorizontalScroll)
++        anchor, away = 24, 60
++
++        box.scroll_x = anchor
++        await settle(pilot)
++        box.refresh(layout=True, repaint=False)
++        await settle(pilot)
++        assert app.terminal.lines() == composited_lines(app)
++
++        box.scroll_x = away
++        await settle(pilot)
++        assert app.terminal.lines() == composited_lines(app)
++
++        box.scroll_x = anchor
++        box.refresh(layout=True, repaint=False)
++        await settle(pilot)
++
++        assert box.scroll_offset.x == anchor
++        assert app.terminal.lines() == composited_lines(app)
++
++
++async def test_horizontal_box_shows_the_anchor_columns_when_a_layout_shares_the_frame():
++    app = TapeApp()
++    async with app.run_test(size=TapeApp.SIZE) as pilot:
++        await settle(pilot)
++        box = app.query_one("#deck", HorizontalScroll)
++        gauge = app.query_one("#gauge", Static)
++        anchor, away = 24, 60
++
++        box.scroll_x = anchor
++        await settle(pilot)
++        box.refresh(layout=True, repaint=False)
++        await settle(pilot)
++        region = box.region
++        expected_anchor_columns = composited_rows(app, region)
++
++        box.scroll_x = away
++        await settle(pilot)
++        assert app.terminal.rows(region) != expected_anchor_columns
++
++        box.scroll_x = anchor
++        gauge.update("gauge two")
++        await settle(pilot)
++
++        assert app.terminal.rows(region) == expected_anchor_columns
++
++
++# ---------------------------------------------------------------------------
++# p2p -- the neighbouring behaviour a heavy-handed repair would damage
++# ---------------------------------------------------------------------------
++
++
++async def test_a_lone_widget_repaint_leaves_the_rest_of_the_screen_alone():
++    """Repainting one widget must not turn into a whole-screen redraw."""
++    app = CargoApp()
++    async with app.run_test(size=CargoApp.SIZE) as pilot:
++        await settle(pilot)
++        tally = app.query_one("#tally", Static)
++        region = tally.region
++
++        mark = app.terminal.mark()
++        tally.update("tally gamma")
++        await settle(pilot)
++
++        painted = app.terminal.painted_since(mark)
++        assert painted, "the repaint wrote nothing at all"
++        outside = {(x, y) for (x, y) in painted if not region.contains(x, y)}
++        assert not outside
++
++
++async def test_a_layout_only_frame_composites_a_newly_mounted_widget():
++    app = CargoApp()
++    async with app.run_test(size=CargoApp.SIZE) as pilot:
++        await settle(pilot)
++        box = app.query_one("#hold", VerticalScroll)
++        box.scroll_y = 0
++        await settle(pilot)
++
++        await box.mount(Static("crate-new " + "=" * 3, id="cratenew"), before=0)
++        await settle(pilot)
++
++        newcomer = app.query_one("#cratenew", Static)
++        assert newcomer in app.screen._compositor.visible_widgets
++        assert app.terminal.lines() == composited_lines(app)
++        assert "crate-new" in "\n".join(app.terminal.rows(box.region))
++
++
++async def test_a_layout_only_frame_erases_a_removed_widget():
++    app = CargoApp()
++    async with app.run_test(size=CargoApp.SIZE) as pilot:
++        await settle(pilot)
++        box = app.query_one("#hold", VerticalScroll)
++        box.scroll_y = 0
++        await settle(pilot)
++        assert "crate-00" in "\n".join(app.terminal.rows(box.region))
++
++        await app.query_one("#crate00", Static).remove()
++        await settle(pilot)
++
++        assert "crate-00" not in "\n".join(app.terminal.rows(box.region))
++        assert app.terminal.lines() == composited_lines(app)
++
++
++async def test_a_layout_only_frame_leaves_the_scroll_offset_alone():
++    app = CargoApp()
++    async with app.run_test(size=CargoApp.SIZE) as pilot:
++        await settle(pilot)
++        box = app.query_one("#hold", VerticalScroll)
++        box.scroll_y = 6
++        await settle(pilot)
++        resting = box.scroll_offset
++
++        app.query_one("#tally", Static).update("tally delta")
++        await settle(pilot)
++
++        assert box.scroll_offset == resting
++
++
++async def test_a_scroll_only_frame_repaints_the_horizontal_box():
++    app = TapeApp()
++    async with app.run_test(size=TapeApp.SIZE) as pilot:
++        await settle(pilot)
++        box = app.query_one("#deck", HorizontalScroll)
++        region = box.region
++        start_columns = app.terminal.rows(region)
++
++        box.scroll_x = 36
++        await settle(pilot)
++
++        assert box.scroll_offset.x == 36
++        assert app.terminal.rows(region) != start_columns
++        assert app.terminal.lines() == composited_lines(app)
++
++
++async def test_a_resized_child_reports_its_new_size_on_a_layout_only_frame():
++    app = TapeApp()
++    async with app.run_test(size=TapeApp.SIZE) as pilot:
++        await settle(pilot)
++        box = app.query_one("#deck", HorizontalScroll)
++        child = app.query_one("#tA", Static)
++        old_width = child.size.width
++        old_virtual_width = box.virtual_size.width
++
++        child.styles.width = old_width + 7
++        await settle(pilot)
++
++        assert child.size.width == old_width + 7
++        assert box.virtual_size.width == old_virtual_width + 7
++        assert app.terminal.lines() == composited_lines(app)
++
++
++async def test_a_plain_screen_repaint_still_matches_a_full_render():
++    app = TapeApp()
++    async with app.run_test(size=TapeApp.SIZE) as pilot:
++        await settle(pilot)
++        app.query_one("#gauge", Static).update("gauge three")
++        app.screen.refresh()
++        await settle(pilot)
++
++        assert app.terminal.lines() == composited_lines(app)
++        assert "gauge three" in "\n".join(app.terminal.lines())

@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "checks": {
+        "behavior_in_task_description": {
+          "explanation": "instruction.md describes all three graded behaviors at the symptom level: the border-rendering issue (via the referenced screenshot), the 'different window shape' viewport-containment issue, and the 'switch to a different page' follow issue. All three map directly to the f2p tests (indicator layering/z-order/focus-mode, aspect-ratio viewport fit, and cross-page following). The task intentionally withholds implementation details (file/component/mechanism) as part of its designed difficulty, but that is a description of required behavior, not an omission of behavior the tests check — no test checks something the instruction never alludes to.",
+          "outcome": "pass"
+        },
+        "behavior_in_tests": {
+          "explanation": "Every behavior called out in instruction.md is exercised by tests/test.patch: the follow-border layering/occlusion (FollowingIndicatorLayering.test.tsx, including the focus-mode case), the aspect-ratio viewport containment, and the cross-page following. p2p tests only guard existing sibling behavior (toolbars, cursor chat bubble, no-indicator-when-not-following) against regression and don't need to be independently described in the instruction.",
+          "outcome": "pass"
+        },
+        "informative_test_structure": {
+          "explanation": "test.patch uses named describe/it blocks with substantial comments explaining the stacking-context rationale and what each assertion is actually checking (including why jsdom limitations shape the assertions). test.sh has clearly delimited sections ('== applying test.patch ==', '== running f2p + p2p tests ==') with the exact f2p/p2p identifiers echoed as comments, and verifier.py is thoroughly documented (reward policy, JUnit matching, rubric gate).",
+          "outcome": "pass"
+        },
+        "anti_cheating_measures": {
+          "explanation": "The Dockerfile clones the real repo, applies both hidden bug patches before snapshotting, then strips .git entirely (no fix-commit history/blame available) and deletes the bug patches and the authoring-only ASSET_MANIFEST.json from the agent-visible assets dir, leaving only the screenshot. tests/ and solution/ are never copied into the image (confirmed absent from the Dockerfile and comments explicitly call this out). test.sh resets any test files the agent may have touched to harbor_base before applying test.patch and scoring, so the agent cannot tamper with grading by editing test files.",
+          "outcome": "pass"
+        },
+        "structured_data_schema": {
+          "explanation": "This is a source-code bug-fix task (CSS/TSX/TS edits in an existing repo) with no structured output artifact (JSON/CSV/API/DB schema) expected from the agent.",
+          "outcome": "not_applicable"
+        },
+        "pinned_dependencies": {
+          "explanation": "JS dependencies are installed via `yarn install --immutable` against the repository's own committed yarn.lock (Yarn 4 via corepack, version pinned by the repo's packageManager field), and test.sh explicitly avoids adding any extra dependencies, relying on vitest/@testing-library already pinned in that lockfile. apt packages in the Dockerfile are unpinned but that is acceptable per the rubric's own carve-out for apt.",
+          "outcome": "pass"
+        },
+        "typos": {
+          "explanation": "No typos found in filenames, commands, identifiers, or prose across instruction.md, task.toml, Dockerfile, test.patch, test.sh, verifier.py, and the patch files; file paths referenced (e.g. FollowingIndicatorLayering.test.tsx, viewport-following.test.ts, Editor.ts, ui.css, TldrawUi.tsx) are internally consistent between config.json, test.patch, and fix.patch.",
+          "outcome": "pass"
+        },
+        "tests_or_solution_in_image": {
+          "explanation": "The Dockerfile only COPYs environment/assets/ (bugs, then stripped) into the image; it never copies tests/ or solution/, and comments explicitly document that these are supplied by the harness only at verify time, not baked into the agent-visible image.",
+          "outcome": "pass"
+        },
+        "test_deps_in_image": {
+          "explanation": "test.sh notes no additional test-only packages are installed at test time because vitest and @testing-library/react/dom are already part of packages/tldraw's own devDependencies and thus already resolved by the workspace-wide `yarn install --immutable` baked into the image build — these are pre-existing repo test infra, not task-specific additions smuggled into the image.",
+          "outcome": "pass"
+        },
+        "hardcoded_solution": {
+          "explanation": "solution/solve.sh applies solution/fix.patch, a real unified diff reversing the two injected bug patches and adding the FollowingIndicator relocation/CSS changes — it demonstrates the actual multi-file code change (Editor.ts, ui.css, TldrawUi.tsx) rather than printing or echoing a final answer value.",
+          "outcome": "pass"
+        },
+        "file_reference_mentioned": {
+          "explanation": "The task requires the agent to modify existing source files in place and does not require producing any new named output file for the tests to check, so there is no file reference that instruction.md would need to call out.",
+          "outcome": "not_applicable"
+        }
+      },
+      "cost_usd": 0.3165499000000001,
+      "task_name": "Tasks",
+      "error": null
+    }
+  ]
+}

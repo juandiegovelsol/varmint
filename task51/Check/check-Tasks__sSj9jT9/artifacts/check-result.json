@@ -1,0 +1,46 @@
+{
+  "behavior_in_task_description": {
+    "outcome": "pass",
+    "explanation": "instruction.md is terse in prose ('Bring the two themes into agreement, without leaving any control that Classic players can currently reach unreachable.') but embeds the two full-resolution screenshots directly in the file, and those screenshots contain the exact literal strings the tests check for ('AD Tickspeed: 1.000 / sec', '×1.125 faster per upgrade', the blank Classic region). This is a deliberately multimodal 'visual_bug_fix' task (tags include 'multimodal') where the images are the normative spec, not just illustrative examples referenced from outside the instruction — they are the instruction. The 'no control left unreachable' sentence explicitly covers the p2p/f2p purchase-reachability constraint the tests enforce. An agent with vision capability can recover every behavior the tests check directly from instruction.md."
+  },
+  "behavior_in_tests": {
+    "outcome": "pass",
+    "explanation": "Both behaviors stated in instruction.md are exercised: 'agreement between themes' is tested by mounting HeaderCenterContainer under both themes and requiring identical normalised text (while still containing live Tickspeed figures), and 'no control left unreachable' is tested by mounting each Antimatter Dimensions tab pre-Reality, pressing every button, and requiring a Tickspeed purchase to fire for both Classic (f2p) and Modern (p2p, must not regress)."
+  },
+  "informative_test_structure": {
+    "outcome": "pass",
+    "explanation": "test.patch is well organized: game-stubs.js documents each helper's purpose and why it exists (e.g. jsdom onclick realm issue, prototype patching), setup.js explains ordering requirements, and tickspeed-visibility.test.js has a clear header comment, descriptive it()-block names, and small named helper functions (renderHeader, pressEveryButton, countTickspeedPurchases) rather than one monolithic test."
+  },
+  "anti_cheating_measures": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile clones the repo, checks out the base commit, then deletes .git and re-inits a single-commit history so the agent cannot inspect future history/the fix PR. tests/ and solution/ are not copied into the image; they are supplied only at verify time. test.sh resets every path touched by test.patch back to the pristine harbor_base state before reapplying it, so an agent cannot tamper with the test files to inflate its score. The verifier computes reward purely from JUnit test execution results (rendered DOM / click behavior), never by grepping source for the fix, so string-matching source code cannot pass the task."
+  },
+  "structured_data_schema": {
+    "outcome": "not_applicable",
+    "explanation": "This is a UI visual-bug-fix task; there is no structured data output (API/JSON/CSV/DB schema) for the agent to produce."
+  },
+  "pinned_dependencies": {
+    "outcome": "pass",
+    "explanation": "Test-only dependencies installed in test.sh are pinned to exact versions (vitest@1.6.1, @vitejs/plugin-vue2@1.1.2, @vue/test-utils@1.3.6, jsdom@24.1.3, vue@2.7.16, vue-template-compiler@2.7.16), with an explicit comment on why vue/vue-template-compiler are bumped and pinned together. The image's own dependency install (`npm ci`) is governed by the repository's committed package-lock.json, which pins exact resolved versions."
+  },
+  "typos": {
+    "outcome": "pass",
+    "explanation": "Checked file paths, commit SHAs, PR/issue numbers, image URLs, and identifiers across instruction.md, task.toml, evidence_bundle.json, Dockerfile, ASSET_MANIFEST.json, tests/*, and solution/*. The base_commit and fix_commit SHAs both resolve on GitHub and are one commit apart as claimed; the referenced PR (#3034) and issue (#3020) both resolve; asset filenames/paths in the Dockerfile, ASSET_MANIFEST.json and instruction.md are consistent (/app/.harbor_assets/bug_modern.png, bug_classic.png); config.json's f2p/p2p strings match task.toml exactly. No typos found."
+  },
+  "tests_or_solution_in_image": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile only COPYs environment/assets/ (the two screenshots) into the image and explicitly comments that tests/ and solution/ are intentionally NOT copied in, being supplied by the harness at verify/solve time instead."
+  },
+  "test_deps_in_image": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile only installs the repository's own dependencies via `npm ci`. All test-only packages (vitest, @vitejs/plugin-vue2, @vue/test-utils, jsdom, and the bumped vue/vue-template-compiler) are installed inside tests/test.sh at verify time, isolated from the image build."
+  },
+  "hardcoded_solution": {
+    "outcome": "pass",
+    "explanation": "solution/solve.sh applies solution/fix.patch via `git apply`/`patch`, a genuine source-code diff that edits five Vue components to unify the two header implementations and preserve Classic's pre-Reality purchase path — it does not print/cat a literal answer. Cross-checked fix.patch against the real upstream fix commit (ee2db9b) via the GitHub API; the substantive changes match (with one immaterial fidelity difference: fix.patch leaves a now-inert `<span>{{ multiplierText }}</span>` in ClassicAntimatterDimensionsTab.vue that upstream removed, which does not affect any test-checked behavior since multiplierText safely defaults to an empty string)."
+  },
+  "file_reference_mentioned": {
+    "outcome": "not_applicable",
+    "explanation": "The agent is not required to author any new, specifically-named output file — the task is to edit existing Vue source files anywhere in the repository so that existing components (HeaderCenterContainer, the two AntimatterDimensionsTab variants) render/behave consistently. Tests exercise these pre-existing components directly rather than checking for a deliverable file with a fixed name."
+  }
+}

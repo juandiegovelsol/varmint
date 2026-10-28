@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="6" skipped="0" tests="13" time="6.891" timestamp="2026-08-14T21:02:41.776281+00:00" hostname="vm-b02dbb400a4a4edb"><testcase classname="tests.test_scroll_frame_updates" name="test_vertical_box_has_no_stale_cells_when_a_layout_shares_the_frame" time="0.712"><failure message="AssertionError: assert ['           ...       ', ...] == ['           ...       ', ...]&#10;  &#10;  At index 1 diff: '    crate-03 ====                       ' != '    crate-00 =                          '&#10;  &#10;  Full diff:&#10;    [&#10;        '                                        ',&#10;  -     '    crate-00 =                          ',...&#10;  &#10;  ...Full output truncated (22 lines hidden), use '-vv' to show">async def test_vertical_box_has_no_stale_cells_when_a_layout_shares_the_frame():
+        """Returning to a previously laid-out offset must still redraw the box."""
+        app = CargoApp()
+        async with app.run_test(size=CargoApp.SIZE) as pilot:
+            await settle(pilot)
+            box = app.query_one("#hold", VerticalScroll)
+            anchor, away = 0, 9
+    
+            box.scroll_y = anchor
+            await settle(pilot)
+            box.refresh(layout=True, repaint=False)
+            await settle(pilot)
+            assert app.terminal.lines() == composited_lines(app)
+    
+            box.scroll_y = away
+            await settle(pilot)
+            assert app.terminal.lines() == composited_lines(app)
+            assert box.scroll_offset.y == away
+    
+            # A scroll back to the anchor and a layout request in the same frame.
+            box.scroll_y = anchor
+            box.refresh(layout=True, repaint=False)
+            await settle(pilot)
+    
+            assert box.scroll_offset.y == anchor
+&gt;           assert app.terminal.lines() == composited_lines(app)
+E           AssertionError: assert ['           ...       ', ...] == ['           ...       ', ...]
+E             
+E             At index 1 diff: '    crate-03 ====                       ' != '    crate-00 =                          '
+E             
+E             Full diff:
+E               [
+E                   '                                        ',
+E             -     '    crate-00 =                          ',...
+E             
+E             ...Full output truncated (22 lines hidden), use '-vv' to show
+
+tests/test_scroll_frame_updates.py:213: AssertionError</failure></testcase><testcase classname="tests.test_scroll_frame_updates" name="test_vertical_box_shows_the_anchor_rows_when_a_layout_shares_the_frame" time="0.690"><failure message="AssertionError: assert ['crate-03 ==...       ', ...] == ['crate-00 = ...       ', ...]&#10;  &#10;  At index 0 diff: 'crate-03 ====                 ' != 'crate-00 =                    '&#10;  &#10;  Full diff:&#10;    [&#10;  -     'crate-00 =                    ',&#10;  ?             ^  ^^^...&#10;  &#10;  ...Full output truncated (16 lines hidden), use '-vv' to show">async def test_vertical_box_shows_the_anchor_rows_when_a_layout_shares_the_frame():
+        """The crates on screen must be the ones at the offset we scrolled back to."""
+        app = CargoApp()
+        async with app.run_test(size=CargoApp.SIZE) as pilot:
+            await settle(pilot)
+            box = app.query_one("#hold", VerticalScroll)
+            anchor, away = 0, 9
+    
+            box.scroll_y = anchor
+            await settle(pilot)
+            box.refresh(layout=True, repaint=False)
+            await settle(pilot)
+            region = box.region
+            expected_anchor_rows = composited_rows(app, region)
+    
+            box.scroll_y = away
+            await settle(pilot)
+            away_rows = app.terminal.rows(region)
+            # The scenario is only meaningful if the two offsets look different.
+            assert away_rows != expected_anchor_rows
+    
+            box.scroll_y = anchor
+            box.refresh(layout=True, repaint=False)
+            await settle(pilot)
+    
+&gt;           assert app.terminal.rows(region) == expected_anchor_rows
+E           AssertionError: assert ['crate-03 ==...       ', ...] == ['crate-00 = ...       ', ...]
+E             
+E             At index 0 diff: 'crate-03 ====                 ' != 'crate-00 =                    '
+E             
+E             Full diff:
+E               [
+E             -     'crate-00 =                    ',
+E             ?             ^  ^^^...
+E             
+E             ...Full output truncated (16 lines hidden), use '-vv' to show
+
+tests/test_scroll_frame_updates.py:241: AssertionError</failure></testcase><testcase classname="tests.test_scroll_frame_updates" name="test_every_cell_the_shared_frame_changed_was_written_to_the_terminal" time="0.692"><failure message="AssertionError: assert {(11, 1), (11... (15, 4), ...} &lt;= {(32, 1), (32... (32, 6), ...}&#10;  &#10;  Extra items in the left set:&#10;  (11, 1)&#10;  (11, 7)&#10;  (16, 7)&#10;  (17, 7)&#10;  (18, 7)...&#10;  &#10;  ...Full output truncated (7 lines hidden), use '-vv' to show">async def test_every_cell_the_shared_frame_changed_was_written_to_the_terminal():
+        """The frame's writes must cover every cell whose content moved on."""
+        app = CargoApp()
+        async with app.run_test(size=CargoApp.SIZE) as pilot:
+            await settle(pilot)
+            box = app.query_one("#hold", VerticalScroll)
+            anchor, away = 0, 9
+    
+            box.scroll_y = anchor
+            await settle(pilot)
+            box.refresh(layout=True, repaint=False)
+            await settle(pilot)
+    
+            box.scroll_y = away
+            await settle(pilot)
+            before = app.terminal.lines()
+    
+            mark = app.terminal.mark()
+            box.scroll_y = anchor
+            box.refresh(layout=True, repaint=False)
+            await settle(pilot)
+    
+            after = composited_lines(app)
+            must_be_painted = changed_cells(before, after)
+            assert must_be_painted, "the two offsets are indistinguishable"
+&gt;           assert must_be_painted &lt;= app.terminal.painted_since(mark)
+E           AssertionError: assert {(11, 1), (11... (15, 4), ...} &lt;= {(32, 1), (32... (32, 6), ...}
+E             
+E             Extra items in the left set:
+E             (11, 1)
+E             (11, 7)
+E             (16, 7)
+E             (17, 7)
+E             (18, 7)...
+E             
+E             ...Full output truncated (7 lines hidden), use '-vv' to show
+
+tests/test_scroll_frame_updates.py:269: AssertionError</failure></testcase><testcase classname="tests.test_scroll_frame_updates" name="test_a_neighbours_layout_change_does_not_swallow_the_pending_scroll" time="0.693"><failure message="AssertionError: assert ['crate-03 ==...       ', ...] == ['crate-00 = ...       ', ...]&#10;  &#10;  At index 0 diff: 'crate-03 ====                 ' != 'crate-00 =                    '&#10;  &#10;  Full diff:&#10;    [&#10;  -     'crate-00 =                    ',&#10;  ?             ^  ^^^...&#10;  &#10;  ...Full output truncated (16 lines hidden), use '-vv' to show">async def test_a_neighbours_layout_change_does_not_swallow_the_pending_scroll():
+        """The layout request may come from an entirely different widget."""
+        app = CargoApp()
+        async with app.run_test(size=CargoApp.SIZE) as pilot:
+            await settle(pilot)
+            box = app.query_one("#hold", VerticalScroll)
+            tally = app.query_one("#tally", Static)
+            anchor, away = 0, 9
+    
+            box.scroll_y = anchor
+            await settle(pilot)
+            box.refresh(layout=True, repaint=False)
+            await settle(pilot)
+            region = box.region
+            expected_anchor_rows = composited_rows(app, region)
+    
+            box.scroll_y = away
+            await settle(pilot)
+            assert app.terminal.rows(region) != expected_anchor_rows
+    
+            box.scroll_y = anchor
+            tally.update("tally beta")
+            await settle(pilot)
+    
+&gt;           assert app.terminal.rows(region) == expected_anchor_rows
+E           AssertionError: assert ['crate-03 ==...       ', ...] == ['crate-00 = ...       ', ...]
+E             
+E             At index 0 diff: 'crate-03 ====                 ' != 'crate-00 =                    '
+E             
+E             Full diff:
+E               [
+E             -     'crate-00 =                    ',
+E             ?             ^  ^^^...
+E             
+E             ...Full output truncated (16 lines hidden), use '-vv' to show
+
+tests/test_scroll_frame_updates.py:296: AssertionError</failure></testcase><testcase classname="tests.test_scroll_frame_updates" name="test_horizontal_box_has_no_stale_cells_when_a_layout_shares_the_frame" time="0.690"><failure message="AssertionError: assert ['           ...       ', ...] == ['           ...       ', ...]&#10;  &#10;  At index 2 diff: '   segF        segG        se                       ' != '   segC        segD        se                       '&#10;  &#10;  Full diff:&#10;    [&#10;        '                                                    ',&#10;        '                                                    ',...&#10;  &#10;  ...Full output truncated (15 lines hidden), use '-vv' to show">async def test_horizontal_box_has_no_stale_cells_when_a_layout_shares_the_frame():
+        app = TapeApp()
+        async with app.run_test(size=TapeApp.SIZE) as pilot:
+            await settle(pilot)
+            box = app.query_one("#deck", HorizontalScroll)
+            anchor, away = 24, 60
+    
+            box.scroll_x = anchor
+            await settle(pilot)
+            box.refresh(layout=True, repaint=False)
+            await settle(pilot)
+            assert app.terminal.lines() == composited_lines(app)
+    
+            box.scroll_x = away
+            await settle(pilot)
+            assert app.terminal.lines() == composited_lines(app)
+    
+            box.scroll_x = anchor
+            box.refresh(layout=True, repaint=False)
+            await settle(pilot)
+    
+            assert box.scroll_offset.x == anchor
+&gt;           assert app.terminal.lines() == composited_lines(app)
+E           AssertionError: assert ['           ...       ', ...] == ['           ...       ', ...]
+E             
+E             At index 2 diff: '   segF        segG        se                       ' != '   segC        segD        se                       '
+E             
+E             Full diff:
+E               [
+E                   '                                                    ',
+E                   '                                                    ',...
+E             
+E             ...Full output truncated (15 lines hidden), use '-vv' to show
+
+tests/test_scroll_frame_updates.py:322: AssertionError</failure></testcase><testcase classname="tests.test_scroll_frame_updates" name="test_horizontal_box_shows_the_anchor_columns_when_a_layout_shares_the_frame" time="0.683"><failure message="AssertionError: assert ['segF       ...            '] == ['segC       ...            ']&#10;  &#10;  At index 0 diff: 'segF        segG        se' != 'segC        segD        se'&#10;  &#10;  Full diff:&#10;    [&#10;  -     'segC        segD        se',&#10;  ?         ^           ^...&#10;  &#10;  ...Full output truncated (9 lines hidden), use '-vv' to show">async def test_horizontal_box_shows_the_anchor_columns_when_a_layout_shares_the_frame():
+        app = TapeApp()
+        async with app.run_test(size=TapeApp.SIZE) as pilot:
+            await settle(pilot)
+            box = app.query_one("#deck", HorizontalScroll)
+            gauge = app.query_one("#gauge", Static)
+            anchor, away = 24, 60
+    
+            box.scroll_x = anchor
+            await settle(pilot)
+            box.refresh(layout=True, repaint=False)
+            await settle(pilot)
+            region = box.region
+            expected_anchor_columns = composited_rows(app, region)
+    
+            box.scroll_x = away
+            await settle(pilot)
+            assert app.terminal.rows(region) != expected_anchor_columns
+    
+            box.scroll_x = anchor
+            gauge.update("gauge two")
+            await settle(pilot)
+    
+&gt;           assert app.terminal.rows(region) == expected_anchor_columns
+E           AssertionError: assert ['segF       ...            '] == ['segC       ...            ']
+E             
+E             At index 0 diff: 'segF        segG        se' != 'segC        segD        se'
+E             
+E             Full diff:
+E               [
+E             -     'segC        segD        se',
+E             ?         ^           ^...
+E             
+E             ...Full output truncated (9 lines hidden), use '-vv' to show
+
+tests/test_scroll_frame_updates.py:348: AssertionError</failure></testcase><testcase classname="tests.test_scroll_frame_updates" name="test_a_lone_widget_repaint_leaves_the_rest_of_the_screen_alone" time="0.306" /><testcase classname="tests.test_scroll_frame_updates" name="test_a_layout_only_frame_composites_a_newly_mounted_widget" time="0.454" /><testcase classname="tests.test_scroll_frame_updates" name="test_a_layout_only_frame_erases_a_removed_widget" time="0.476" /><testcase classname="tests.test_scroll_frame_updates" name="test_a_layout_only_frame_leaves_the_scroll_offset_alone" time="0.436" /><testcase classname="tests.test_scroll_frame_updates" name="test_a_scroll_only_frame_repaints_the_horizontal_box" time="0.301" /><testcase classname="tests.test_scroll_frame_updates" name="test_a_resized_child_reports_its_new_size_on_a_layout_only_frame" time="0.327" /><testcase classname="tests.test_scroll_frame_updates" name="test_a_plain_screen_repaint_still_matches_a_full_render" time="0.299" /></testsuite></testsuites>

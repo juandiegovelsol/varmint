@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "checks": {
+        "behavior_in_task_description": {
+          "explanation": "instruction.md deliberately gives a minimal bug report (no filenames, primitive, or repo details) plus the bug.gif, matching the task's stated difficulty design ('names no file, primitive, repository, specific defect'). This is an intentional multimodal task where the GIF itself is the spec of the expected behavior change (menu must re-anchor and must not dismiss/remount on a second right-click while open), and task.toml's f2p/difficulty_explanation corroborate that this is exactly what the instruction is meant to convey through the recording. The verified GIF frames show a right-click while the OS-simulated custom context menu is already open, and the menu closing/being replaced rather than repositioning, which is the behavior tests check (re-anchor + no dismiss-remount). Since the visual is the documented spec for a visual-essentiality=required task, this passes.",
+          "outcome": "pass"
+        },
+        "behavior_in_tests": {
+          "explanation": "The two f2p tests directly test the two behaviors implied by the bug report/GIF and described in task.toml: (1) 're-anchors the content when re-triggered in a new location while open' checks the popper wrapper transform changes on a second right-click, and (2) 'does not close and remount the content when re-triggered while already open' checks onOpenChange is never called with false and the DOM node is preserved. The p2p tests ('keeps the content closed by default', 'opens the content on right click') guard existing basic behavior. All are present in test.patch and wired into tests/config.json f2p/p2p lists consistently with task.toml.",
+          "outcome": "pass"
+        },
+        "informative_test_structure": {
+          "explanation": "test.patch adds two clearly named `it(...)` blocks with descriptive titles and inline comments explaining non-obvious details (e.g., why pointerType must be 'mouse' in jsdom, why the check is synchronous vs waitFor). test.sh is well commented with section headers (== applying test.patch ==, == installing pinned test-only deps ==, == running f2p + p2p tests ==, == computing reward ==) making the pipeline easy to follow. verifier.py has a clear reward-policy docstring and readable helper functions.",
+          "outcome": "pass"
+        },
+        "anti_cheating_measures": {
+          "explanation": "The Dockerfile explicitly strips .git history after checkout (so the agent cannot inspect the fix PR/future commits) and re-inits a single-commit repo with a harbor_base tag. tests/ and solution/ are not copied into the image (confirmed by an actual file-tree check — the image only gets environment/assets contents). The verifier resets any test files the agent may have edited back to harbor_base before applying test.patch, so an agent cannot alter the test file to fake a pass. The rubric judge explicitly excludes test/spec/snapshot files from what it shows a grading sub-agent and never calls out over the network (no API key, no network, verified by grep in test scripts). This is a solid anti-cheat design for this task shape.",
+          "outcome": "pass"
+        },
+        "structured_data_schema": {
+          "explanation": "This task does not require the agent to produce structured output data (JSON/CSV/DB schema); it requires a source code fix to TypeScript/React components, verified via behavioral unit tests. No structured data schema is expected from the agent's response.",
+          "outcome": "not_applicable"
+        },
+        "pinned_dependencies": {
+          "explanation": "The Dockerfile uses `corepack prepare pnpm@latest --activate` instead of pinning to the exact pnpm version declared in the upstream package.json's packageManager field (pnpm@11.5.0, confirmed by fetching the base-commit package.json). This means the pnpm version used to install/build/test could drift over time and image rebuilds are not fully reproducible, which is the kind of dependency pinning issue this criterion checks for. The base image tag (node:22-bookworm) is only pinned to a major version rather than a specific point release, and the pnpm-lock.yaml itself is presumably pinned (frozen-lockfile is used), but the package manager binary itself is not pinned to match it.",
+          "outcome": "fail"
+        },
+        "typos": {
+          "explanation": "No typos found in filenames, paths, commands, or variable/identifier names across instruction.md, task.toml, Dockerfile, tests/*, and solution/* — cross-checked file paths (context-menu.tsx, context-menu.test.tsx, menu.tsx, index.ts) against the actual upstream repository at the pinned commit and they match exactly.",
+          "outcome": "pass"
+        },
+        "tests_or_solution_in_image": {
+          "explanation": "The Dockerfile only COPYs assets/ into /app/.harbor_assets/ and explicitly comments that 'tests/ and solution/ are intentionally NOT copied — the harness supplies them at verify time.' No COPY or ADD instruction references tests/ or solution/ directories.",
+          "outcome": "pass"
+        },
+        "test_deps_in_image": {
+          "explanation": "The Dockerfile runs `pnpm install --frozen-lockfile --ignore-scripts` at build time, which installs the full workspace's declared devDependencies (including vitest, testing-library, vitest-axe) since these are already part of the repository's own package.json files, not test-harness-specific extras. test.sh explicitly notes 'No extra test-only deps needed; pnpm install was done in the Dockerfile,' meaning no harness-specific test tooling is baked into the image beyond what the project itself already declares and pins via its lockfile.",
+          "outcome": "pass"
+        },
+        "hardcoded_solution": {
+          "explanation": "solution/solve.sh applies solution/fix.patch via `git apply`/`patch -p1`, i.e., it replays the actual code diff (context-menu.tsx, menu.tsx, index.ts changes) rather than printing or hardcoding a final answer. The patch content itself is a real, non-trivial code fix (switching useRef to useState/useMemo for reactive re-anchoring, and adding a DismissableLayerBranch wrapper to exempt the trigger's pointerdown from outside-interaction dismissal) verified to closely match the actual upstream PR change plus an additional fix for the second defect.",
+          "outcome": "pass"
+        },
+        "file_reference_mentioned": {
+          "explanation": "The agent is not required to produce named output files (e.g., output.csv); the deliverable is a code fix within the existing repository files, and the exact files to edit are intentionally not disclosed to the agent as part of the task's designed difficulty (agent must discover packages/react/context-menu/src/context-menu.tsx etc. itself). This criterion is intended for tasks with expected output files the tests check for by name, which does not apply here.",
+          "outcome": "not_applicable"
+        }
+      },
+      "cost_usd": 2.0444734500000004,
+      "task_name": "Tasks",
+      "error": null
+    }
+  ]
+}

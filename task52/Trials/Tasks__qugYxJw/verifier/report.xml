@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="pytest" errors="0" failures="4" skipped="0" tests="9" time="0.872" timestamp="2026-08-18T02:21:11.467224+00:00" hostname="87a070351702"><testcase classname="tests.test_style_cache_regressions" name="test_board_keeps_its_look_after_the_window_goes_behind_and_returns" time="0.134"><failure message="AssertionError: after the window came back: 5 block(s) drawn with the wrong fill:&#10;    Label(): got Color(27, 43, 68), expected Color(229, 72, 77)&#10;    Label(): got Color(18, 165, 148), expected Color(27, 43, 68)&#10;    Label(): got Color(18, 165, 148), expected Color(27, 43, 68)&#10;    Label(): got Color(18, 165, 148), expected Color(27, 43, 68)&#10;    Label(): got Color(27, 43, 68), expected Color(91, 98, 112)&#10;assert not {Label(): (Color(27, 43, 68), Color(229, 72, 77)), Label(): (Color(18, 165, 148), Color(27, 43, 68)), Label(): (Color(18, 165, 148), Color(27, 43, 68)), Label(): (Color(18, 165, 148), Color(27, 43, 68)), ...}">async def test_board_keeps_its_look_after_the_window_goes_behind_and_returns():
+        """Capture 1 and capture 2 must be the same screen: after the window goes behind
+        another window and comes back, every block is still drawn as it was first drawn."""
+        app = BoardApp()
+        async with app.run_test(size=(100, 34)) as pilot:
+            assert_fills(board_expectation(app), "as first drawn")
+            await window_goes_behind_and_returns(app, pilot)
+&gt;           assert_fills(board_expectation(app), "after the window came back")
+
+tests/test_style_cache_regressions.py:258: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+expected = {Label(): Color(27, 43, 68), Label(): Color(27, 43, 68), Label(): Color(27, 43, 68), Label(): Color(229, 72, 77), ...}
+context = 'after the window came back'
+
+    def assert_fills(expected: Mapping[Widget, Color], context: str) -&gt; None:
+        """Every block in `expected` is filled with exactly the colour mapped to it.
+    
+        Pinning every block to a named fill, rather than only checking that the special ones
+        are special, matters: a block that ended up with no fill at all must not be able to
+        slip through as "not highlighted".
+        """
+        wrong = {
+            block: (block.styles.background, colour)
+            for block, colour in expected.items()
+            if block.styles.background != colour
+        }
+&gt;       assert not wrong, "\n".join(
+            [f"{context}: {len(wrong)} block(s) drawn with the wrong fill:"]
+            + [
+                f"  {block!r}: got {got!r}, expected {want!r}"
+                for block, (got, want) in wrong.items()
+            ]
+        )
+E       AssertionError: after the window came back: 5 block(s) drawn with the wrong fill:
+E           Label(): got Color(27, 43, 68), expected Color(229, 72, 77)
+E           Label(): got Color(18, 165, 148), expected Color(27, 43, 68)
+E           Label(): got Color(18, 165, 148), expected Color(27, 43, 68)
+E           Label(): got Color(18, 165, 148), expected Color(27, 43, 68)
+E           Label(): got Color(27, 43, 68), expected Color(91, 98, 112)
+E       assert not {Label(): (Color(27, 43, 68), Color(229, 72, 77)), Label(): (Color(18, 165, 148), Color(27, 43, 68)), Label(): (Color(18, 165, 148), Color(27, 43, 68)), Label(): (Color(18, 165, 148), Color(27, 43, 68)), ...}
+
+tests/test_style_cache_regressions.py:80: AssertionError</failure></testcase><testcase classname="tests.test_style_cache_regressions" name="test_end_highlight_survives_the_window_going_behind_and_returning" time="0.082"><failure message="AssertionError: after the window came back: 1 block(s) drawn with the wrong fill:&#10;    Label(): got Color(27, 43, 68), expected Color(229, 72, 77)&#10;assert not {Label(): (Color(27, 43, 68), Color(229, 72, 77))}">async def test_end_highlight_survives_the_window_going_behind_and_returning():
+        """Strip 1: the red fill on the end block is still there afterwards."""
+        app = EndBlockApp()
+        async with app.run_test(size=(100, 10)) as pilot:
+            strip = app.query_one(Strip)
+    
+            def expectation() -&gt; dict[Widget, Color]:
+                blocks = list(strip.children)
+                return {block: (RED if block is blocks[-1] else IDLE) for block in blocks}
+    
+            assert_fills(expectation(), "as first drawn")
+            await window_goes_behind_and_returns(app, pilot)
+&gt;           assert_fills(expectation(), "after the window came back")
+
+tests/test_style_cache_regressions.py:273: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+expected = {Label(): Color(27, 43, 68), Label(): Color(27, 43, 68), Label(): Color(27, 43, 68), Label(): Color(229, 72, 77)}
+context = 'after the window came back'
+
+    def assert_fills(expected: Mapping[Widget, Color], context: str) -&gt; None:
+        """Every block in `expected` is filled with exactly the colour mapped to it.
+    
+        Pinning every block to a named fill, rather than only checking that the special ones
+        are special, matters: a block that ended up with no fill at all must not be able to
+        slip through as "not highlighted".
+        """
+        wrong = {
+            block: (block.styles.background, colour)
+            for block, colour in expected.items()
+            if block.styles.background != colour
+        }
+&gt;       assert not wrong, "\n".join(
+            [f"{context}: {len(wrong)} block(s) drawn with the wrong fill:"]
+            + [
+                f"  {block!r}: got {got!r}, expected {want!r}"
+                for block, (got, want) in wrong.items()
+            ]
+        )
+E       AssertionError: after the window came back: 1 block(s) drawn with the wrong fill:
+E           Label(): got Color(27, 43, 68), expected Color(229, 72, 77)
+E       assert not {Label(): (Color(27, 43, 68), Color(229, 72, 77))}
+
+tests/test_style_cache_regressions.py:80: AssertionError</failure></testcase><testcase classname="tests.test_style_cache_regressions" name="test_start_highlight_survives_the_window_going_behind_and_returning" time="0.082"><failure message="AssertionError: after the window came back: 3 block(s) drawn with the wrong fill:&#10;    Label(): got Color(18, 165, 148), expected Color(27, 43, 68)&#10;    Label(): got Color(18, 165, 148), expected Color(27, 43, 68)&#10;    Label(): got Color(18, 165, 148), expected Color(27, 43, 68)&#10;assert not {Label(): (Color(18, 165, 148), Color(27, 43, 68)), Label(): (Color(18, 165, 148), Color(27, 43, 68)), Label(): (Color(18, 165, 148), Color(27, 43, 68))}">async def test_start_highlight_survives_the_window_going_behind_and_returning():
+        """Strip 2: the teal fill on the start block is still there afterwards."""
+        app = StartBlockApp()
+        async with app.run_test(size=(100, 10)) as pilot:
+            strip = app.query_one(Strip)
+    
+            def expectation() -&gt; dict[Widget, Color]:
+                blocks = list(strip.children)
+                return {block: (TEAL if block is blocks[0] else IDLE) for block in blocks}
+    
+            assert_fills(expectation(), "as first drawn")
+            await window_goes_behind_and_returns(app, pilot)
+&gt;           assert_fills(expectation(), "after the window came back")
+
+tests/test_style_cache_regressions.py:288: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+expected = {Label(): Color(18, 165, 148), Label(): Color(27, 43, 68), Label(): Color(27, 43, 68), Label(): Color(27, 43, 68)}
+context = 'after the window came back'
+
+    def assert_fills(expected: Mapping[Widget, Color], context: str) -&gt; None:
+        """Every block in `expected` is filled with exactly the colour mapped to it.
+    
+        Pinning every block to a named fill, rather than only checking that the special ones
+        are special, matters: a block that ended up with no fill at all must not be able to
+        slip through as "not highlighted".
+        """
+        wrong = {
+            block: (block.styles.background, colour)
+            for block, colour in expected.items()
+            if block.styles.background != colour
+        }
+&gt;       assert not wrong, "\n".join(
+            [f"{context}: {len(wrong)} block(s) drawn with the wrong fill:"]
+            + [
+                f"  {block!r}: got {got!r}, expected {want!r}"
+                for block, (got, want) in wrong.items()
+            ]
+        )
+E       AssertionError: after the window came back: 3 block(s) drawn with the wrong fill:
+E           Label(): got Color(18, 165, 148), expected Color(27, 43, 68)
+E           Label(): got Color(18, 165, 148), expected Color(27, 43, 68)
+E           Label(): got Color(18, 165, 148), expected Color(27, 43, 68)
+E       assert not {Label(): (Color(18, 165, 148), Color(27, 43, 68)), Label(): (Color(18, 165, 148), Color(27, 43, 68)), Label(): (Color(18, 165, 148), Color(27, 43, 68))}
+
+tests/test_style_cache_regressions.py:80: AssertionError</failure></testcase><testcase classname="tests.test_style_cache_regressions" name="test_off_block_keeps_its_fill_when_the_window_goes_behind_and_returns" time="0.030"><failure message="AssertionError: as first drawn: 1 block(s) drawn with the wrong fill:&#10;    Label(): got Color(27, 43, 68), expected Color(91, 98, 112)&#10;assert not {Label(): (Color(27, 43, 68), Color(91, 98, 112))}">async def test_off_block_keeps_its_fill_when_the_window_goes_behind_and_returns():
+        """Strip 3: the grey fill on the switched-off block is still there afterwards."""
+        app = OffBlockApp()
+        async with app.run_test(size=(100, 10)) as pilot:
+            strip = app.query_one(Strip)
+    
+            def expectation() -&gt; dict[Widget, Color]:
+                return {
+                    block: (GREY if block.disabled else IDLE) for block in strip.children
+                }
+    
+&gt;           assert_fills(expectation(), "as first drawn")
+
+tests/test_style_cache_regressions.py:302: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+expected = {Label(): Color(27, 43, 68), Label(): Color(27, 43, 68), Label(): Color(91, 98, 112), Label(): Color(27, 43, 68)}
+context = 'as first drawn'
+
+    def assert_fills(expected: Mapping[Widget, Color], context: str) -&gt; None:
+        """Every block in `expected` is filled with exactly the colour mapped to it.
+    
+        Pinning every block to a named fill, rather than only checking that the special ones
+        are special, matters: a block that ended up with no fill at all must not be able to
+        slip through as "not highlighted".
+        """
+        wrong = {
+            block: (block.styles.background, colour)
+            for block, colour in expected.items()
+            if block.styles.background != colour
+        }
+&gt;       assert not wrong, "\n".join(
+            [f"{context}: {len(wrong)} block(s) drawn with the wrong fill:"]
+            + [
+                f"  {block!r}: got {got!r}, expected {want!r}"
+                for block, (got, want) in wrong.items()
+            ]
+        )
+E       AssertionError: as first drawn: 1 block(s) drawn with the wrong fill:
+E           Label(): got Color(27, 43, 68), expected Color(91, 98, 112)
+E       assert not {Label(): (Color(27, 43, 68), Color(91, 98, 112))}
+
+tests/test_style_cache_regressions.py:80: AssertionError</failure></testcase><testcase classname="tests.test_style_cache_regressions" name="test_pinned_block_keeps_its_fill_when_the_window_goes_behind_and_returns" time="0.082" /><testcase classname="tests.test_style_cache_regressions" name="test_single_colour_strip_survives_the_window_going_behind_and_returning" time="0.087" /><testcase classname="tests.test_style_cache_regressions" name="test_board_looks_right_when_it_is_first_drawn" time="0.045" /><testcase classname="tests.test_style_cache_regressions" name="test_flagged_block_is_the_one_that_is_never_affected" time="0.124" /><testcase classname="tests.test_style_cache_regressions" name="test_scenario_is_non_vacuous" time="0.125" /></testsuite></testsuites>

@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "checks": {
+        "behavior_in_task_description": {
+          "explanation": "instruction.md describes, as symptom classes, every defect the f2p suite exercises: a remote participant's caret/selection/leave-session state not updating (B1/B2), a local caret/selection drifting off its original text after an earlier-document edit (B3), and any non-linear position (blank line, paragraph edge, cross-paragraph selection) landing wrong (B4). The task is a bug-report style fix (files/schema deliberately withheld per difficulty design), and every symptom category tested by f2p is named at least once in the two short paragraphs.",
+          "outcome": "pass"
+        },
+        "behavior_in_tests": {
+          "explanation": "Every symptom named in instruction.md maps to concrete f2p tests: remote caret appearing/moving/leaving, own caret/selection surviving remote inserts/deletes before it, and blank-line/paragraph-boundary/cross-paragraph positions. p2p tests cover baseline collaboration behavior (plain text sync, disconnect/reconnect, not seeing your own caret) that instruction.md implies is already working and must not regress.",
+          "outcome": "pass"
+        },
+        "informative_test_structure": {
+          "explanation": "The single test file (delivered via test.patch) is organized into clearly commented sections ('A participant's caret and selected range must travel on their own', 'Your OWN caret and selection...', 'Positions that are not simply n characters into a line...', 'Collaboration behaviour that already works and must keep working'), each `it(...)` name is a plain-English behavioral description, and helper classes/methods are documented with purpose-explaining comments.",
+          "outcome": "pass"
+        },
+        "anti_cheating_measures": {
+          "explanation": "tests/ and solution/ are excluded from the image (only assets/ is copied); the repo's .git history is stripped and reinitialized to a single 'base' commit so the agent cannot inspect the real fix PR or diff against upstream history; the three injected bugs are applied via base64-inlined patches decoded/applied/deleted within a single RUN layer so no patch file, comment, or marker survives in any image layer; the verifier runs the real vitest suite against JUnit XML rather than grepping source; selfgate.json documents tamper/canary/alternative-implementation probes confirming the suite can't be gamed by stubs or partial fixes.",
+          "outcome": "pass"
+        },
+        "structured_data_schema": {
+          "explanation": "This is a source-code bug-fix task (patching TypeScript files), not a task that requires the agent to emit structured data (JSON/CSV/API) with a documented schema.",
+          "outcome": "not_applicable"
+        },
+        "pinned_dependencies": {
+          "explanation": "The Dockerfile installs Node dependencies via `npm ci`, which installs exact versions from the repo's committed package-lock.json (npm lockfileVersion 2); apt packages (git, curl, ca-certificates) are unpinned but that is acceptable per the stated guidance. No other unpinned external dependency is introduced.",
+          "outcome": "pass"
+        },
+        "typos": {
+          "explanation": "No typos found in instruction.md, task.toml, the Dockerfile, tests/, or solution/ files; asset filenames and paths referenced in instruction.md, ASSET_MANIFEST.json, and evidence_bundle.json are all consistent with each other.",
+          "outcome": "pass"
+        },
+        "tests_or_solution_in_image": {
+          "explanation": "The Dockerfile only COPYs environment/assets/ into the image; tests/ and solution/ directories are never referenced by any COPY/ADD instruction, and this is explicitly called out in a Dockerfile comment ('tests/ and solution/ are NOT baked in -- the harness supplies them at verify time').",
+          "outcome": "pass"
+        },
+        "test_deps_in_image": {
+          "explanation": "The image runs a single `npm ci` against the monorepo's lockfile, which necessarily installs the whole dependency graph (including vitest and other devDependencies) because npm workspaces has no per-package filtering to install only runtime deps -- this is explained in a Dockerfile comment and is a pre-existing repo/tooling constraint, not test-only dependencies being deliberately smuggled in ahead of test execution; the actual new test file itself is added only at verify time via test.patch.",
+          "outcome": "pass"
+        },
+        "hardcoded_solution": {
+          "explanation": "solve.sh applies solution/fix.patch, a genuine multi-file source diff restoring the awareness subscription, the remote-cursor reposition branch, the local re-anchor call, and the corrected structural-position encoding -- it demonstrates the actual code fix rather than printing/echoing a final answer or output value.",
+          "outcome": "pass"
+        },
+        "file_reference_mentioned": {
+          "explanation": "The task requires editing existing repository source files to fix a bug (verified by running a test suite), not producing a new named output artifact (e.g., output.csv) that tests look for by filename, so this criterion does not apply.",
+          "outcome": "not_applicable"
+        }
+      },
+      "cost_usd": 0.43386224999999995,
+      "task_name": "Tasks",
+      "error": null
+    }
+  ]
+}

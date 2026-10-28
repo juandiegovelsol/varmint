@@ -1,0 +1,66 @@
+diff --git a/src/parser/getCSSRules.ts b/src/parser/getCSSRules.ts
+index f24a7de..e336cc3 100644
+--- a/src/parser/getCSSRules.ts
++++ b/src/parser/getCSSRules.ts
+@@ -7,12 +7,10 @@ import type { CSSRules } from './typedefs';
+  */
+ export function getCSSRules(doc: Document) {
+   const styles = doc.getElementsByTagName('style');
+-  let i;
+-  let len;
+   const allRules: CSSRules = {};
+ 
+   // very crude parsing of style contents
+-  for (i = 0, len = styles.length; i < len; i++) {
++  for (let i = 0; i < styles.length; i++) {
+     const styleContents = (styles[i].textContent || '').replace(
+       // remove comments
+       /\/\*[\s\S]*?\*\//g,
+@@ -47,10 +45,14 @@ export function getCSSRules(doc: Document) {
+             return pair.trim();
+           });
+ 
+-        for (i = 0, len = propertyValuePairs.length; i < len; i++) {
+-          const pair = propertyValuePairs[i].split(':'),
+-            property = pair[0].trim(),
+-            value = pair[1].trim();
++        for (let j = 0; j < propertyValuePairs.length; j++) {
++          const pair = propertyValuePairs[j];
++          const colonIndex = pair.indexOf(':');
++          if (colonIndex === -1) {
++            continue;
++          }
++          const property = pair.slice(0, colonIndex).trim();
++          const value = pair.slice(colonIndex + 1).trim();
+           ruleObj[property] = value;
+         }
+         rule = match[0].trim();
+diff --git a/src/parser/selectorMatches.ts b/src/parser/selectorMatches.ts
+index bc87caa..627feb6 100644
+--- a/src/parser/selectorMatches.ts
++++ b/src/parser/selectorMatches.ts
+@@ -5,7 +5,7 @@ export function selectorMatches(
+   const nodeName = element.nodeName;
+   const classNames = element.getAttribute('class');
+   const id = element.getAttribute('id');
+-  const azAz = '(?![a-zA-Z\\-]+)';
++  const azAz = '(?![\\w\\-])';
+   let matcher;
+   // i check if a selector matches slicing away part from it.
+   // if i get empty string i should match
+@@ -16,8 +16,13 @@ export function selectorMatches(
+     selector = selector.replace(matcher, '');
+   }
+   if (classNames && selector.length) {
+-    const splitClassNames = classNames.split(' ');
+-    for (let i = splitClassNames.length; i--; ) {
++    // match longer class names first so a shorter class that is a prefix of a
++    // longer one (e.g. `st1` vs `st12`) cannot consume part of the longer token
++    const splitClassNames = classNames
++      .split(' ')
++      .filter(Boolean)
++      .sort((a, b) => b.length - a.length);
++    for (let i = 0; i < splitClassNames.length; i++) {
+       matcher = new RegExp('\\.' + splitClassNames[i] + azAz, 'i');
+       selector = selector.replace(matcher, '');
+     }

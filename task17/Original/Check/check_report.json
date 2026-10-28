@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "checks": {
+        "behavior_in_task_description": {
+          "explanation": "instruction.md states the general rule the fix must satisfy: shape classes must receive their declared fill 'including when those rules live in more than one style element, when a shape carries more than one class, and when a fill value references a paint server such as fill: url(...)'. Every f2p test is a concrete instance of one of these generalizations (multiple/reversed/three style elements, hex fills across elements, colon-preserving url() fill, and the s1/s12 multi-class prefix-collision case). No test checks behavior outside what's stated, even though exact file/function names are deliberately withheld (consistent with the task's stated 'hard' difficulty design).",
+          "outcome": "pass"
+        },
+        "behavior_in_tests": {
+          "explanation": "Every clause in the instruction's closing sentence (multi-style-element fills, multi-class shapes, url()-paint-server fill preservation) maps to at least one concrete f2p test in tests/test.patch (svgClassFills.spec.ts), and config.json/task.toml list matching f2p identifiers. No described behavior is left untested.",
+          "outcome": "pass"
+        },
+        "informative_test_structure": {
+          "explanation": "tests/test.sh is divided into clearly commented steps (reset test files, apply test.patch, run vitest, compute reward). tests/verifier.py has a docstring explaining the reward policy precisely. The spec file added by test.patch uses descriptive `test('...')` names that double as both test identifiers and documentation of intended behavior.",
+          "outcome": "pass"
+        },
+        "anti_cheating_measures": {
+          "explanation": "The agent and verifier run with network_mode = no-network, preventing lookup of the public upstream PR/fix online. obfuscate_harbor.py renames the two touched files/functions (getCSSRules->collectSheetRules, selectorMatches->ruleSelectorTest) and removes their upstream spec files precisely to defeat filename/keyword fingerprinting of the known GitHub issue; this script and the original filenames are deleted before the image is finalized. tests/ and solution/ are not copied into the image (confirmed in Dockerfile), and test.sh resets any test files to harbor_base before applying test.patch so agent edits to tests can't affect scoring. verifier.py explicitly 'NEVER greps source for the fix' and scores only from JUnit results.",
+          "outcome": "pass"
+        },
+        "structured_data_schema": {
+          "explanation": "This is a source-code bug-fix task; the agent edits TypeScript source and is not expected to produce a structured output file (JSON/CSV/API) with a schema to document.",
+          "outcome": "not_applicable"
+        },
+        "pinned_dependencies": {
+          "explanation": "apt packages (ca-certificates, curl, git, python3) are unpinned, which is acceptable per guidance. Node dependencies are installed via `npm ci`, which installs exact versions from the cloned repository's committed package-lock.json rather than loose npm install, satisfying pinning for the JS toolchain. No ad hoc pip installs are present.",
+          "outcome": "pass"
+        },
+        "typos": {
+          "explanation": "Reviewed all filenames, commands, and referenced paths (Dockerfile COPY targets, instruction.md image paths /app/.harbor_assets/*.png, task.toml commit hashes which are valid 40-character hex SHAs, test.patch file paths, config.json test_files list). No typos found that would break commands or cause confusion.",
+          "outcome": "pass"
+        },
+        "tests_or_solution_in_image": {
+          "explanation": "environment/Dockerfile only COPYs obfuscate_harbor.py (deleted after use) and assets/ (screenshots) into the image; there is an explicit comment confirming 'tests/ and solution/ are intentionally NOT copied — the harness supplies them at verify time,' and no COPY instruction references either directory.",
+          "outcome": "pass"
+        },
+        "test_deps_in_image": {
+          "explanation": "The only dependency installation in the image is `npm ci`, which installs the fabric.js project's own package-lock.json dependencies (including vitest, which is the project's native test runner, not a grading-only addition). No separate test-only packages (e.g., extra assertion libs, coverage tools) are installed at build time; test.sh runs `npx vitest` using what npm ci already provided as part of normal project setup.",
+          "outcome": "pass"
+        },
+        "hardcoded_solution": {
+          "explanation": "solution/solve.sh performs an actual process: it detects whether harbor's rename obfuscation was applied, reverses it via git mv and unobfuscate_for_fix.py (restoring original symbol/file names), and only then applies solution/fix.patch via `git apply`/`patch`. It does not simply cat or echo final file contents; fix.patch itself is a real unified diff with logic changes (colon-splitting fix, class-sort-by-length fix), not a wholesale file replacement pasted as the 'answer'.",
+          "outcome": "pass"
+        },
+        "file_reference_mentioned": {
+          "explanation": "The task requires fixing existing source files to change rendering behavior; it does not require the agent to create new named output files that tests then check for, so there is no output filename that instruction.md would need to specify.",
+          "outcome": "not_applicable"
+        }
+      },
+      "cost_usd": 0.9849607499999998,
+      "task_name": "Tasks",
+      "error": null
+    }
+  ]
+}

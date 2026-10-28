@@ -1,0 +1,79 @@
+diff --git a/packages/react/context-menu/src/context-menu.test.tsx b/packages/react/context-menu/src/context-menu.test.tsx
+index b56dae8d..89e1069c 100644
+--- a/packages/react/context-menu/src/context-menu.test.tsx
++++ b/packages/react/context-menu/src/context-menu.test.tsx
+@@ -1,6 +1,6 @@
+ import * as React from 'react';
+ import { axe } from 'vitest-axe';
+-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
++import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+ import * as ContextMenu from './context-menu';
+ import type { MockInstance } from 'vitest';
+ import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
+@@ -39,6 +39,66 @@ describe('rendering and opening', () => {
+     expect(screen.getByText(TRIGGER_TEXT)).toHaveAttribute('data-state', 'open');
+   });
+
++  it('re-anchors the content when re-triggered in a new location while open', async () => {
++    render(<ContextMenuTest />);
++    const trigger = screen.getByText(TRIGGER_TEXT);
++
++    // Open the context menu at first location.
++    await act(async () => {
++      fireEvent.contextMenu(trigger, { clientX: 10, clientY: 10 });
++    });
++    await waitFor(() => expect(screen.getByRole('menu')).toBeInTheDocument());
++
++    const wrapper = document.querySelector('[data-radix-popper-content-wrapper]') as HTMLElement;
++    expect(wrapper).toBeTruthy();
++    const initialTransform = wrapper.style.transform;
++
++    // Right-click again in a different location while the menu is still open.
++    // The fix (useState instead of useRef) causes a synchronous React re-render on the
++    // second trigger, which immediately updates the popper position via useMemo.
++    // The base code (useRef) only mutates pointRef.current without triggering a re-render,
++    // so the transform does NOT update synchronously.
++    await act(async () => {
++      fireEvent.contextMenu(trigger, { clientX: 200, clientY: 150 });
++    });
++
++    // Synchronous check — no waitFor. The fixed code re-renders inside act() above;
++    // the base code does not, so the transform is still the old value.
++    expect(screen.getByRole('menu')).toBeInTheDocument();
++    expect(wrapper.style.transform).not.toEqual(initialTransform);
++  });
++
++  it('does not close and remount the content when re-triggered while already open', async () => {
++    const onOpenChange = vi.fn();
++    render(<ContextMenuTest onOpenChange={onOpenChange} />);
++    const trigger = screen.getByText(TRIGGER_TEXT);
++
++    // A real right-click is a pointerdown -> mousedown -> contextmenu -> mouseup sequence.
++    // pointerType must be set explicitly to 'mouse': jsdom's synthetic PointerEvent
++    // defaults pointerType to '' when unset, which would incorrectly route through the
++    // trigger's touch/long-press handling instead of the real mouse path being tested here.
++    const rightClick = (clientX: number, clientY: number) => {
++      fireEvent.pointerDown(trigger, { button: 2, pointerType: 'mouse', clientX, clientY });
++      fireEvent.mouseDown(trigger, { button: 2, clientX, clientY });
++      fireEvent.contextMenu(trigger, { button: 2, clientX, clientY });
++      fireEvent.mouseUp(trigger, { button: 2, clientX, clientY });
++    };
++
++    await act(async () => rightClick(10, 10));
++    await waitFor(() => expect(screen.getByRole('menu')).toBeInTheDocument());
++    onOpenChange.mockClear();
++    const contentBefore = screen.getByRole('menu');
++
++    // Right-click again at a new location while the menu is still open.
++    await act(async () => rightClick(300, 220));
++
++    const contentAfter = screen.queryByRole('menu');
++    // A correct re-trigger keeps the menu open throughout: it must never report a
++    // transient close, and the content must be the same node, not torn down and rebuilt.
++    expect(onOpenChange).not.toHaveBeenCalledWith(false);
++    expect(contentAfter).toBe(contentBefore);
++  });
++
+   it('closes the content when pressing escape', async () => {
+     render(<ContextMenuTest />);
+     fireEvent.contextMenu(screen.getByText(TRIGGER_TEXT));

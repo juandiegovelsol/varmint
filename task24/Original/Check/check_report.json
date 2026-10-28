@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "checks": {
+        "behavior_in_task_description": {
+          "explanation": "instruction.md explicitly describes the general behavior class tested: when every action belonging to a submenu is removed, the submenu trigger stays visible and clickable ('a submenu trigger is left behind'), and gives the exact reproduction recipe ('Remove every action that belongs to one of these submenus, then open the containing menu and click into that submenu'). This directly matches the f2p tests (submenu hidden when all its actions are removed) and the p2p tests (submenus shown by default / kept when at least one action remains is a natural corollary of 'every'). The specific submenu family (export-as/copy-as) is deliberately left out of the text and is only discoverable via the referenced screenshot, but this is the intended design for a visual_bug_fix task with visual_essentiality=required, and the instruction explicitly directs the agent to open the screenshot before writing the fix, so the necessary information is present through the documented visual channel.",
+          "outcome": "pass"
+        },
+        "behavior_in_tests": {
+          "explanation": "The behavior described in instruction.md (submenu trigger persisting with no usable actions; trigger should disappear only when all its actions are gone) is directly tested: 'hides the export-as submenu when all export actions are removed', 'hides the copy-as submenu when all copy actions are removed' (f2p), and the p2p tests confirm submenus still show by default and when at least one action remains. No described behavior is left untested.",
+          "outcome": "pass"
+        },
+        "informative_test_structure": {
+          "explanation": "test.patch adds a clearly named describe block ('conversions submenus gate on their actions') with individually named it() cases describing exactly what each verifies, a shared openContextMenu helper to avoid duplication, and inline comments clarifying non-obvious cases (e.g., the debug-mode copy-as-json case). test.sh is also well-commented, labeling each stage (resetting test files, applying test.patch, running tests, computing reward) and documents which f2p/p2p tests are being run and why.",
+          "outcome": "pass"
+        },
+        "anti_cheating_measures": {
+          "explanation": "The Dockerfile clones the repo, checks out the base commit, then strips .git and re-inits a single-commit repo tagged harbor_base — removing all fix-related history from the agent's view. tests/ and solution/ are explicitly not copied into the image (only assets/ is), and are supplied only at verification time. test.sh resets any test files the agent may have modified back to harbor_base before applying test.patch, preventing the agent from tampering with the grading tests. verifier.py computes reward purely from JUnit XML test results and explicitly states it never inspects source code for the fix string. judge.py also explicitly excludes test/spec/snapshot files from what it shows a judge and never calls out over the network.",
+          "outcome": "pass"
+        },
+        "structured_data_schema": {
+          "explanation": "This task is a UI/React code bug fix (menu component visibility), not a task that produces structured output like JSON/CSV/API responses, so no data schema documentation is expected or needed.",
+          "outcome": "not_applicable"
+        },
+        "pinned_dependencies": {
+          "explanation": "The Dockerfile installs workspace JS dependencies via 'yarn install --immutable', which enforces exact resolution against the committed yarn.lock (pinned lockfile), and test.sh explicitly notes vitest is already present in the lockfile with no additional test-only installs needed. The base image is pinned to a major Node version (node:22-bookworm), which is standard practice; no Python pip dependencies are used in tests/verifier scripts requiring separate pinning.",
+          "outcome": "pass"
+        },
+        "typos": {
+          "explanation": "Reviewed instruction.md, task.toml, evidence_bundle.json, Dockerfile, ASSET_MANIFEST.json, fix.patch, solve.sh, and all tests/ files. File paths referenced in fix.patch (menu-items.tsx, DefaultMainMenuContent.tsx, index.ts) are consistent with the actual patch targets, the /app/.harbor_assets/bug.png path used in instruction.md matches the Dockerfile COPY destination, and all JSON files parse without error. No typos or path mismatches found.",
+          "outcome": "pass"
+        },
+        "tests_or_solution_in_image": {
+          "explanation": "The Dockerfile only copies environment/assets/ (the screenshot and manifest) into the image; it contains an explicit comment confirming 'tests/ and solution/ are NOT baked in — supplied by the harness at verify time', and no COPY or RUN command references tests/ or solution/ directories.",
+          "outcome": "pass"
+        },
+        "test_deps_in_image": {
+          "explanation": "test.sh notes that all test dependencies (vitest, React Testing Library) are already part of the main workspace yarn.lock installed during image build via the normal 'yarn install --immutable' step, not as a separate test-only install baked into the image. There is no evidence of extra test-only tooling installed at image-build time beyond what the project's own lockfile requires for its existing test suite.",
+          "outcome": "pass"
+        },
+        "hardcoded_solution": {
+          "explanation": "solve.sh applies fix.patch, a genuine source-code diff that adds actual gating logic (checking useActions() for the relevant action ids before rendering each submenu, extracting a reusable ExportAsMenuGroup component, and re-exporting it) across three files — it does not merely print or copy an answer file, but performs the real code change a developer would make.",
+          "outcome": "pass"
+        },
+        "file_reference_mentioned": {
+          "explanation": "This task does not require the agent to produce new output files (e.g., CSV/report files) for the tests to check; the fix is verified by running an existing/extended test suite (ContextMenu.test.tsx) against the agent's in-place source code edits, so there is no output filename that instruction.md would need to specify.",
+          "outcome": "not_applicable"
+        }
+      },
+      "cost_usd": 0.3282969,
+      "task_name": "Tasks",
+      "error": null
+    }
+  ]
+}

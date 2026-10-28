@@ -1,0 +1,46 @@
+{
+  "behavior_in_task_description": {
+    "outcome": "pass",
+    "explanation": "instruction.md states the general nature of the bug (a field's caption is borrowed from an unrelated platform concept, values must be preserved exactly, and the fix must not be observable anywhere else in the product) and explicitly directs the agent to read the attached bug_screenshot_1.png before making changes. The screenshot itself visually pinpoints the exact offending field (the 'Status' pill) via a red circle, which is the mechanism task.toml documents as load-bearing (visual_essentiality = 'required', confirmed by real trial data showing agents grep for labels read off the image). The precise required wording (mentioning 'validation', not equal to 'Status') is intentionally left for the agent to derive from the image rather than being spelled out, which is consistent with a visual-bug task design rather than a missing-detail defect. The behavior the p2p tests guard (no observable change elsewhere, values unchanged) is directly and explicitly stated in the instruction text."
+  },
+  "behavior_in_tests": {
+    "outcome": "pass",
+    "explanation": "Every behavior called out in instruction.md is exercised by the test suite: 'values displayed... must be preserved exactly' is checked by the p2p tests asserting name/timings/counters/state values are unchanged in both contexts, and 'must not be observable anywhere else in the product' is checked by the p2p tests confirming the generic ConnectorWorks/ConnectorWorkLine call site keeps the literal 'Status' label for every state. The core symptom (mismatched caption) is covered by the f2p tests requiring the draft-context label to differ from the generic label and to reference 'validation'."
+  },
+  "informative_test_structure": {
+    "outcome": "pass",
+    "explanation": "draftValidationWorkLabel.test.jsx opens with a clear header comment explaining what it drives and how it asserts, cleanly separates f2p and p2p tests into two labeled describe blocks with individual `it` descriptions matching the f2p/p2p identifiers in config.json/task.toml, and includes inline comments explaining non-obvious helper logic (fieldsIn, stateFieldIn). test.sh and verifier.py are also heavily commented, explaining rationale for each non-trivial step (dependency install trick, reward binary policy, rubric no-op gating)."
+  },
+  "anti_cheating_measures": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile explicitly excludes tests/ and solution/ from the build context, and strips .git history down to a single 'harbor_base' commit so the agent cannot walk history to the real upstream fix commit. The evidence_bundle.json file (which contains a plain-English giveaway describing exactly what the mislabeled field reports) is not copied into the container — only environment/assets/ (the manifest and screenshot PNG) is included, so the giveaway text is not visible to the agent at solve time. test.sh additionally deletes any harbor_tests/ directory and restores/removes every path test.patch touches before reapplying its own patch, preventing an agent from planting a fake trivially-passing spec. Test assertions locate the state field by its rendered VALUE rather than matching a literal string copied from the fix, and read the enumerated work states live from the GraphQL schema, which the task's own docstring/notes state was verified against band-aid implementations."
+  },
+  "structured_data_schema": {
+    "outcome": "not_applicable",
+    "explanation": "The task requires a source-code fix to a React component's label, not agent-authored structured data output (JSON/CSV/API schema), so no output schema needs to be documented in instruction.md."
+  },
+  "pinned_dependencies": {
+    "outcome": "pass",
+    "explanation": "All test-only npm dependencies installed by tests/test.sh are pinned to exact versions (vitest@4.1.8, vite@8.0.16, @vitejs/plugin-react@6.0.2, @testing-library/react@16.3.2, jsdom@29.1.1, react@19.2.7, @mui/material@6.5.0, etc.). The Dockerfile pins yarn via corepack (yarn@4.16.0) and fetches a specific pinned commit SHA for the base repository. The node:22-slim base image tag is a floating minor/patch but this is standard and acceptable for apt/base-image tags."
+  },
+  "typos": {
+    "outcome": "pass",
+    "explanation": "No misspellings or broken references were found across instruction.md, task.toml, the Dockerfile, evidence_bundle.json, or the tests/solution files. File paths referenced consistently match across task.toml, config.json, test.patch and test.sh (e.g. harbor_tests/draftValidationWorkLabel.test.jsx). Commit SHAs in task.toml are well-formed 40-character hex strings. Minor casing differences between the screenshot's rendered labels (e.g. 'Work Start Time') and the test's expected object keys (e.g. 'Work start time') reflect a CSS text-transform on a sentence-case source string rather than an inconsistency/typo in the task files."
+  },
+  "tests_or_solution_in_image": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile only runs `COPY assets/ /app/.harbor_assets/`; it never copies tests/ or solution/, and its comments explicitly call out that these are intentionally excluded and supplied by the harness only at verify time."
+  },
+  "test_deps_in_image": {
+    "outcome": "pass",
+    "explanation": "tests/test.sh installs all test-only dependencies (vitest, @testing-library/*, jsdom, a pinned React/MUI stack) at verify time into $FRONT/node_modules using a temporarily swapped-in minimal package.json, explicitly to keep test-only tooling out of the environment image stage. The Dockerfile comment corroborates this and explains why (avoiding a >3GB node_modules)."
+  },
+  "hardcoded_solution": {
+    "outcome": "pass",
+    "explanation": "solution/solve.sh applies solution/fix.patch via `git apply`/`patch`, which is the actual code change a human/agent would produce (adding a `statusLabel` prop to ConnectorWorkLine.tsx and passing a per-call-site label from DraftRoot.tsx) rather than echoing/printing a final answer or writing directly to a results file."
+  },
+  "file_reference_mentioned": {
+    "outcome": "not_applicable",
+    "explanation": "The task does not require the agent to produce a new output file for tests to check; it requires editing existing source files (ConnectorWorkLine.tsx, DraftRoot.tsx) discovered via investigation, so there is no deliverable filename that instruction.md would need to name up front."
+  }
+}

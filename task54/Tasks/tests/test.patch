@@ -1,0 +1,353 @@
+diff --git a/suite/backup/src/__tests__/multiShareBackupAvailability.test.tsx b/suite/backup/src/__tests__/multiShareBackupAvailability.test.tsx
+new file mode 100644
+index 00000000..447889a9
+--- /dev/null
++++ b/suite/backup/src/__tests__/multiShareBackupAvailability.test.tsx
+@@ -0,0 +1,347 @@
++/**
++ * @jest-environment jsdom
++ */
++/**
++ * Settings -> Device -> Wallet backup: the "Multi-share Backup" option.
++ *
++ * Issue #30020 ("Multi-share Backup option disappears from Settings after closing the Create
++ * multi-share backup modal"): starting the "Create multi-share backup" flow and cancelling it
++ * partway (e.g. at step 4 of 5, "Create shares on Trezor", or by disconnecting the device) leaves
++ * the firmware reporting `features.backup_availability` as `'Available'` -- a REAL, documented
++ * device state (see `isAdditionalShamirBackupInProgress` in `@suite-common/backup`'s shamir.ts,
++ * which already keys off this exact value elsewhere in the codebase). The base implementation
++ * only ever showed the option when `backup_availability === 'NotAvailable'` (`isBackupDone`), so
++ * `'Available'` -- and therefore any interrupted multi-share attempt -- wrongly hid the option
++ * entirely, alongside "Check wallet backup". PR #30281 fixes this by hiding the option ONLY when
++ * a backup is actually `'Required'` (i.e. no backup at all has been done yet during onboarding),
++ * which is the one case the PR's own author confirms was the original intent.
++ *
++ * The option is gated on TWO independent conditions, and this suite exercises both, because the
++ * state shipped to the solver has each of them wrong. Besides the availability gate above, the
++ * option only renders when `doesSupportMultiShare(features)` holds -- Capability_Shamir AND an
++ * extendable `backup_type`, decided by the `BACKUP_TYPE_EXTENDABILITY` lookup in
++ * `@suite-common/backup`'s shamir.ts. In the shipped state that table marks
++ * `Slip39_Advanced_Extendable` as NOT extendable, contradicting both its own name and its two
++ * sibling `*_Extendable` entries, so every device configured with that backup type stays hidden
++ * even once the availability gate is corrected. Repairing
++ * only one of the two conditions therefore leaves the reported symptom on screen, and the
++ * fail-to-pass cases below are split so that this is visible: the `Slip39_Single_Extendable` case
++ * clears once the availability gate is right, while the two `Slip39_Advanced_Extendable` cases
++ * need the extendability table to be right as well.
++ *
++ * Rendered through the workspace barrel `@suite/backup`, exactly as the real production caller
++ * (`packages/suite/src/views/settings/SettingsDevice/SettingsDevice.tsx`) imports it -- so a
++ * legitimate fix is free to land either in `MultiShareBackup.tsx` itself or in the barrel that
++ * re-exports it, and still be credited. The barrel also re-exports nine OTHER, unrelated
++ * suite/backup files (backupDeviceThunk, CreateWalletBackupModal, ...); two of them transitively
++ * pull in browser-only globals this jsdom environment does not (fully) provide the moment they
++ * are simply imported (lottie-react's `document` use at module-eval time via
++ * `@suite/nfc` -> `@trezor/components`, and `@bufbuild/protobuf`'s `TextEncoder` use via
++ * `@trezor/connect`'s test-utils manual mock) -- neither has anything to do with this bug, so
++ * each is replaced with a minimal stand-in one level below the barrel (`jest.mock('../<file>')`),
++ * leaving only `MultiShareBackup` (or whatever an alternative fix replaces it with) to load for
++ * real.
++ *
++ * `react-redux`'s `useSelector`/`useDispatch` are mocked directly (this component -- unlike most
++ * of packages/suite -- talks to plain react-redux, not a `src/hooks/suite` wrapper), together
++ * with the two selectors it calls (`selectSelectedDevice`, `selectIsN4w1BackupEnabled`), analytics
++ * plumbing (`@suite/analytics`, `@suite-common/dependency-injection`), `@suite/router`'s `goto`,
++ * `@suite/intl`'s `Translation`, `@suite/external-links`' `LearnMoreButton`, and the heavy design
++ * system (`@trezor/product-components`, replaced with minimal stand-ins that forward the same
++ * props/ids the real components receive). `doesSupportMultiShare` (`@suite-common/backup`) and
++ * `HELP_CENTER_MULTI_SHARE_BACKUP_URL` (`@trezor/urls`) are the REAL production implementations --
++ * both are small, dependency-free modules (confirmed by inspection) -- so the
++ * supports-multi-share gate in this suite is genuine, not reimplemented by the test. Device
++ * fixtures use the repository's OWN `mockSuiteDevice` factory (`@suite-common/suite-types/mocks`),
++ * the same one this workspace's existing `backupSelectors.test.ts` already relies on for
++ * `backup_availability` fixtures.
++ */
++import '@testing-library/jest-dom';
++import { fireEvent, render, screen } from '@testing-library/react';
++
++import { mockSuiteDevice } from '@suite-common/suite-types/mocks';
++
++// --- app-wide plumbing --------------------------------------------------------------------
++
++let mockSelectedDevice: unknown;
++let mockIsN4w1BackupEnabled = false;
++const mockDispatch = jest.fn();
++
++jest.mock('react-redux', () => ({
++    useSelector: (selector: (state: unknown) => unknown) =>
++        selector({ device: mockSelectedDevice, isN4w1BackupEnabled: mockIsN4w1BackupEnabled }),
++    useDispatch: () => mockDispatch,
++}));
++
++jest.mock('@suite-common/device', () => ({
++    selectSelectedDevice: (state: { device?: unknown }) => state.device,
++}));
++
++jest.mock('@suite/settings', () => ({
++    selectIsN4w1BackupEnabled: (state: { isN4w1BackupEnabled?: boolean }) =>
++        state.isN4w1BackupEnabled,
++}));
++
++const mockAnalyticsReport = jest.fn();
++
++jest.mock('@suite-common/dependency-injection', () => ({
++    useServices: () => ({ analytics: { report: mockAnalyticsReport } }),
++}));
++
++jest.mock('@suite/analytics', () => ({
++    selectDesktopAnalyticsDep: 'desktop-analytics-dep',
++    events: {
++        settingsDeviceMultiShareBackupEvent: { name: 'settings-device-multi-share-backup-event' },
++    },
++}));
++
++jest.mock('@suite/router', () => ({
++    goto: (payload: unknown) => ({ type: 'MOCK_GOTO', payload }),
++}));
++
++jest.mock('@suite/intl', () => {
++    const react = jest.requireActual('react');
++
++    return {
++        Translation: ({ id }: { id: string }) =>
++            react.createElement('span', { 'data-testid': `tr-${id}` }, id),
++    };
++});
++
++jest.mock('@suite/external-links', () => ({
++    LearnMoreButton: () => null,
++}));
++
++// --- the heavy design system, replaced with minimal stand-ins that forward the same props/ids
++// the real components receive, so production data-testids and click handlers stay genuine. ----
++
++jest.mock('@trezor/product-components', () => {
++    const react = jest.requireActual('react');
++
++    return {
++        SectionItem: ({ children }: { children?: unknown }) =>
++            react.createElement('div', { 'data-testid': 'multi-share-backup-section' }, children),
++        TextColumn: ({
++            title,
++            description,
++            bottomContent,
++        }: {
++            title?: unknown;
++            description?: unknown;
++            bottomContent?: unknown;
++        }) =>
++            react.createElement(
++                'div',
++                { 'data-testid': 'text-column' },
++                title,
++                description,
++                bottomContent,
++            ),
++        ActionColumn: ({ children }: { children?: unknown }) =>
++            react.createElement('div', null, children),
++        ActionButton: ({
++            children,
++            onClick,
++            isDisabled,
++            'data-testid': dataTestId,
++        }: {
++            children?: unknown;
++            onClick?: () => void;
++            isDisabled?: boolean;
++            'data-testid'?: string;
++        }) =>
++            react.createElement(
++                'button',
++                { onClick, disabled: isDisabled, 'data-testid': dataTestId },
++                children,
++            ),
++    };
++});
++
++// --- the barrel's nine OTHER, unrelated exports: irrelevant to this bug and not meant to load
++// their real (heavy, browser-API-touching) implementations under this workspace's plain jsdom
++// setup (suite/backup has no setupFiles/jest-canvas-mock of its own -- it never had a render
++// test before). Each is resolved relative to THIS file, which is exactly the path index.ts's own
++// `export * from './<file>'` resolves to, so this intercepts it regardless of which file (this
++// test, or an alternative fix living in index.ts) triggers the barrel's evaluation. -------------
++
++jest.mock('../backup', () => ({}));
++jest.mock('../backupMiddleware', () => ({}));
++jest.mock('../backupReducer', () => ({}));
++jest.mock('../backupSelectors', () => ({}));
++jest.mock('../backupDeviceThunk', () => ({}));
++jest.mock('../BackupFailed', () => ({ BackupFailed: () => null }));
++jest.mock('../BackupRecoverySeed', () => ({ BackupRecoverySeed: () => null }));
++jest.mock('../CreateWalletBackup', () => ({ CreateWalletBackup: () => null }));
++jest.mock('../CreateWalletBackupModal', () => ({ CreateWalletBackupModal: () => null }));
++
++/* eslint-disable import/first */
++import { MultiShareBackup } from '@suite/backup';
++/* eslint-enable import/first */
++
++// --- fixtures ------------------------------------------------------------------------------
++// `mockSuiteDevice` is this repository's OWN test factory (suite-common/suite-types/mocks),
++// already relied on by suite/backup/src/__tests__/backupSelectors.test.ts for the same
++// `backup_availability` fixture shape. Defaults: capabilities=[], backup_type='Bip39' (i.e. does
++// NOT support multi-share unless a test explicitly opts in), backup_availability='NotAvailable'.
++
++const SHAMIR_CAPABLE = {
++    capabilities: ['Capability_Shamir'] as const,
++};
++
++// The default `backup_type` is deliberately a type whose extendability this suite does NOT put
++// under test, so that the pass-to-pass cases below stay pass-to-pass: every case that depends on
++// a SPECIFIC extendable type states that type explicitly instead of inheriting it from here.
++const buildDevice = (featuresOverride: Record<string, unknown>) =>
++    mockSuiteDevice(
++        {},
++        { ...SHAMIR_CAPABLE, backup_type: 'Slip39_Basic_Extendable', ...featuresOverride },
++    );
++
++const renderMultiShareBackup = (
++    device: unknown,
++    { isN4w1BackupEnabled = false, isDeviceLocked = false } = {},
++) => {
++    mockSelectedDevice = device;
++    mockIsN4w1BackupEnabled = isN4w1BackupEnabled;
++
++    return render(<MultiShareBackup isDeviceLocked={isDeviceLocked} />);
++};
++
++const ctaButton = () => screen.queryByTestId('@settings/device/create-multi-share-backup-button');
++
++beforeEach(() => {
++    mockDispatch.mockClear();
++    mockAnalyticsReport.mockClear();
++});
++
++/* ------------------------------------------------------------------------------ tests */
++
++describe('Multi-share Backup option visibility (issue #30020)', () => {
++    describe('an interrupted multi-share backup must not hide the option (fail-to-pass)', () => {
++        it("shows the option when the flow was started and then cancelled (backup_availability 'Available', Slip39 Advanced Extendable)", () => {
++            renderMultiShareBackup(
++                buildDevice({
++                    backup_availability: 'Available',
++                    backup_type: 'Slip39_Advanced_Extendable',
++                }),
++            );
++
++            expect(ctaButton()).toBeInTheDocument();
++        });
++
++        it("also shows the option for a different extendable Shamir backup type ('Slip39_Single_Extendable'), proving the fix is not keyed to one specific backup_type", () => {
++            renderMultiShareBackup(
++                buildDevice({
++                    backup_availability: 'Available',
++                    backup_type: 'Slip39_Single_Extendable',
++                }),
++            );
++
++            expect(ctaButton()).toBeInTheDocument();
++        });
++
++        it('shows the option (disabled, with its tooltip active) even while the device is locked, when backup_availability is Available', () => {
++            renderMultiShareBackup(
++                buildDevice({
++                    backup_availability: 'Available',
++                    backup_type: 'Slip39_Advanced_Extendable',
++                }),
++                { isDeviceLocked: true },
++            );
++
++            const button = ctaButton();
++            expect(button).toBeInTheDocument();
++            expect(button).toBeDisabled();
++        });
++    });
++
++    describe('what the fix must not touch (pass-to-pass)', () => {
++        it('still hides the option when no backup has been done at all yet (Required)', () => {
++            renderMultiShareBackup(buildDevice({ backup_availability: 'Required' }));
++
++            expect(ctaButton()).not.toBeInTheDocument();
++        });
++
++        it('still shows the option in the ordinary, already-working case (NotAvailable, i.e. a regular backup is already done)', () => {
++            renderMultiShareBackup(buildDevice({ backup_availability: 'NotAvailable' }));
++
++            expect(ctaButton()).toBeInTheDocument();
++        });
++
++        it('still hides the option when N4W1 backup is enabled, regardless of backup_availability', () => {
++            renderMultiShareBackup(buildDevice({ backup_availability: 'Available' }), {
++                isN4w1BackupEnabled: true,
++            });
++
++            expect(ctaButton()).not.toBeInTheDocument();
++        });
++
++        it('still hides the option when the device does not support multi-share backup at all (no Capability_Shamir, non-extendable backup_type)', () => {
++            renderMultiShareBackup(
++                buildDevice({
++                    backup_availability: 'Available',
++                    capabilities: [],
++                    backup_type: 'Bip39',
++                }),
++            );
++
++            expect(ctaButton()).not.toBeInTheDocument();
++        });
++
++        // The two cases below hold the SUPPORTS-MULTI-SHARE gate still. They pair a device that
++        // does have Capability_Shamir with a backup type that cannot be extended, so the only
++        // thing that can keep the option hidden is the backup type itself. A fix that widens the
++        // availability gate too far -- treating every Shamir-capable device as extendable, or
++        // every Slip39 type as extendable -- makes the option appear here and fails.
++        it('still hides the option for a Shamir-capable device whose backup type cannot be extended (Slip39_Advanced)', () => {
++            renderMultiShareBackup(
++                buildDevice({
++                    backup_availability: 'Available',
++                    backup_type: 'Slip39_Advanced',
++                }),
++            );
++
++            expect(ctaButton()).not.toBeInTheDocument();
++        });
++
++        it('still hides the option for a Shamir-capable device still on a single-share Bip39 backup', () => {
++            renderMultiShareBackup(
++                buildDevice({
++                    backup_availability: 'Available',
++                    backup_type: 'Bip39',
++                }),
++            );
++
++            expect(ctaButton()).not.toBeInTheDocument();
++        });
++
++        it('still hides the option when the device has no features loaded yet', () => {
++            renderMultiShareBackup({ ...buildDevice({}), features: undefined });
++
++            expect(ctaButton()).not.toBeInTheDocument();
++        });
++
++        it('still hides the option when there is no selected device at all', () => {
++            renderMultiShareBackup(undefined);
++
++            expect(ctaButton()).not.toBeInTheDocument();
++        });
++
++        it('still reports analytics and navigates to the create-multi-share-backup route when the CTA is clicked', () => {
++            renderMultiShareBackup(buildDevice({ backup_availability: 'NotAvailable' }));
++
++            fireEvent.click(ctaButton()!);
++
++            expect(mockAnalyticsReport).toHaveBeenCalledWith(
++                expect.objectContaining({ payload: { action: 'start' } }),
++            );
++            expect(mockDispatch).toHaveBeenCalledWith(
++                expect.objectContaining({
++                    type: 'MOCK_GOTO',
++                    payload: { routeName: 'create-multi-share-backup' },
++                }),
++            );
++        });
++    });
++});

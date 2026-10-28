@@ -1,0 +1,1076 @@
+diff --git a/tests/test_sprite_power_sections.mjs b/tests/test_sprite_power_sections.mjs
+new file mode 100644
+index 00000000..e3e76844
+--- /dev/null
++++ b/tests/test_sprite_power_sections.mjs
+@@ -0,0 +1,1070 @@
++#!/usr/bin/env node
++/**
++ * Behavioural verifier for the sprite actor sheet's "Sprite Powers" tab.
++ *
++ * The tab has three list sections (general, Optional/Enabled, Optional/Disabled) that all
++ * share the SAME underlying item type ('sprite_power') and are distinguished only by each
++ * item's `system.optional` value. Every assertion below is made against observable app
++ * behaviour on BOTH halves of that round trip:
++ *
++ *   1. WRITE side — the candidate's own Handlebars templates are compiled and RENDERED with
++ *      the candidate's own registered helpers, and the real `.list-header` elements that come
++ *      out are scraped. Whatever discriminator the candidate chose to put on those headers
++ *      (a `data-*` attribute of any name, a css class, anything) is carried forward verbatim.
++ *      Those REAL rendered headers are then handed to the sheet's stable, pre-existing public
++ *      entry point `_onItemCreate(event)` — always the single-argument form real Foundry binds
++ *      (`html.find('.item-create').on('click', this._onItemCreate…)`), never a hand-rolled call
++ *      into a helper method a particular fix happens to add. Scoring is read off the actual
++ *      item data the (fake) `createEmbeddedDocuments` call receives.
++ *   2. READ side — the same template is rendered again, this time WITH sprite power items in
++ *      the sheet's own pre-existing `itemType.sprite_power` data, and the rows that come out
++ *      are located by item name. Which section a row landed under, and which controls its
++ *      markup offers, are read straight off that render.
++ *   3. TOGGLE side — the sheet's other stable, pre-existing entry point
++ *      `_onListItemToggleEnabled(event)` is driven against item fixtures, and the resulting
++ *      item state is computed by applying whatever update the sheet actually issued (flat
++ *      `system.x` keys, a nested `system` object, `actor.updateEmbeddedDocuments` or
++ *      `item.update` — all are accepted) onto the fixture.
++ *
++ * The candidate source is NEVER grepped and no new-in-a-fix helper name, attribute name or
++ * file location is required to exist. Class names / data keys that ARE relied on
++ * (`list-header`, `list-item`, `item-create`, `item-enable-toggle`, `data-item-id`,
++ * `itemType.sprite_power`) are all pre-existing base contracts the sheet's own
++ * `activateListeners` already binds — none of them is invented by any fix.
++ */
++import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from 'fs';
++import { createRequire } from 'module';
++import path from 'path';
++
++const require = createRequire(import.meta.url);
++
++// ── Paths ─────────────────────────────────────────────────────────────────────
++const DEFAULT_APP = '/app';
++const APP = existsSync(DEFAULT_APP) ? DEFAULT_APP : (process.env.SR5_APP_ROOT || DEFAULT_APP);
++const DEFAULT_REPORT_DIR = '/logs/verifier';
++const REPORT_DIR = existsSync(DEFAULT_APP)
++    ? DEFAULT_REPORT_DIR
++    : (process.env.SR5_REPORT_DIR || DEFAULT_REPORT_DIR);
++const REPORT = path.join(REPORT_DIR, 'report.xml');
++const SUITE = 'sprite_power_section_tagging';
++
++const CASE_NAMES = [
++    // f2p
++    'sprite_power_enabled_section_create_tags_new_item_enabled_option',
++    'sprite_power_disabled_section_create_tags_new_item_disabled_option',
++    'sprite_power_sections_bucket_independently_not_all_into_general',
++    'sprite_power_sections_all_create_sprite_power_typed_items',
++    'sprite_power_rows_render_under_the_section_matching_their_optional_state',
++    'sprite_power_enable_toggle_offered_only_for_optional_powers',
++    'sprite_power_enable_toggle_swaps_section_and_enabled_state_together',
++    // p2p
++    'actor_sheet_generic_item_create_unaffected_by_sprite_specific_data',
++    'sprite_sheet_non_sprite_power_item_create_stays_unaffected',
++    'item_create_still_unhides_its_inventory_section',
++    'item_create_still_adds_to_selected_non_default_inventory',
++    'sprite_power_section_headers_still_carry_an_item_type_id',
++    'enable_toggle_still_ignores_standard_powers_and_non_power_items',
++];
++
++const results = [];
++function record(name, passed, msg = '') {
++    results.push({ name, passed, msg });
++}
++async function safeAsync(name, fn) {
++    try {
++        await fn();
++    } catch (e) {
++        record(name, false, `unexpected error: ${e && e.stack ? e.stack : e}`);
++    }
++}
++
++// ── Generic auto-stub for modules we do not model ─────────────────────────────
++function autoStub(label) {
++    const cache = new Map();
++    const fn = function () {};
++    return new Proxy(fn, {
++        get(_t, prop) {
++            if (prop === '__esModule') return true;
++            if (prop === Symbol.toPrimitive) return () => `[stub ${label}]`;
++            if (prop === 'toString') return () => `[stub ${label}]`;
++            if (prop === 'then') return undefined;
++            if (typeof prop === 'symbol') return undefined;
++            if (!cache.has(prop)) cache.set(prop, autoStub(`${label}.${String(prop)}`));
++            return cache.get(prop);
++        },
++        set() {
++            return true;
++        },
++        has() {
++            return true;
++        },
++        apply() {
++            return undefined;
++        },
++        construct() {
++            return {};
++        },
++    });
++}
++
++// ── FoundryVTT globals the sources reach for ─────────────────────────────────
++globalThis.foundry = {
++    utils: { mergeObject: (a, b) => ({ ...a, ...b }), deepClone: (v) => JSON.parse(JSON.stringify(v)) },
++    applications: { ux: { TextEditor: { implementation: { enrichHTML: async (v) => (v ?? '') } } } },
++    appv1: { sheets: {} },
++};
++globalThis.CONFIG = {
++    Item: { typeLabels: { sprite_power: 'Sprite Power', critter_power: 'Critter Power', gear: 'Gear', weapon: 'Weapon' } },
++};
++globalThis.game = {
++    i18n: { lang: 'en', localize: (k) => String(k), format: (k) => String(k), has: () => false },
++    settings: { get: () => false },
++};
++globalThis.canvas = {};
++globalThis.ui = { notifications: { info() {}, warn() {}, error() {} } };
++globalThis.Hooks = { on() {}, once() {}, call() {}, callAll() {} };
++globalThis.Shadowrun = {};
++globalThis.CONST = { ACTIVE_EFFECT_MODES: { CUSTOM: 0, MULTIPLY: 1, ADD: 2, DOWNGRADE: 3, UPGRADE: 4, OVERRIDE: 5 } };
++
++// ── Minimal stand-in for FoundryVTT's (bare-global, pre-appv1-namespacing at this
++// repo's base commit) ActorSheet class. Real Foundry's Application constructor sets
++// `this.object`; `actor`/`document` are read-only getters computed off it. We never assign
++// `.actor` directly (only `.object`), so there is no accessor conflict with the real
++// SR5BaseActorSheet/SR5SpriteActorSheet subclasses.
++class FakeActorSheet {
++    static get defaultOptions() {
++        return {};
++    }
++    constructor(object, options) {
++        this.object = object;
++        this.options = options || {};
++    }
++    get document() {
++        return this.object;
++    }
++    get actor() {
++        return this.object;
++    }
++    activateListeners() {}
++}
++globalThis.ActorSheet = FakeActorSheet;
++
++// ── Dependencies from the image ──────────────────────────────────────────────
++function requireFirst(candidates, what) {
++    for (const candidate of candidates) {
++        try {
++            return require(candidate);
++        } catch {
++            /* keep looking */
++        }
++    }
++    fatal(`cannot require ${what} — expected it in the image node_modules`);
++}
++
++const ts = requireFirst(
++    [path.join(APP, 'node_modules/typescript'), 'typescript', '/usr/local/lib/node_modules/typescript'],
++    'typescript',
++);
++const Handlebars = requireFirst(
++    [path.join(APP, 'node_modules/handlebars'), 'handlebars', '/usr/local/lib/node_modules/handlebars'],
++    'handlebars',
++);
++// The repo's helper module registers onto the bare global, exactly as it does under Foundry.
++globalThis.Handlebars = Handlebars;
++
++// ── TypeScript loading of the real modules ───────────────────────────────────
++/**
++ * Two tiers, so that neither an alternative file layout nor the repo's heavyweight
++ * pre-existing infrastructure can decide the score:
++ *
++ *   TIER 1 (`MUST_LOAD_PREFIXES`) — the directories the sheet + helper entry points live in.
++ *     A load failure here is fatal, because it means the code under test is broken.
++ *   TIER 2 (every other real `.ts` under `src/`) — loaded FOR REAL on a best-effort basis and
++ *     only auto-stubbed if it actually throws. This is what lets a fix put its new logic in
++ *     ANY source directory it likes (`src/module/utils/`, `src/module/item/`, a brand-new
++ *     folder, …) instead of only in the directories one particular patch happened to use.
++ */
++const MUST_LOAD_PREFIXES = ['src/module/actor/sheets/', 'src/module/handlebars/'];
++function isMustLoad(relPath) {
++    return MUST_LOAD_PREFIXES.some((p) => relPath.startsWith(p));
++}
++
++const TRANSPILED = new Map();
++function transpile(absPath) {
++    if (TRANSPILED.has(absPath)) return TRANSPILED.get(absPath);
++    const source = readFileSync(absPath, 'utf8');
++    const out = ts.transpileModule(source, {
++        fileName: path.basename(absPath),
++        reportDiagnostics: true,
++        compilerOptions: {
++            module: ts.ModuleKind.CommonJS,
++            target: ts.ScriptTarget.ES2022,
++            useDefineForClassFields: false,
++            experimentalDecorators: false,
++            isolatedModules: true,
++        },
++    });
++    const errors = (out.diagnostics ?? []).filter((d) => d.category === 1);
++    if (errors.length) {
++        throw new Error(
++            `${path.basename(absPath)} does not compile: ` +
++                errors.map((d) => ts.flattenDiagnosticMessageText(d.messageText, ' ')).join(' | '),
++        );
++    }
++    TRANSPILED.set(absPath, out.outputText);
++    return out.outputText;
++}
++
++const LOAD_ERRORS = [];
++const cache = new Map();
++function load(absPath) {
++    if (cache.has(absPath)) return cache.get(absPath);
++    const code = transpile(absPath);
++    const mod = { exports: {} };
++    cache.set(absPath, mod.exports);
++    const dir = path.dirname(absPath);
++    const req = (specifier) => {
++        const spec = String(specifier);
++
++        let resolved = null;
++        if (spec.startsWith('.')) resolved = path.resolve(dir, spec);
++        else if (spec.startsWith('@/')) resolved = path.join(APP, 'src', spec.slice(2));
++        else if (spec.startsWith('src/')) resolved = path.join(APP, spec);
++
++        if (resolved) {
++            for (const candidate of [resolved + '.ts', path.join(resolved, 'index.ts')]) {
++                if (!existsSync(candidate)) continue;
++                const rel = path.relative(APP, candidate).split(path.sep).join('/');
++                try {
++                    return load(candidate);
++                } catch (e) {
++                    // Tier 1 failures are real breakage; tier 2 failures are just infrastructure
++                    // we do not model, and degrade to a stub exactly as before.
++                    if (isMustLoad(rel)) LOAD_ERRORS.push(`${rel}: ${e.message}`);
++                    return autoStub(spec);
++                }
++            }
++        }
++        return autoStub(spec);
++    };
++    const factory = new Function('require', 'exports', 'module', '__filename', '__dirname', code);
++    factory(req, mod.exports, mod, absPath, dir);
++    cache.set(absPath, mod.exports);
++    return mod.exports;
++}
++const requireReal = (relPath) => load(path.join(APP, relPath));
++
++function quiet(fn) {
++    const saved = { log: console.log, info: console.info, debug: console.debug, warn: console.warn, error: console.error };
++    console.log = console.info = console.debug = console.warn = console.error = () => {};
++    try {
++        return fn();
++    } finally {
++        Object.assign(console, saved);
++    }
++}
++async function quietAsync(fn) {
++    const saved = { log: console.log, info: console.info, debug: console.debug, warn: console.warn, error: console.error };
++    console.log = console.info = console.debug = console.warn = console.error = () => {};
++    try {
++        return await fn();
++    } finally {
++        Object.assign(console, saved);
++    }
++}
++
++// ── Load the real classes ─────────────────────────────────────────────────────
++let Ctor;
++try {
++    Ctor = quiet(() => ({
++        SR5BaseActorSheet: requireReal('src/module/actor/sheets/SR5BaseActorSheet.ts').SR5BaseActorSheet,
++        SR5SpriteActorSheet: requireReal('src/module/actor/sheets/SR5SpriteActorSheet.ts').SR5SpriteActorSheet,
++    }));
++} catch (e) {
++    fatal(`could not load the repo's own sheet modules: ${e && e.stack ? e.stack : e}`);
++}
++if (LOAD_ERRORS.length) fatal(`module load errors: ${LOAD_ERRORS.join(' || ')}`);
++
++// ══════════════════════════════════════════════════════════════════════════
++// Render the candidate's OWN templates and scrape the real elements.
++// ══════════════════════════════════════════════════════════════════════════
++
++const TEMPLATE_ROOT = path.join(APP, 'src/templates');
++const FOUNDRY_TEMPLATE_PREFIX = 'systems/shadowrun5e/dist/templates/';
++
++function walk(dir, ext, out = []) {
++    for (const entry of readdirSync(dir)) {
++        const abs = path.join(dir, entry);
++        if (statSync(abs).isDirectory()) walk(abs, ext, out);
++        else if (abs.endsWith(ext)) out.push(abs);
++    }
++    return out;
++}
++
++const TEMPLATE_FILES = existsSync(TEMPLATE_ROOT) ? walk(TEMPLATE_ROOT, '.html') : [];
++
++/** Register every repo template under both its Foundry path and its repo-relative path. */
++function registerPartials() {
++    for (const abs of TEMPLATE_FILES) {
++        const rel = path.relative(TEMPLATE_ROOT, abs).split(path.sep).join('/');
++        const source = readFileSync(abs, 'utf8');
++        Handlebars.registerPartial(FOUNDRY_TEMPLATE_PREFIX + rel, source);
++        Handlebars.registerPartial(rel, source);
++    }
++}
++
++/**
++ * Every module that could register a Handlebars helper: everything under the repo's
++ * handlebars directory, plus ANY other module under `src/module/` whose source calls
++ * `Handlebars.registerHelper`. A fix is therefore free to register its helper from a
++ * brand-new file, in a brand-new directory, under a name of its own choosing -- the harness
++ * finds it by what it does, not by where any particular patch happened to put it.
++ */
++function collectHelperRegistrars() {
++    const files = [];
++    const seen = new Set();
++    const push = (abs) => {
++        const key = abs.toLowerCase();
++        if (!seen.has(key)) {
++            seen.add(key);
++            files.push(abs);
++        }
++    };
++    const hbRoot = path.join(APP, 'src/module/handlebars');
++    if (existsSync(hbRoot)) walk(hbRoot, '.ts').forEach(push);
++    const moduleRoot = path.join(APP, 'src/module');
++    if (existsSync(moduleRoot)) {
++        for (const abs of walk(moduleRoot, '.ts')) {
++            try {
++                if (/Handlebars\s*\.\s*registerHelper/.test(readFileSync(abs, 'utf8'))) push(abs);
++            } catch {
++                /* unreadable -- nothing to register */
++            }
++        }
++    }
++    return files;
++}
++
++/** Load every such module and call each of its exported `register*` functions. */
++function registerAllHelpers() {
++    for (const abs of collectHelperRegistrars()) {
++        let mod;
++        try {
++            mod = quiet(() => load(abs));
++        } catch {
++            continue;
++        }
++        for (const [name, value] of Object.entries(mod || {})) {
++            if (typeof value !== 'function' || !/^register/i.test(name)) continue;
++            try {
++                quiet(() => value());
++            } catch {
++                /* a registrar we do not have the globals for -- irrelevant to this suite */
++            }
++        }
++    }
++}
++
++/** Foundry-provided helpers the repo's own templates lean on. Only filled in where the
++ *  candidate's own code has not already registered something under that name. */
++const FOUNDRY_HELPER_FALLBACKS = {
++    localize: (k) => String(k),
++    eq: (a, b) => a === b,
++    ne: (a, b) => a !== b,
++    lt: (a, b) => a < b,
++    gt: (a, b) => a > b,
++    not: (v) => !v,
++    or: (...a) => a.slice(0, -1).some(Boolean),
++    and: (...a) => a.slice(0, -1).every(Boolean),
++    isDefined: (v) => v !== undefined && v !== null,
++    concatStrings: (...a) => a.slice(0, -1).join(''),
++    numberFormat: (v) => String(v ?? ''),
++};
++
++/** Wrap every helper so that infrastructure we do not model cannot abort the render.
++ *  A throwing helper contributes nothing to the output instead of killing the page — the
++ *  behaviour under test lives in the elements themselves, not in a helper's return. */
++function guardHelpers() {
++    for (const name of Object.keys(Handlebars.helpers)) {
++        const orig = Handlebars.helpers[name];
++        if (typeof orig !== 'function' || orig.__sr5Guarded) continue;
++        const wrapped = function (...args) {
++            try {
++                return orig.apply(this, args);
++            } catch {
++                return '';
++            }
++        };
++        wrapped.__sr5Guarded = true;
++        Handlebars.registerHelper(name, wrapped);
++    }
++}
++
++/** Locate the template that renders the sprite power sections, by CONTENT rather than by
++ *  path, so a fix is free to move or rename it. */
++function findSpritePowerTemplate() {
++    const scored = [];
++    for (const abs of TEMPLATE_FILES) {
++        const src = readFileSync(abs, 'utf8');
++        if (!/sprite_power/.test(src)) continue;
++        if (!/ListHeader\.html/.test(src)) continue;
++        const headers = (src.match(/ListHeader\.html/g) || []).length;
++        scored.push({ abs, src, headers });
++    }
++    scored.sort((a, b) => b.headers - a.headers);
++    return scored[0] ?? null;
++}
++
++const ATTR_RE = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*"([^"]*)"/g;
++function parseAttrs(chunk) {
++    const attrs = {};
++    ATTR_RE.lastIndex = 0;
++    let m;
++    while ((m = ATTR_RE.exec(chunk))) attrs[m[1]] = m[2];
++    return attrs;
++}
++
++const kebabToCamel = (s) => s.replace(/-([a-z0-9])/g, (_, c) => c.toUpperCase());
++
++/** Every rendered element that IS a list block -- i.e. whose own class list contains exactly
++ *  the `list-header` or `list-item` token the sheet's own listeners bind against -- in
++ *  document order, each paired with the slice of markup that belongs to it (everything up to
++ *  the next block). Inner wrappers such as `list-item-content` / `list-item-description` are
++ *  deliberately NOT blocks: token equality, not substring matching. */
++function extractBlocks(html) {
++    const found = [];
++    const tagRe = /<(div|a|section|li|header)\b([^>]*)>/gi;
++    let m;
++    while ((m = tagRe.exec(html))) {
++        const attrs = parseAttrs(m[2]);
++        const classes = (attrs['class'] || '').split(/\s+/).filter(Boolean);
++        const kind = classes.includes('list-header') ? 'header' : classes.includes('list-item') ? 'item' : null;
++        if (!kind) continue;
++        found.push({ kind, attrs, start: m.index });
++    }
++    return found.map((b, i) => ({
++        ...b,
++        text: html.slice(b.start, i + 1 < found.length ? found[i + 1].start : html.length),
++    }));
++}
++
++/** The rendered `.item-create` icon inside a header's own slice of markup, if any -- the
++ *  template spreads `icon.data` onto this exact element (see ListItem.html), so a fix is
++ *  free to put its discriminator here instead of on the header container. Returns {} when
++ *  there is no rendered icon to scrape (e.g. the hand-built p2p fixtures below). */
++function extractIconAttrs(headerHtml) {
++    if (!headerHtml) return {};
++    const tagRe = /<a\b([^>]*)>/gi;
++    let m;
++    while ((m = tagRe.exec(headerHtml))) {
++        const attrs = parseAttrs(m[1]);
++        if (/(^|\s)item-create(\s|$)/.test(attrs['class'] || '')) return attrs;
++    }
++    return {};
++}
++
++/** Turn scraped attributes into a DOM-ish element: `dataset`, `className`, `classList` and
++ *  `getAttribute` are all populated from the REAL render, so a fix is free to signal the
++ *  section through any of them -- the header container OR the `.item-create` icon inside it
++ *  (`iconAttrs`, carried along so `makeClickEvent` can build a click target from the real
++ *  icon markup rather than assuming the header is the only place a fix could write to). */
++function headerElement(attrs, iconAttrs = {}) {
++    const dataset = {};
++    for (const [k, v] of Object.entries(attrs)) {
++        if (k.toLowerCase().startsWith('data-')) dataset[kebabToCamel(k.slice(5).toLowerCase())] = v;
++    }
++    const className = attrs['class'] || '';
++    const classes = className.split(/\s+/).filter(Boolean);
++    const el = {
++        dataset,
++        className,
++        classList: { value: className, contains: (c) => classes.includes(c) },
++        getAttribute: (n) => (n in attrs ? attrs[n] : null),
++        hasAttribute: (n) => n in attrs,
++        attributes: attrs,
++        iconAttrs,
++    };
++    el.closest = (sel) => (sel === '.list-header' || classes.some((c) => sel === `.${c}`) ? el : null);
++    return el;
++}
++
++/**
++ * Render the sprite power section template through the candidate's own partials + helpers.
++ *
++ * `items` are handed over in the sheet's own pre-existing data shape (`itemType.sprite_power`,
++ * the contract this template has read since long before this bug report and which nothing in
++ * the report asks anyone to change).
++ */
++function renderSpritePowerTab(items) {
++    const tpl = findSpritePowerTemplate();
++    if (!tpl) throw new Error('no template renders the sprite power sections');
++    return quiet(() =>
++        Handlebars.compile(tpl.src)({
++            itemType: { sprite_power: items },
++            system: {},
++            data: {},
++            bindings: { skip: '', card: '' },
++        }),
++    );
++}
++
++/** The three section headers, resolved from a render, in {general, enabled, disabled} form.
++ *  Sections are identified by the localisation key each header renders, falling back to
++ *  document order (general, enabled, disabled) if those keys were renamed. */
++function resolveSections(blocks) {
++    const headers = blocks.filter((b) => b.kind === 'header');
++    if (headers.length < 3) {
++        throw new Error(`expected 3 sprite power section headers in the render, found ${headers.length}`);
++    }
++    const enabled = headers.find((h) => /EnabledOption/i.test(h.text));
++    const disabled = headers.find((h) => /DisabledOption/i.test(h.text));
++    const general = headers.find((h) => h !== enabled && h !== disabled);
++    return general && enabled && disabled
++        ? { general, enabled, disabled }
++        : { general: headers[0], enabled: headers[1], disabled: headers[2] };
++}
++
++let SECTIONS = null;
++let SECTION_BLOCKS = null;
++let SECTION_ERROR = null;
++try {
++    registerPartials();
++    registerAllHelpers();
++    for (const [name, fn] of Object.entries(FOUNDRY_HELPER_FALLBACKS)) {
++        if (!Handlebars.helpers[name]) Handlebars.registerHelper(name, fn);
++    }
++    guardHelpers();
++    if (LOAD_ERRORS.length) throw new Error(`module load errors: ${LOAD_ERRORS.join(' || ')}`);
++
++    SECTION_BLOCKS = extractBlocks(renderSpritePowerTab([]));
++    const resolved = resolveSections(SECTION_BLOCKS);
++
++    SECTIONS = {
++        general: headerElement(resolved.general.attrs, extractIconAttrs(resolved.general.text)),
++        enabled: headerElement(resolved.enabled.attrs, extractIconAttrs(resolved.enabled.text)),
++        disabled: headerElement(resolved.disabled.attrs, extractIconAttrs(resolved.disabled.text)),
++    };
++} catch (e) {
++    SECTION_ERROR = e && e.message ? e.message : String(e);
++}
++
++// Diagnostic for graders: what the candidate's own render actually put on the three headers.
++if (SECTIONS) {
++    console.log(
++        `[headers] general=${JSON.stringify(SECTIONS.general.dataset)} ` +
++            `enabled=${JSON.stringify(SECTIONS.enabled.dataset)} ` +
++            `disabled=${JSON.stringify(SECTIONS.disabled.dataset)}`,
++    );
++} else {
++    console.log(`[headers] NOT RENDERED — ${SECTION_ERROR}`);
++}
++
++// ── The three optional states, rendered as real rows ──────────────────────────
++/** One sprite power per optional state. Names are unique nonsense tokens so a row can be
++ *  located in the render without assuming anything about the markup around it. */
++const ROW_FIXTURES = [
++    { key: 'standard', name: 'HarnessRowAlphaStandard', optional: 'standard', enabled: true },
++    { key: 'enabled_option', name: 'HarnessRowBetaEnabled', optional: 'enabled_option', enabled: true },
++    { key: 'disabled_option', name: 'HarnessRowGammaDisabled', optional: 'disabled_option', enabled: false },
++];
++
++function rowItem({ key, name, optional, enabled }) {
++    return {
++        _id: `harness-row-${key}`,
++        name,
++        img: '',
++        type: 'sprite_power',
++        description: { value: '' },
++        system: {
++            optional,
++            enabled,
++            description: { value: '' },
++            importFlags: { isFreshImport: false },
++        },
++    };
++}
++
++let ROWS = null;
++let ROWS_ERROR = null;
++try {
++    if (SECTION_ERROR) throw new Error(SECTION_ERROR);
++    const html = renderSpritePowerTab(ROW_FIXTURES.map(rowItem));
++    const blocks = extractBlocks(html);
++    const sections = resolveSections(blocks);
++    const sectionName = new Map([
++        [sections.general, 'general'],
++        [sections.enabled, 'enabled'],
++        [sections.disabled, 'disabled'],
++    ]);
++
++    ROWS = { html, blocks, byKey: {} };
++    for (const fixture of ROW_FIXTURES) {
++        // How many rows carry this power's name at all, and which section header is the
++        // closest one above the row that does.
++        const hits = blocks.filter((b) => b.kind === 'item' && b.text.includes(fixture.name));
++        let section = null;
++        if (hits.length) {
++            const idx = blocks.indexOf(hits[0]);
++            for (let i = idx - 1; i >= 0; i--) {
++                if (blocks[i].kind !== 'header') continue;
++                section = sectionName.get(blocks[i]) ?? 'unknown';
++                break;
++            }
++        }
++        ROWS.byKey[fixture.key] = {
++            fixture,
++            count: hits.length,
++            section,
++            // The pre-existing control class the sheet's own activateListeners binds the
++            // enable/disable toggle to: `html.find('.item-enable-toggle')`.
++            hasEnableToggle: hits.some((b) => b.text.includes('item-enable-toggle')),
++        };
++    }
++} catch (e) {
++    ROWS_ERROR = e && e.message ? e.message : String(e);
++}
++
++if (ROWS) {
++    console.log(
++        `[rows] ` +
++            ROW_FIXTURES.map((f) => {
++                const r = ROWS.byKey[f.key];
++                return `${f.key}={section:${r.section},count:${r.count},toggle:${r.hasEnableToggle}}`;
++            }).join(' '),
++    );
++} else {
++    console.log(`[rows] NOT RENDERED — ${ROWS_ERROR}`);
++}
++
++// ── Fixtures ───────────────────────────────────────────────────────────────────
++
++/** A minimal Actor stand-in carrying just what _onItemCreate touches. */
++function makeActor({ defaultInventoryName = 'default' } = {}) {
++    const created = [];
++    const addItemsCalls = [];
++    return {
++        name: 'Test Sprite',
++        defaultInventory: { name: defaultInventoryName, label: 'Default' },
++        created,
++        addItemsCalls,
++        async createEmbeddedDocuments(_docType, dataArr) {
++            const items = dataArr.map((d) => ({ ...d }));
++            created.push(...items);
++            return items;
++        },
++        inventory: {
++            async addItems(invName, items) {
++                addItemsCalls.push({ invName, items });
++            },
++        },
++    };
++}
++
++/** A synthetic click on the `.item-create` control inside the given header element, shaped
++ *  the way the real DOM delivers it. The target's `dataset`/`getAttribute` come from the
++ *  REAL rendered icon (`headerEl.iconAttrs`, scraped by `extractIconAttrs`) rather than a
++ *  hardcoded empty object, so a fix that signals its section on the clicked icon itself --
++ *  exactly how the real app binds this listener, see the header comment above -- is read
++ *  the same way a fix that signals on the header container would be. */
++function makeClickEvent(headerEl) {
++    const iconAttrs = headerEl.iconAttrs || {};
++    const dataset = {};
++    for (const [k, v] of Object.entries(iconAttrs)) {
++        if (k.toLowerCase().startsWith('data-')) dataset[kebabToCamel(k.slice(5).toLowerCase())] = v;
++    }
++    const className = iconAttrs['class'] || 'item-create';
++    const classes = className.split(/\s+/).filter(Boolean);
++    const target = {
++        dataset,
++        className,
++        classList: { value: className, contains: (c) => classes.includes(c) },
++        getAttribute: (n) => (n in iconAttrs ? iconAttrs[n] : null),
++        hasAttribute: (n) => n in iconAttrs,
++        closest: (sel) => (sel === '.item-create' ? target : headerEl.closest(sel)),
++    };
++    return {
++        preventDefault() {},
++        stopPropagation() {},
++        currentTarget: target,
++        target,
++    };
++}
++
++/** A header element built from a hand-written attribute map. Used only by the p2p regression
++ *  guards, which are about the generic base method rather than the sprite sections. */
++const syntheticHeader = (attrs) => headerElement({ class: 'list-header item-section', ...attrs });
++
++/** `Object.create(prototype)` bypass -- avoids the real constructor / defaultOptions chain. */
++function makeFakeSheet(Ctor_, actor, { selectedInventory } = {}) {
++    const fakeThis = Object.create(Ctor_.prototype);
++    fakeThis.object = actor;
++    fakeThis._inventoryOpenClose = {};
++    fakeThis.selectedInventory = selectedInventory ?? actor.defaultInventory.name;
++    return fakeThis;
++}
++
++/** Fire a single `.item-create` click through the given sheet class's real, unmodified
++ *  `_onItemCreate(event)` -- ALWAYS the single-argument public entry point, exactly as the
++ *  real DOM listener invokes it. */
++async function createItem(Ctor_, headerEl, { actorOpts, sheetOpts } = {}) {
++    const actor = makeActor(actorOpts);
++    const fakeThis = makeFakeSheet(Ctor_, actor, sheetOpts);
++    await quietAsync(() => fakeThis._onItemCreate(makeClickEvent(headerEl)));
++    return { actor, fakeThis, item: actor.created[0] };
++}
++
++/** Which of the rendered sections would this created item actually show up under, applying
++ *  the exact predicate the shipped read-path template uses (general: no optional value, or
++ *  'standard'). */
++function bucket(item) {
++    const opt = item?.system?.optional;
++    if (opt === undefined || opt === null || opt === '' || opt === 'standard') return 'standard';
++    return String(opt);
++}
++
++function requireSections() {
++    if (!SECTIONS) throw new Error(`could not render the sprite power section headers: ${SECTION_ERROR}`);
++    return SECTIONS;
++}
++function requireRows() {
++    if (!ROWS) throw new Error(`could not render the sprite power rows: ${ROWS_ERROR}`);
++    return ROWS;
++}
++
++// ── Enable/disable toggle fixtures ────────────────────────────────────────────
++
++/** An item stand-in for the toggle entry point. `update` is recorded too, so a fix (or a
++ *  rewrite) that goes through the document instead of the actor is read the same way. */
++function makeToggleItem({ type = 'sprite_power', optional = 'enabled_option', enabled = true } = {}) {
++    const updates = [];
++    return {
++        _id: 'toggle-fixture',
++        id: 'toggle-fixture',
++        type,
++        name: 'ToggleFixture',
++        isCritterPower: type === 'critter_power',
++        isSpritePower: type === 'sprite_power',
++        system: { optional, enabled },
++        updates,
++        async update(data) {
++            updates.push(data);
++        },
++    };
++}
++
++/** An Actor stand-in for the toggle entry point. `items.get` answers with the fixture for any
++ *  id, so the suite never depends on how the sheet derives the clicked row's id. */
++function makeToggleActor(item) {
++    const updates = item.updates;
++    return {
++        name: 'Test Sprite',
++        items: {
++            get: () => item,
++            find: () => item,
++        },
++        async updateEmbeddedDocuments(_docType, dataArr) {
++            for (const d of dataArr || []) updates.push(d);
++            return dataArr;
++        },
++        render() {},
++    };
++}
++
++/** A synthetic click on a row's enable/disable control. `closest` answers with the row for
++ *  every selector, so whichever ancestor the sheet reaches for, it finds the row. */
++function makeToggleEvent(itemId = 'toggle-fixture') {
++    const attrs = { class: 'list-item', 'data-item-id': itemId };
++    const el = headerElement(attrs);
++    el.closest = () => el;
++    return { preventDefault() {}, stopPropagation() {}, currentTarget: el, target: el };
++}
++
++/** Apply one recorded update payload onto a plain `system` object. Accepts flat dotted keys
++ *  (`'system.optional'`, `'optional'`) and a nested `system` object alike, so the assertion
++ *  is about the resulting item state rather than about the shape of the call. */
++function applyUpdate(system, payload) {
++    if (!payload || typeof payload !== 'object') return;
++    for (const [key, value] of Object.entries(payload)) {
++        if (key === '_id') continue;
++        if (key === 'system' && value && typeof value === 'object') {
++            for (const [k, v] of Object.entries(value)) system[k] = v;
++            continue;
++        }
++        if (key.startsWith('system.')) {
++            system[key.slice('system.'.length)] = value;
++            continue;
++        }
++        if (key === 'optional' || key === 'enabled') system[key] = value;
++    }
++}
++
++/** Drive the sheet's real `_onListItemToggleEnabled(event)` once and report the item state
++ *  it leaves behind, plus how many updates it issued at all. */
++async function toggleEnabled(Ctor_, itemOpts) {
++    const item = makeToggleItem(itemOpts);
++    const actor = makeToggleActor(item);
++    const fakeThis = Object.create(Ctor_.prototype);
++    fakeThis.object = actor;
++    await quietAsync(() => fakeThis._onListItemToggleEnabled(makeToggleEvent()));
++    const after = { ...item.system };
++    for (const payload of item.updates) applyUpdate(after, payload);
++    return { item, after, updateCount: item.updates.length };
++}
++
++// ══════════════════════════════════════════════════════════════════════════
++// f2p — fail on the shipped state, pass once every reported defect is fixed.
++// ══════════════════════════════════════════════════════════════════════════
++
++// [f2p] Adding from the "Optional / Enabled" header must file the new power in ITS OWN
++// section. 'enabled_option' is the value the item's own data model already uses for it.
++await safeAsync(CASE_NAMES[0], async () => {
++    const { enabled } = requireSections();
++    const { item } = await createItem(Ctor.SR5SpriteActorSheet, enabled);
++    const got = item?.system?.optional;
++    if (got === 'enabled_option') record(CASE_NAMES[0], true);
++    else record(CASE_NAMES[0], false, `expected the new item's system.optional to be 'enabled_option', got ${JSON.stringify(got)}`);
++});
++
++// [f2p] Same defect, the "Optional / Disabled" header.
++await safeAsync(CASE_NAMES[1], async () => {
++    const { disabled } = requireSections();
++    const { item } = await createItem(Ctor.SR5SpriteActorSheet, disabled);
++    const got = item?.system?.optional;
++    if (got === 'disabled_option') record(CASE_NAMES[1], true);
++    else record(CASE_NAMES[1], false, `expected the new item's system.optional to be 'disabled_option', got ${JSON.stringify(got)}`);
++});
++
++// [f2p] The general section must keep filing into the general list, and the three headers must
++// resolve to three DISTINCT sections. Deliberately value-agnostic beyond the general case, so
++// it gates independence rather than repeating the two cases above.
++await safeAsync(CASE_NAMES[2], async () => {
++    const { general, enabled, disabled } = requireSections();
++    const g = bucket((await createItem(Ctor.SR5SpriteActorSheet, general)).item);
++    const e = bucket((await createItem(Ctor.SR5SpriteActorSheet, enabled)).item);
++    const d = bucket((await createItem(Ctor.SR5SpriteActorSheet, disabled)).item);
++
++    const problems = [];
++    if (g !== 'standard') problems.push(`the general section files into '${g}' instead of the general list`);
++    if (new Set([g, e, d]).size !== 3)
++        problems.push(
++            `the three headers file into ${JSON.stringify([g, e, d])} -- they must land in three different sections`,
++        );
++    if (problems.length === 0) record(CASE_NAMES[2], true);
++    else record(CASE_NAMES[2], false, problems.join(' || '));
++});
++
++// [f2p] Whichever of the three headers is clicked, what gets created has to be a sprite power
++// -- a section of the Sprite Powers tab that creates some other kind of item creates nothing
++// the tab can ever show.
++await safeAsync(CASE_NAMES[3], async () => {
++    const sections = requireSections();
++    const problems = [];
++    for (const key of ['general', 'enabled', 'disabled']) {
++        const { item } = await createItem(Ctor.SR5SpriteActorSheet, sections[key]);
++        if (item?.type !== 'sprite_power') {
++            problems.push(`the ${key} section creates an item of type ${JSON.stringify(item?.type)}`);
++        }
++    }
++    if (problems.length === 0) record(CASE_NAMES[3], true);
++    else record(CASE_NAMES[3], false, problems.join(' || '));
++});
++
++// [f2p] Read side: a power already carrying each optional value must be listed under the
++// matching section, exactly once. Nothing here cares HOW the template selects its rows.
++await safeAsync(CASE_NAMES[4], async () => {
++    const rows = requireRows();
++    const expected = { standard: 'general', enabled_option: 'enabled', disabled_option: 'disabled' };
++    const problems = [];
++    for (const [key, wantSection] of Object.entries(expected)) {
++        const row = rows.byKey[key];
++        if (!row || row.count === 0) {
++            problems.push(`a sprite power with system.optional '${key}' renders no row at all`);
++            continue;
++        }
++        if (row.count !== 1) problems.push(`the '${key}' power renders ${row.count} rows, expected exactly 1`);
++        if (row.section !== wantSection)
++            problems.push(`the '${key}' power is listed under the '${row.section}' section, expected '${wantSection}'`);
++    }
++    if (problems.length === 0) record(CASE_NAMES[4], true);
++    else record(CASE_NAMES[4], false, problems.join(' || '));
++});
++
++// [f2p] Read side: the enable/disable control belongs to the powers that CAN be enabled or
++// disabled -- the two optional ones -- and to no others. Offering it on a non-optional power,
++// or withholding it from an optional one, is the same defect seen from two sides.
++await safeAsync(CASE_NAMES[5], async () => {
++    const rows = requireRows();
++    const expected = { standard: false, enabled_option: true, disabled_option: true };
++    const problems = [];
++    for (const [key, want] of Object.entries(expected)) {
++        const row = rows.byKey[key];
++        if (!row || row.count === 0) {
++            problems.push(`a sprite power with system.optional '${key}' renders no row at all`);
++            continue;
++        }
++        if (row.hasEnableToggle !== want) {
++            problems.push(
++                want
++                    ? `the '${key}' power's row offers no enable/disable control`
++                    : `the '${key}' power's row offers an enable/disable control it should not have`,
++            );
++        }
++    }
++    if (problems.length === 0) record(CASE_NAMES[5], true);
++    else record(CASE_NAMES[5], false, problems.join(' || '));
++});
++
++// [f2p] Toggle side: flipping an optional power moves it to the other optional section AND
++// leaves it in the enabled state that section means. The two halves must agree -- a power
++// sitting under "Disabled" that reports itself as enabled is the same bug either way round.
++await safeAsync(CASE_NAMES[6], async () => {
++    const problems = [];
++
++    const off = await toggleEnabled(Ctor.SR5SpriteActorSheet, { optional: 'enabled_option', enabled: true });
++    if (off.updateCount === 0) problems.push('toggling an enabled optional power updated nothing');
++    if (off.after.optional !== 'disabled_option')
++        problems.push(`toggling an enabled optional power left system.optional as ${JSON.stringify(off.after.optional)}`);
++    if (off.after.enabled !== false)
++        problems.push(`after toggling OFF, system.enabled is ${JSON.stringify(off.after.enabled)}, expected false`);
++
++    const on = await toggleEnabled(Ctor.SR5SpriteActorSheet, { optional: 'disabled_option', enabled: false });
++    if (on.updateCount === 0) problems.push('toggling a disabled optional power updated nothing');
++    if (on.after.optional !== 'enabled_option')
++        problems.push(`toggling a disabled optional power left system.optional as ${JSON.stringify(on.after.optional)}`);
++    if (on.after.enabled !== true)
++        problems.push(`after toggling ON, system.enabled is ${JSON.stringify(on.after.enabled)}, expected true`);
++
++    if (problems.length === 0) record(CASE_NAMES[6], true);
++    else record(CASE_NAMES[6], false, problems.join(' || '));
++});
++
++// ══════════════════════════════════════════════════════════════════════════
++// p2p — must pass on BOTH the shipped tree and the fixed tree.
++// ══════════════════════════════════════════════════════════════════════════
++
++// [p2p] Every OTHER actor sheet in the game must keep creating untagged items -- no
++// sprite-specific section handling may leak into the shared base behaviour.
++await safeAsync(CASE_NAMES[7], async () => {
++    const { item } = await createItem(Ctor.SR5BaseActorSheet, syntheticHeader({ 'data-item-id': 'gear' }));
++    const problems = [];
++    if (item?.type !== 'gear') problems.push(`type is ${JSON.stringify(item?.type)}`);
++    if (item?.system?.optional !== undefined) problems.push(`system.optional unexpectedly set to ${JSON.stringify(item.system.optional)}`);
++    if (problems.length === 0) record(CASE_NAMES[7], true);
++    else record(CASE_NAMES[7], false, problems.join(' || '));
++});
++
++// [p2p] On the sprite sheet itself, item types OTHER than 'sprite_power' (whose headers carry
++// no section discriminator either way) must stay exactly as before.
++await safeAsync(CASE_NAMES[8], async () => {
++    const { item } = await createItem(Ctor.SR5SpriteActorSheet, syntheticHeader({ 'data-item-id': 'gear' }));
++    const problems = [];
++    if (item?.type !== 'gear') problems.push(`type is ${JSON.stringify(item?.type)}`);
++    if (item?.system?.optional !== undefined) problems.push(`system.optional unexpectedly set to ${JSON.stringify(item.system.optional)}`);
++    if (problems.length === 0) record(CASE_NAMES[8], true);
++    else record(CASE_NAMES[8], false, problems.join(' || '));
++});
++
++// [p2p] Creating an item still unhides that item type's inventory section.
++await safeAsync(CASE_NAMES[9], async () => {
++    const actor = makeActor();
++    const fakeThis = makeFakeSheet(Ctor.SR5BaseActorSheet, actor);
++    await quietAsync(() => fakeThis._onItemCreate(makeClickEvent(syntheticHeader({ 'data-item-id': 'weapon' }))));
++    if (fakeThis._inventoryOpenClose.weapon === true) record(CASE_NAMES[9], true);
++    else record(CASE_NAMES[9], false, `_inventoryOpenClose.weapon is ${JSON.stringify(fakeThis._inventoryOpenClose.weapon)}`);
++});
++
++// [p2p] Creating an item while a non-default inventory is selected still files the new item
++// into that inventory.
++await safeAsync(CASE_NAMES[10], async () => {
++    const actor = makeActor({ defaultInventoryName: 'default' });
++    const fakeThis = makeFakeSheet(Ctor.SR5BaseActorSheet, actor, { selectedInventory: 'custom-pouch' });
++    await quietAsync(() => fakeThis._onItemCreate(makeClickEvent(syntheticHeader({ 'data-item-id': 'weapon' }))));
++    const calls = actor.addItemsCalls;
++    const ok = calls.length === 1 && calls[0].invName === 'custom-pouch' && calls[0].items.length === 1 && calls[0].items[0] === actor.created[0];
++    if (ok) record(CASE_NAMES[10], true);
++    else record(CASE_NAMES[10], false, `addItems calls: ${JSON.stringify(calls.map((c) => ({ invName: c.invName, n: c.items.length })))}`);
++});
++
++// [p2p] Every rendered section header still identifies the item type its own +Add creates --
++// the generic `data-item-id` contract the base sheet reads. A rewrite of the shared list
++// markup could easily drop it.
++await safeAsync(CASE_NAMES[11], async () => {
++    const sections = requireSections();
++    const problems = [];
++    for (const key of ['general', 'enabled', 'disabled']) {
++        const el = sections[key];
++        const id = el.dataset.itemId ?? el.iconAttrs?.['data-item-id'];
++        if (!id) problems.push(`the ${key} section header renders no item type id`);
++    }
++    if (problems.length === 0) record(CASE_NAMES[11], true);
++    else record(CASE_NAMES[11], false, problems.join(' || '));
++});
++
++// [p2p] The toggle entry point still declines what it never handled: a non-optional power has
++// nothing to flip, and a non-power item is none of its business.
++await safeAsync(CASE_NAMES[12], async () => {
++    const problems = [];
++
++    const standard = await toggleEnabled(Ctor.SR5SpriteActorSheet, { optional: 'standard', enabled: true });
++    if (standard.updateCount !== 0) problems.push(`toggling a non-optional power issued ${standard.updateCount} update(s)`);
++
++    const gear = await toggleEnabled(Ctor.SR5SpriteActorSheet, { type: 'gear', optional: 'enabled_option', enabled: true });
++    if (gear.updateCount !== 0) problems.push(`toggling a non-power item issued ${gear.updateCount} update(s)`);
++
++    if (problems.length === 0) record(CASE_NAMES[12], true);
++    else record(CASE_NAMES[12], false, problems.join(' || '));
++});
++
++// ── Report ───────────────────────────────────────────────────────────────────
++
++writeReport(results);
++for (const r of results) {
++    console.log(`${r.passed ? 'PASS' : 'FAIL'} ${r.name}${r.passed ? '' : ` — ${r.msg}`}`);
++}
++const failed = results.filter((r) => !r.passed);
++process.exit(failed.length ? 1 : 0);
++
++// ── Utilities ────────────────────────────────────────────────────────────────
++
++function writeReport(cases) {
++    const failures = cases.filter((c) => !c.passed).length;
++    const rows = cases.map((c) => {
++        const inner = c.passed ? '' : `\n    <failure message="${esc(c.msg)}">${esc(c.msg)}</failure>`;
++        return `  <testcase classname="${SUITE}" name="${esc(c.name)}" time="0">` + inner + `\n  </testcase>`;
++    });
++    const xml =
++        `<?xml version="1.0" encoding="utf-8"?>\n` +
++        `<testsuite name="${SUITE}" tests="${cases.length}" ` +
++        `failures="${failures}" errors="0" time="1">\n` +
++        rows.join('\n') +
++        '\n</testsuite>\n';
++    mkdirSync(REPORT_DIR, { recursive: true });
++    writeFileSync(REPORT, xml, 'utf8');
++}
++
++function esc(s) {
++    return String(s ?? '')
++        .replace(/&/g, '&amp;')
++        .replace(/</g, '&lt;')
++        .replace(/>/g, '&gt;')
++        .replace(/"/g, '&quot;');
++}
++
++function fatal(msg) {
++    const rows = CASE_NAMES.map(
++        (name) =>
++            `  <testcase classname="${SUITE}" name="${esc(name)}" time="0">\n` +
++            `    <error message="${esc(msg)}">${esc(msg)}</error>\n` +
++            `  </testcase>`,
++    );
++    const xml =
++        `<?xml version="1.0" encoding="utf-8"?>\n` +
++        `<testsuite name="${SUITE}" tests="${CASE_NAMES.length}" ` +
++        `failures="${CASE_NAMES.length}" errors="${CASE_NAMES.length}" time="0">\n` +
++        rows.join('\n') +
++        '\n</testsuite>\n';
++    mkdirSync(REPORT_DIR, { recursive: true });
++    writeFileSync(REPORT, xml, 'utf8');
++    console.error('FATAL:', msg);
++    process.exit(2);
++}

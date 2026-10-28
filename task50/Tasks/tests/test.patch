@@ -1,0 +1,580 @@
+diff --git a/packages/suite/src/components/earn/yield/__tests__/yieldWithdrawComplete.test.tsx b/packages/suite/src/components/earn/yield/__tests__/yieldWithdrawComplete.test.tsx
+new file mode 100644
+index 0000000..5bc2cd8
+--- /dev/null
++++ b/packages/suite/src/components/earn/yield/__tests__/yieldWithdrawComplete.test.tsx
+@@ -0,0 +1,574 @@
++/**
++ * Withdrawal-complete screen: what the user is told they sent (trezor/trezor-suite#30548).
++ *
++ * The reported defect: a vault withdrawal always burns the vault receipt token (trSHETHp) and
++ * pays out the underlying asset (WETH) — or the native coin (ETH) when the user unwraps — yet
++ * the completion screen never communicated that outgoing receipt token when the amount had been
++ * entered in asset units. It either showed a lone "Received WETH" line, or named WETH itself as
++ * what left the account.
++ *
++ * Beyond the reported symptom, this suite also exercises the boundary and degraded-data paths
++ * of the value that gets derived (a zero amount, no share-price data yet, a dust unwrap of
++ * exactly zero, a stale price quoted for the wrong vault pair) so that a fix which only handles
++ * the exact numbers from the bug report can't pass by coincidence.
++ *
++ * The suite drives the REAL withdraw screen: the real `useYieldWithdraw` (which owns the
++ * completion values), the real `YieldWithdrawForm` and the real `YieldFlowCompleteWithdraw`.
++ * Only `useYieldFlow` — the shared, store-bound flow engine that reports the raw result of the
++ * on-chain action — is replaced by a fixture, so the tests can stand the flow on a finished
++ * withdrawal without a redux store, a device or a network.
++ *
++ * The assertions are on the VALUES the screen carries, never on an internal expression, a helper
++ * name, a file the repair might add, or the wording of a label: the row labelled `TR_RECEIVED`
++ * (which both the broken and the repaired screen render) must carry what arrived, and the screen
++ * must additionally carry the receipt-token amount that was burned. `TR_RECEIVED` is pre-existing
++ * copy, so nothing here presumes how a repair labels the outgoing side.
++ */
++import { type ReactNode } from 'react';
++import { FormProvider, useForm } from 'react-hook-form';
++
++import { fireEvent, render, screen } from '@testing-library/react';
++
++// --- app-wide plumbing ---------------------------------------------------------------------
++// None of this participates in the behaviour under test; stubbing it keeps the suite off the
++// suite-wide redux store, the theme provider and the intl catalogue.
++
++jest.mock('@suite/analytics', () => ({ selectDesktopAnalyticsDep: jest.fn() }));
++
++jest.mock('@suite/router', () => ({ goto: jest.fn() }));
++
++jest.mock('@suite-common/dependency-injection', () => ({
++    useServices: () => ({ analytics: { report: jest.fn() } }),
++}));
++
++jest.mock('@suite-common/analytics', () => ({
++    events: {
++        yieldWithdrawEvent: { name: 'yield-withdraw' },
++        yieldInteractionEvent: { name: 'yield-interaction' },
++        yieldNavigateEvent: { name: 'yield-navigate' },
++    },
++}));
++
++jest.mock('@suite-common/feedback', () => ({
++    buildUserFeedbackData: () => ({}),
++    sendFeedbackAction: jest.fn(),
++}));
++
++jest.mock('src/hooks/suite', () => ({
++    useDispatch: () => jest.fn(),
++    useSelector: () => undefined,
++    useDevice: () => ({ device: undefined }),
++}));
++
++jest.mock('src/hooks/suite/useLayoutSize', () => ({
++    useLayoutSize: () => ({ isBelowMobile: false, isBelowTablet: false }),
++}));
++
++// Translation ids are the only stable, locale-independent labels in this tree, so each one is
++// rendered as its own test id; interpolated values are appended so a message that names a token
++// symbol can be asserted without depending on English copy.
++jest.mock('@suite/intl', () => {
++    const react = jest.requireActual('react');
++
++    return {
++        Translation: ({ id, values }: { id: string; values?: Record<string, unknown> }) =>
++            react.createElement(
++                'span',
++                { 'data-testid': `tr-${id}` },
++                [id, ...Object.values(values ?? {}).map(String)].join(' '),
++            ),
++        useTranslation: () => ({ translationString: (id: string) => id }),
++    };
++});
++
++// The rendered amount is the contract under test, so it is shown verbatim instead of going
++// through the locale-dependent balance formatter.
++jest.mock('src/components/suite/FormattedCryptoAmount', () => {
++    const react = jest.requireActual('react');
++
++    return {
++        FormattedCryptoAmount: ({ value, symbol }: { value?: string; symbol?: string }) =>
++            react.createElement('span', null, `${value ?? ''} ${symbol ?? ''}`),
++    };
++});
++
++// --- design system -------------------------------------------------------------------------
++// Layout primitives are stubbed down to plain boxes. They carry no text of their own, so the
++// text the assertions read is exactly the text the screen composes.
++
++jest.mock('@trezor/components', () => {
++    const react = jest.requireActual('react');
++
++    type AnyProps = {
++        children?: ReactNode;
++        'data-testid'?: string;
++        isDisabled?: boolean;
++        onClick?: () => void;
++        [key: string]: unknown;
++    };
++
++    const Box = ({ children, 'data-testid': testId }: AnyProps) =>
++        react.createElement('div', { 'data-testid': testId }, children);
++
++    const Button = ({ children, 'data-testid': testId, isDisabled, onClick }: AnyProps) =>
++        react.createElement(
++            'button',
++            { type: 'button', 'data-testid': testId, disabled: !!isDisabled, onClick },
++            children,
++        );
++
++    const Banner = ({ children, description }: AnyProps & { description?: ReactNode }) =>
++        react.createElement('div', null, description, children);
++    Banner.Button = Button;
++
++    const StepList = Box;
++    StepList.Item = Box;
++
++    return {
++        Badge: Box,
++        Banner,
++        Box,
++        Button,
++        Card: Box,
++        Column: Box,
++        Divider: Box,
++        Icon: Box,
++        IconButton: Button,
++        IconCircle: Box,
++        Paragraph: Box,
++        Row: Box,
++        Spinner: Box,
++        StepList,
++        Text: Box,
++        TextButton: Button,
++        Tooltip: Box,
++    };
++});
++
++jest.mock('@trezor/icons', () => ({
++    ArrowDownIcon: 'arrow-down',
++    ArrowRightIcon: 'arrow-right',
++    CaretLeftIcon: 'caret-left',
++    CheckCircleFilledIcon: 'check-circle',
++    CheckIcon: 'check',
++    WarningIcon: 'warning',
++    XIcon: 'x',
++}));
++
++jest.mock('@trezor/product-components', () => {
++    const react = jest.requireActual('react');
++
++    return {
++        TokenIcon: () => react.createElement('span', null, 'token-icon'),
++        FeedbackCard: () => react.createElement('div', null, 'feedback-card'),
++    };
++});
++
++// --- steps of the flow that are not on screen once it is finished ---------------------------
++
++jest.mock('../common/YieldActionStep', () => {
++    const react = jest.requireActual('react');
++
++    return { YieldActionStep: () => react.createElement('div', null, 'action-step') };
++});
++
++jest.mock('../common/YieldActionStepWarning', () => {
++    const react = jest.requireActual('react');
++
++    return { YieldActionStepWarning: () => react.createElement('div', null, 'action-warning') };
++});
++
++jest.mock('../common/YieldUnwrapStep', () => {
++    const react = jest.requireActual('react');
++
++    return { YieldUnwrapStep: () => react.createElement('div', null, 'unwrap-step') };
++});
++
++// --- the flow engine ------------------------------------------------------------------------
++// `useYieldFlow` reports the raw outcome of the on-chain action: how much the user's action
++// consumed (in the unit they entered) and how much native coin an unwrap produced. Everything
++// the completion screen shows is derived from that, which is exactly what is under test.
++
++const mockFlowState = {
++    /** null = the user kept the wrapped asset; a string = the native amount an unwrap produced. */
++    unwrappedAmount: null as string | null,
++    /** null = use the flow type's default fixture amount ('2' shares / '2.1' asset). */
++    completedAmount: null as string | null,
++};
++
++jest.mock('../hooks/useYieldFlow', () => {
++    const { useForm: useFormActual } = jest.requireActual('react-hook-form');
++
++    const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
++    const VAULT_ADDRESS = '0xd63070114470f685b75B74D60EEc7c1113d33a3D';
++
++    const token = {
++        networkSymbol: 'eth',
++        symbol: 'WETH',
++        decimals: 18,
++        contractAddress: WETH_ADDRESS,
++        balance: '5',
++    };
++
++    const receiptToken = {
++        networkSymbol: 'eth',
++        symbol: 'trSHETHp',
++        decimals: 18,
++        contractAddress: VAULT_ADDRESS,
++    };
++
++    const noop = () => undefined;
++
++    return {
++        useYieldFlow: ({ flowType }: { flowType: 'withdraw' | 'redeem' }) => {
++            const methods = useFormActual({ defaultValues: { amountInput: '' } });
++            const isSharesInput = flowType === 'redeem';
++
++            return {
++                account: {
++                    symbol: 'eth',
++                    descriptor: '0x1f9090aaE28b8a3dCeaDf281B0F12828e676c326',
++                    deviceState: 'mock@device:0',
++                    formattedBalance: '1.5',
++                },
++                vault: {
++                    id: `eth-${VAULT_ADDRESS}`,
++                    chainId: 1,
++                    token: { address: WETH_ADDRESS },
++                },
++                token,
++                receiptToken,
++                apy: 5,
++                depositedAmount: '4.2',
++                depositedSharesAmount: '4',
++                flowKey: 'flow-key',
++                maxAmount: isSharesInput ? '4' : '4.2',
++                inputTokenSymbol: isSharesInput ? receiptToken.symbol : token.symbol,
++                otherUnitTokenSymbol: isSharesInput ? token.symbol : receiptToken.symbol,
++                canToggleWithdrawUnit: true,
++                liveAmount: isSharesInput ? '2' : '2.1',
++                actionAmount: null,
++                // The unit the user entered: shares for `redeem`, the underlying asset for
++                // `withdraw`. 2 trSHETHp and 2.1 WETH are the same position at 1.05 WETH/share.
++                // A test can override this fixture value via `mockFlowState.completedAmount` to
++                // exercise boundary amounts (e.g. a zero-amount withdrawal/redemption).
++                completedAmount: mockFlowState.completedAmount ?? (isSharesInput ? '2' : '2.1'),
++                completedReceiptAmount: '2',
++                unwrappedAmount: mockFlowState.unwrappedAmount,
++                wrappedAmount: null,
++                errorMessage: undefined,
++                approveModalState: null,
++                pendingTransaction: null,
++                allowanceAmount: '0',
++                allowanceStatus: 'loaded',
++                approvalAction: 'increase',
++                canRevokeAllowance: false,
++                hasWrappedTokenBalance: true,
++                isAmountEmpty: false,
++                isAmountTooHigh: false,
++                isAmountInvalidDecimals: false,
++                isApprovalInsufficient: false,
++                isSubmittingApprove: false,
++                isSubmittingAction: false,
++                setAmountInput: noop,
++                submitWrap: noop,
++                skipWrap: noop,
++                completeWrapStep: noop,
++                returnToWrapStep: noop,
++                completeUnwrapStep: noop,
++                submitUnwrap: noop,
++                skipUnwrap: noop,
++                submitApprovalAction: noop,
++                skipApprove: noop,
++                submitAction: noop,
++                revokeAllowance: noop,
++                enterModifyApproval: noop,
++                handleApproveModalCancel: async () => undefined,
++                handleApproveSuccessTxid: noop,
++                openPendingTransaction: noop,
++                retryInitAllowance: noop,
++                fiatToggle: undefined,
++                setMaxAmount: noop,
++                methods,
++                flow: {
++                    currentStep: 'complete',
++                    isWrappedNativeVault: true,
++                },
++            };
++        },
++    };
++});
++
++/* eslint-disable import/first */
++import { YieldWithdrawForm } from '../withdraw/YieldWithdrawForm';
++import { useYieldWithdraw } from '../withdraw/useYieldWithdraw';
++import { YieldWithdrawContext } from '../withdraw/useYieldWithdrawContext';
++/* eslint-enable import/first */
++
++/** 1 trSHETHp share is worth 1.05 WETH. */
++const pricePerShareState = {
++    price: '1.05',
++    shareToken: { symbol: 'trSHETHp', network: 'ethereum', name: 'trSHETHp', decimals: 18 },
++    quoteToken: { symbol: 'WETH', network: 'ethereum', name: 'Wrapped Ether', decimals: 18 },
++};
++
++/**
++ * Price data quoted for a *different* vault pair (a stale cache entry, or another vault's
++ * price still in memory while this one's hasn't loaded). The share/quote tokens on this object
++ * never match `receiptToken`/`token` below, no matter which vault is on screen.
++ */
++const mismatchedPricePerShareState = {
++    price: '1.05',
++    shareToken: { symbol: 'otherVaultShare', network: 'ethereum', name: 'Other Vault', decimals: 18 },
++    quoteToken: { symbol: 'WETH', network: 'ethereum', name: 'Wrapped Ether', decimals: 18 },
++};
++
++const account = {
++    symbol: 'eth',
++    descriptor: '0x1f9090aaE28b8a3dCeaDf281B0F12828e676c326',
++    deviceState: 'mock@device:0',
++    formattedBalance: '1.5',
++} as never;
++
++const baseVault = {
++    id: 'eth-0xd63070114470f685b75B74D60EEc7c1113d33a3D',
++    chainId: 1,
++    token: { address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2' },
++};
++
++type WithdrawalOptions = {
++    /** 'asset' = the amount was entered in WETH, 'shares' = in trSHETHp. */
++    unit?: 'asset' | 'shares';
++    /** The native amount an unwrap produced, or null when the user kept the wrapped asset. */
++    unwrappedAmount?: string | null;
++    /** Overrides the fixture's completed amount (in the entered unit). Omit for the default. */
++    completedAmount?: string;
++    /**
++     * Overrides the vault's share-price data. Omit for the standard 1.05 WETH/share fixture;
++     * pass `null` for a vault whose price data hasn't loaded yet; pass an object to simulate
++     * price data quoted for a mismatched vault pair.
++     */
++    pricePerShareState?: typeof pricePerShareState | null;
++};
++
++/**
++ * Renders the withdraw screen on a finished withdrawal. The share/asset unit is selected the
++ * way the user selects it — through the flow's own unit toggle — so the screen is reached by
++ * production code only.
++ */
++const renderFinishedWithdrawal = ({
++    unit = 'asset',
++    unwrappedAmount = null,
++    completedAmount,
++    pricePerShareState: pricePerShareStateOption,
++}: WithdrawalOptions = {}) => {
++    mockFlowState.unwrappedAmount = unwrappedAmount;
++    mockFlowState.completedAmount = completedAmount ?? null;
++
++    const vault = {
++        ...baseVault,
++        state: {
++            pricePerShareState:
++                pricePerShareStateOption === undefined
++                    ? pricePerShareState
++                    : (pricePerShareStateOption ?? undefined),
++        },
++    } as never;
++
++    const Harness = () => {
++        const methods = useForm({ defaultValues: { amountInput: '' } });
++        const values = useYieldWithdraw({ account, routeParams: {} as never, vault });
++
++        if (!values) {
++            throw new Error('the withdraw flow reported no context values');
++        }
++
++        return (
++            <YieldWithdrawContext.Provider value={values}>
++                <button
++                    type="button"
++                    data-testid="switch-unit"
++                    onClick={values.toggleWithdrawFlowType}
++                />
++                <FormProvider {...methods}>
++                    <YieldWithdrawForm />
++                </FormProvider>
++            </YieldWithdrawContext.Provider>
++        );
++    };
++
++    const utils = render(<Harness />);
++
++    if (unit === 'shares') {
++        fireEvent.click(screen.getByTestId('switch-unit'));
++    }
++
++    return utils;
++};
++
++/** Everything the finished screen says, as one string. */
++const screenText = () => document.body.textContent ?? '';
++
++/**
++ * The value shown next to a label of the completion card — the nearest enclosing block that
++ * carries an amount. Independent of how the card is laid out.
++ */
++const valueLabelled = (translationId: string) => {
++    const label = screen.getByTestId(`tr-${translationId}`);
++    let node: HTMLElement | null = label.parentElement;
++
++    while (node) {
++        const text = (node.textContent ?? '').replace(label.textContent ?? '', '').trim();
++
++        if (/\d/.test(text)) {
++            return text;
++        }
++
++        node = node.parentElement;
++    }
++
++    throw new Error(`no amount is shown next to ${translationId}`);
++};
++
++/**
++ * Matches an amount rendered for a symbol, tolerating trailing zeroes ("2" / "2.00") and the
++ * fact that adjacent elements leave no whitespace between them in `textContent` (which is why
++ * the boundaries are on the digits and on the space the amount and its symbol are joined by —
++ * "0.0001 WETH" never matches a request for "1 WETH", and "2.1 WETH" never matches "2.1 ETH").
++ */
++const amountOf = (amount: string, symbol: string) =>
++    new RegExp(`(?:^|[^0-9.])${amount.replace('.', '\\.')}(?:\\.0+)?\\s+${symbol}`);
++
++beforeEach(() => {
++    mockFlowState.unwrappedAmount = null;
++    mockFlowState.completedAmount = null;
++});
++
++describe('yield withdrawal complete screen', () => {
++    describe('an amount withdrawn in asset units', () => {
++        it('reports the vault receipt token as what left the account', () => {
++            renderFinishedWithdrawal({ unit: 'asset' });
++
++            // Tied to the converted amount, not a bare substring: a fix that names the receipt
++            // token somewhere decorative without actually reporting what was burned must not pass.
++            expect(screenText()).toMatch(amountOf('2', 'trSHETHp'));
++        });
++
++        it('reports the receipt shares that were burned, not the asset amount entered', () => {
++            renderFinishedWithdrawal({ unit: 'asset' });
++
++            // 2.1 WETH withdrawn at 1.05 WETH/share burns 2 trSHETHp.
++            expect(screenText()).toMatch(amountOf('2', 'trSHETHp'));
++            expect(screenText()).not.toMatch(amountOf('2.1', 'trSHETHp'));
++        });
++
++        it('reports the receipt token as what left the account when unwrapping to the native coin', () => {
++            renderFinishedWithdrawal({ unit: 'asset', unwrappedAmount: '2.1' });
++
++            expect(screenText()).toMatch(amountOf('2', 'trSHETHp'));
++            expect(screenText()).not.toMatch(amountOf('2.1', 'WETH'));
++        });
++
++        describe('boundary and error paths', () => {
++            it('reports zero receipt tokens burned for a zero-amount withdrawal', () => {
++                renderFinishedWithdrawal({ unit: 'asset', completedAmount: '0' });
++
++                expect(screenText()).toMatch(amountOf('0', 'trSHETHp'));
++                expect(valueLabelled('TR_RECEIVED')).toMatch(amountOf('0', 'WETH'));
++            });
++
++            it('falls back to the entered amount when no share price is available yet', () => {
++                // Vault state hasn't reported a price-per-share yet (e.g. it hasn't loaded).
++                // The screen has nothing to convert with, so it must fall back to the amount the
++                // user actually entered rather than showing nothing, NaN, or a guessed price.
++                renderFinishedWithdrawal({ unit: 'asset', pricePerShareState: null });
++
++                expect(screenText()).toMatch(amountOf('2.1', 'trSHETHp'));
++                // Guards against a fix that assumes a price is always available and always
++                // converts as if it were 1.05, regardless of whether that data actually loaded.
++                expect(screenText()).not.toMatch(amountOf('2', 'trSHETHp'));
++            });
++
++            it('reports the receipt token burned even when the unwrap produces a dust amount of zero', () => {
++                // unwrappedAmount is the STRING '0', not null: the user did unwrap, it just
++                // rounded down to nothing. A check that treats '0' as falsy (no unwrap) would
++                // route this down the wrong branch entirely.
++                renderFinishedWithdrawal({ unit: 'asset', unwrappedAmount: '0' });
++
++                expect(screenText()).toMatch(amountOf('2', 'trSHETHp'));
++                expect(valueLabelled('TR_RECEIVED')).toMatch(amountOf('0', 'ETH'));
++                expect(screenText()).not.toMatch(amountOf('2.1', 'WETH'));
++            });
++        });
++    });
++
++    describe('what the screen already told the user', () => {
++        it('still shows the withdrawn asset as what was received', () => {
++            renderFinishedWithdrawal({ unit: 'asset' });
++
++            expect(valueLabelled('TR_RECEIVED')).toMatch(amountOf('2.1', 'WETH'));
++        });
++
++        it('still shows the unwrapped native coin as what was received', () => {
++            renderFinishedWithdrawal({ unit: 'asset', unwrappedAmount: '2.1' });
++
++            expect(valueLabelled('TR_RECEIVED')).toMatch(amountOf('2.1', 'ETH'));
++        });
++
++        it('still announces the completed withdrawal and names the asset that arrived', () => {
++            renderFinishedWithdrawal({ unit: 'asset' });
++
++            expect(screen.getByTestId('tr-TR_EARN_YIELD_WITHDRAW_COMPLETE')).toBeInTheDocument();
++            expect(screen.getByTestId('@yield/flow-complete/status')).toBeInTheDocument();
++            expect(
++                screen.getByTestId('tr-TR_EARN_YIELD_WITHDRAW_COMPLETE_DESCRIPTION'),
++            ).toHaveTextContent('WETH');
++        });
++    });
++
++    describe('an amount withdrawn in share units', () => {
++        it('sends the receipt shares entered and receives the underlying asset', () => {
++            renderFinishedWithdrawal({ unit: 'shares' });
++
++            expect(screenText()).toMatch(amountOf('2', 'trSHETHp'));
++            // 2 trSHETHp redeemed at 1.05 WETH/share pays out 2.1 WETH.
++            expect(valueLabelled('TR_RECEIVED')).toMatch(amountOf('2.1', 'WETH'));
++        });
++
++        it('sends the receipt shares entered and receives the native coin when unwrapping', () => {
++            renderFinishedWithdrawal({ unit: 'shares', unwrappedAmount: '2.1' });
++
++            expect(screenText()).toMatch(amountOf('2', 'trSHETHp'));
++            expect(valueLabelled('TR_RECEIVED')).toMatch(amountOf('2.1', 'ETH'));
++        });
++
++        describe('boundary and degraded-data paths', () => {
++            it('reports zero shares redeemed and zero underlying received for a zero-amount redemption', () => {
++                renderFinishedWithdrawal({ unit: 'shares', completedAmount: '0' });
++
++                expect(screenText()).toMatch(amountOf('0', 'trSHETHp'));
++                expect(valueLabelled('TR_RECEIVED')).toMatch(amountOf('0', 'WETH'));
++            });
++
++            it('falls back to the raw share amount as received when no share price is available yet', () => {
++                renderFinishedWithdrawal({ unit: 'shares', pricePerShareState: null });
++
++                expect(screenText()).toMatch(amountOf('2', 'trSHETHp'));
++                expect(valueLabelled('TR_RECEIVED')).toMatch(amountOf('2', 'WETH'));
++            });
++
++            it('treats mismatched price-per-share data as unusable and reports zero received', () => {
++                // The price data present belongs to a different vault pair entirely (stale
++                // cache, or another vault's quote still in memory). It must not be applied as if
++                // it were this vault's price.
++                renderFinishedWithdrawal({
++                    unit: 'shares',
++                    pricePerShareState: mismatchedPricePerShareState,
++                });
++
++                expect(screenText()).toMatch(amountOf('2', 'trSHETHp'));
++                expect(valueLabelled('TR_RECEIVED')).toMatch(amountOf('0', 'WETH'));
++            });
++        });
++    });
++});

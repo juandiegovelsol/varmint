@@ -1,0 +1,63 @@
+version = "1.0"
+
+[metadata]
+task_id = "Textualize__textual-5436-mm"
+title = "A binding with no description but with a tooltip doesn't align correctly in the help panel"
+repository_name = "Textualize/textual"
+repo_url = "https://github.com/Textualize/textual"
+issue_number = 5436
+pr_number = 5437
+base_commit = "ee4abfaf82da6ca966c54401a6a531f665519902"
+fix_commit = "9612407609467a369d70ba22bf476cb25feda0bd"
+task_type = "visual_bug_fix"
+language = "Python"
+framework = "pytest + pytest-asyncio (App.run_test headless pilot; no snapshots)"
+cross_file = false
+visual_essentiality = "required"
+difficulty = "medium"
+difficulty_explanation = """
+The instruction names no file, API, component or repro path: the only anchor is the screenshot,
+which shows one help-panel row whose text is pushed a column to the right of the others. The agent
+must read the poster to diagnose the misalignment, locate the row-rendering code unaided, and fix the
+separator logic without disturbing the rows that already line up (guarded by 9 p2p tests). The change
+is behavioural, not cosmetic.
+"""
+files_edited = [
+  "src/textual/widgets/_key_panel.py",
+]
+f2p = [
+  "tests.test_key_panel_tooltip_alignment::test_help_panel_tooltip_only_cell_has_no_leading_space",
+  "tests.test_key_panel_tooltip_alignment::test_help_panel_all_description_cells_match_recomputed_text",
+  "tests.test_key_panel_tooltip_alignment::test_help_panel_tooltip_only_row_starts_in_the_description_column",
+  "tests.test_key_panel_tooltip_alignment::test_direct_panel_tooltip_only_cell_has_no_leading_space",
+  "tests.test_key_panel_tooltip_alignment::test_direct_panel_cells_match_recomputed_text",
+  "tests.test_key_panel_tooltip_alignment::test_direct_panel_dim_tooltip_begins_at_the_description_column",
+  "tests.test_key_panel_tooltip_alignment::test_direct_panel_tooltip_only_row_starts_in_the_description_column",
+]
+p2p = [
+  "tests.test_key_panel_tooltip_alignment::test_help_panel_described_binding_keeps_one_space_before_its_tooltip",
+  "tests.test_key_panel_tooltip_alignment::test_help_panel_description_without_a_tooltip_is_unpadded",
+  "tests.test_key_panel_tooltip_alignment::test_help_panel_markup_in_a_description_is_still_rendered",
+  "tests.test_key_panel_tooltip_alignment::test_help_panel_tooltip_text_is_still_dimmed",
+  "tests.test_key_panel_tooltip_alignment::test_help_panel_described_rows_keep_their_painted_columns",
+  "tests.test_key_panel_tooltip_alignment::test_direct_panel_described_binding_keeps_one_space_before_its_tooltip",
+  "tests.test_key_panel_tooltip_alignment::test_direct_panel_key_column_is_unchanged",
+  "tests.test_key_panel_tooltip_alignment::test_direct_panel_still_hides_system_bindings",
+  "tests.test_key_panel_tooltip_alignment::test_direct_panel_group_title_row_survives",
+]
+tags = ["multimodal", "visual_bug_fix"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+network_mode = "public"
+timeout_sec = 2400.0
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

@@ -1,0 +1,10 @@
+{
+  "schema": "rubrics.schema/v1",
+  "task": "wxWidgets__wxWidgets-23046-mm",
+  "description": "Binary, unweighted rubric. Every criterion is PASS/FAIL and every one is mandatory: the rubric passes only if all pass. Only include criteria worth rejecting a submission over. States the approach, never a specific identifier.",
+  "criteria": [
+    { "id": "scope_no_harness_edits", "criterion": "The change is confined to product source (the GTK port's device-context files and the shared graphics-context device-context implementation), with no test, snapshot, or harness file touched." },
+    { "id": "root_cause_not_special_cased", "criterion": "The change addresses the underlying clipping behaviour rather than special-casing or hard-coding the particular coordinates, transforms or dimensions the tests happen to assert." },
+    { "id": "clip_region_correct_under_active_mapping", "criterion": "After the change, the clipping region a device context reports and enforces always describes the region actually in effect, expressed in the coordinate mapping that is active at the moment it is queried -- whether that mapping is the identity, a device-origin/user-scale/logical-scale remap, or an arbitrary affine matrix. This must hold in all three of these situations: (a) after a region supplied in device (unmapped pixel) coordinates has been set; (b) after the region has been reset, where the resulting box must cover the device context's entire drawable area rather than a stale, empty or construction-time area; and (c) after the coordinate mapping is changed while a region is in effect, where a previously computed box must not be reused as if it were still current. Any means of achieving this is acceptable -- removing a redundant per-device-context override, correcting such an override so it derives from the active mapping, or fixing when the shared code recomputes rather than reuses its clipping box. The criterion fails only if some remaining path can still report or enforce a box that is stale or expressed in the wrong coordinate system." }
+  ]
+}

@@ -1,0 +1,161 @@
+diff --git a/src/module/actor/sheets/SR5BaseActorSheet.ts b/src/module/actor/sheets/SR5BaseActorSheet.ts
+index 2f71b845..461441c9 100644
+--- a/src/module/actor/sheets/SR5BaseActorSheet.ts
++++ b/src/module/actor/sheets/SR5BaseActorSheet.ts
+@@ -637,7 +637,13 @@ export class SR5BaseActorSheet extends ActorSheet {
+         this._inventoryOpenClose[type] = isOpen
+     }
+ 
+-    async _onItemCreate(event) {
++    /**
++     * Create a new item based on the Item Header creation action and the item type of that header.
++     *
++     * @param event
++     * @param data Optional additional data to be injected into the create item data.
++     */
++    async _onItemCreate(event, data = {}) {
+         event.preventDefault();
+         const type = event.currentTarget.closest('.list-header').dataset.itemId;
+ 
+@@ -648,6 +654,7 @@ export class SR5BaseActorSheet extends ActorSheet {
+         const itemData = {
+             name: `${game.i18n.localize('SR5.New')} ${Helpers.label(game.i18n.localize(SR5.itemTypes[type]))}`,
+             type: type,
++            ...data
+         };
+         const items = await this.actor.createEmbeddedDocuments('Item', [itemData], { renderSheet: true }) as SR5Item[];
+         if (!items) return;
+@@ -1617,14 +1624,14 @@ export class SR5BaseActorSheet extends ActorSheet {
+                 await this.actor.updateEmbeddedDocuments('Item', [{
+                     '_id': iid,
+                     'system.optional': 'disabled_option',
+-                    'system.enabled': true,
++                    'system.enabled': false,
+                 }]);
+                 break;
+             case 'disabled_option':
+                 await this.actor.updateEmbeddedDocuments('Item', [{
+                     '_id': iid,
+                     'system.optional': 'enabled_option',
+-                    'system.enabled': false,
++                    'system.enabled': true,
+                 }]);
+                 break;
+         }
+diff --git a/src/module/actor/sheets/SR5SpriteActorSheet.ts b/src/module/actor/sheets/SR5SpriteActorSheet.ts
+index 041c6db7..9eeade38 100644
+--- a/src/module/actor/sheets/SR5SpriteActorSheet.ts
++++ b/src/module/actor/sheets/SR5SpriteActorSheet.ts
+@@ -81,4 +81,26 @@ export class SR5SpriteActorSheet extends SR5BaseActorSheet {
+ 
+         await this.document.removeTechnomancer();
+     }
++
++    /**
++     * Custom behavior for ListHeader item creation for sprites.
++     */
++    override async _onItemCreate(event: any) {
++        event.preventDefault();
++        event.stopPropagation();
++
++        const type = event.currentTarget.closest('.list-header').dataset.itemId;
++        const optional = event.currentTarget.closest('.list-header').dataset.optional;
++
++        switch (type) {
++            // Sprite powers need special handling, as there are different sections for them.
++            case 'sprite_power':
++                if (!optional) return console.error('Shadowrun 5e | Sprite Actor Sheet: Missing optional value for sprite power item creation.');
++                await super._onItemCreate(event, {system: {optional}});
++                break;
++            default:
++                await super._onItemCreate(event);
++                break;
++        }
++    }
+ }
+\ No newline at end of file
+diff --git a/src/module/data/SR5ItemDataWrapper.ts b/src/module/data/SR5ItemDataWrapper.ts
+index 0977fdcc..5176acea 100644
+--- a/src/module/data/SR5ItemDataWrapper.ts
++++ b/src/module/data/SR5ItemDataWrapper.ts
+@@ -214,7 +214,7 @@ export class SR5ItemDataWrapper extends DataWrapper<ShadowrunItemData> {
+ 
+     canBeDisabled(): boolean {
+         if(!this.isCritterPower() && !this.isSpritePower()) return false;
+-        return (this.getData().optional || 'standard') !== 'enabled_option'
++        return (this.getData().optional || 'standard') !== 'standard'
+     }
+ 
+     isWireless(): boolean {
+diff --git a/src/module/handlebars/ItemLineHelpers.ts b/src/module/handlebars/ItemLineHelpers.ts
+index 458dc614..916fc316 100644
+--- a/src/module/handlebars/ItemLineHelpers.ts
++++ b/src/module/handlebars/ItemLineHelpers.ts
+@@ -972,4 +972,14 @@ export const registerItemLineHelpers = () => {
+     Handlebars.registerHelper('EmptyIcons', () => {
+         return [{}];
+     })
++
++    /**
++     * Sprite Power Tabs on the sprite actor need a way to differentiate between different sections based on the
++     * sprite power values.
++     *
++     * The resulting value will be used for ItemHeader handlebar part itemData to determine the correct section for +Add actions.
++     */
++    Handlebars.registerHelper('SpritePowerItemData', (optional: string) => {
++        return {optional};
++    });
+ };
+diff --git a/src/templates/actor/parts/matrix/SpritePowerList.html b/src/templates/actor/parts/matrix/SpritePowerList.html
+index 214c2567..e245a538 100644
+--- a/src/templates/actor/parts/matrix/SpritePowerList.html
++++ b/src/templates/actor/parts/matrix/SpritePowerList.html
+@@ -1,7 +1,9 @@
+ <div class="scroll-area-sprite-power">
+     {{> 'systems/shadowrun5e/dist/templates/common/List/ListHeader.html'
+             name=(localize 'SR5.Labels.ActorSheet.SpritePowers')
+-            itemId='critter_power'
++            itemId='sprite_power'
++            itemType='sprite_power'
++            itemData=(SpritePowerItemData 'standard')
+             icons=(ItemHeaderIcons 'sprite_power')
+             rightSide=(ItemHeaderRightSide 'sprite_power')
+     }}
+@@ -21,10 +23,12 @@
+     {{> 'systems/shadowrun5e/dist/templates/common/List/ListHeader.html'
+             name=(localize 'SR5.Labels.ActorSheet.EnabledOptionSpritePowers')
+             itemId='sprite_power'
++            itemType='sprite_power'
++            itemData=(SpritePowerItemData 'enabled_option')
+             icons=(ItemHeaderIcons 'sprite_power')
+             rightSide=(ItemHeaderRightSide 'sprite_power')
+     }}
+-    {{#each itemType.sprite_power as |item i|}} {{#ife system.optional "disabled_option"}}
++    {{#each itemType.sprite_power as |item i|}} {{#ife system.optional "enabled_option"}}
+         {{> 'systems/shadowrun5e/dist/templates/common/List/ListItem.html'
+             img=item.img
+             name=item.name
+@@ -40,10 +44,12 @@
+     {{> 'systems/shadowrun5e/dist/templates/common/List/ListHeader.html'
+             name=(localize 'SR5.Labels.ActorSheet.DisabledOptionSpritePowers')
+             itemId='sprite_power'
++            itemType='sprite_power'
++            itemData=(SpritePowerItemData 'disabled_option')
+             icons=(ItemHeaderIcons 'sprite_power')
+             rightSide=(ItemHeaderRightSide 'sprite_power')
+     }}
+-    {{#each itemType.sprite_power as |item i|}} {{#ife system.optional "enabled_option"}}
++    {{#each itemType.sprite_power as |item i|}} {{#ife system.optional "disabled_option"}}
+         {{> 'systems/shadowrun5e/dist/templates/common/List/ListItem.html'
+             img=item.img
+             name=item.name
+diff --git a/src/templates/common/List/ListItem.html b/src/templates/common/List/ListItem.html
+index 058a43a6..18d51095 100644
+--- a/src/templates/common/List/ListItem.html
++++ b/src/templates/common/List/ListItem.html
+@@ -1,4 +1,4 @@
+-<div class="{{#if itemHeader}}list-header{{else}}list-item{{/if}} {{itemCssClass}}" {{#if itemId}}data-item-id="{{itemId}}" data-item-type="{{itemType}}"{{/if}} {{#if itemData.length}}{{#each itemData}}data-{{@key}}="{{this}}"{{/each}}{{/if}}>
++<div class="{{#if itemHeader}}list-header{{else}}list-item{{/if}} {{itemCssClass}}" {{#if itemId}}data-item-id="{{itemId}}" data-item-type="{{itemType}}"{{/if}} {{#each itemData}}data-{{@key}}="{{this}}"{{/each}}>
+     <div class="list-item-content">
+         <div class="item-left">
+             {{#if img}}

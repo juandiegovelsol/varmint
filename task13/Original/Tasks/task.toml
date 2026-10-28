@@ -1,0 +1,40 @@
+version = "1.0"
+
+[metadata]
+task_id = "IvarK__AntimatterDimensionsSourceCode-2613-mm"
+title = "horizontal + vertical scroll looks bad on chrome"
+repository_name = "IvarK/AntimatterDimensionsSourceCode"
+repo_url = "https://github.com/IvarK/AntimatterDimensionsSourceCode"
+issue_number = 2613
+pr_number = 2617
+base_commit = "cc08c9f84f3ea8ffb2f56d8afa7a909d0a78b108"
+fix_commit = "63df293dbeccc29ff42c4116aee898b90565b5fd"
+task_type = "visual_bug_fix"
+language = "JavaScript/CSS"
+framework = "Vue 2 (vue-cli-service)"
+cross_file = false
+visual_essentiality = "required"
+difficulty = "easy"
+difficulty_explanation = """The screenshot is required to identify the defect: the issue title ('horizontal + vertical scroll looks bad on chrome') is too vague to determine whether the problem is the scrollbar thumb, track, corner, or overall styling — only by examining the screenshot does it become clear that the white artifact is specifically at the ::-webkit-scrollbar-corner intersection of both scrollbars. However, once the defect location is identified from the image, the fix is a well-known WebKit CSS recipe: adding '::-webkit-scrollbar-corner { -webkit-appearance: none; appearance: none; }' to the global stylesheet. The change is a single-file, 4-line CSS addition with no cross-file coordination, no logic changes, and no test infrastructure to update. Measured: claude-code @ anthropic/claude-opus-4-8 solves this 6/6 (mean reward 1.000 over one 1-trial and one 5-trial serial run, ~1m45s each), so the 'easy' tier is empirical rather than estimated. The verifier still discriminates correctly (nop 0.0, oracle 1.0, single-hard-coded-colour corner 0.5, gutted stylesheet 0.0) -- see VALIDATION.md."""
+files_edited = ["public/stylesheets/styles.css"]
+f2p = [
+  "scrollbar_corner::test_corner_not_white",
+  "scrollbar_corner_edge::test_corner_matches_container_background",
+]
+p2p = ["scrollbar_chrome::test_custom_scrollbar_metrics_and_thumb_preserved"]
+tags = ["multimodal", "visual_bug_fix", "Vue 2", "CSS", "WebKit", "scrollbar", "synthetic_tests"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "no-network"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

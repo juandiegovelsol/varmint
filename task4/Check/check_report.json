@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "checks": {
+        "behavior_in_task_description": {
+          "explanation": "instruction.md states the exact invariant the tests check: for any spoke, the label, drawn series, and hover-resolved series must match, hover must resolve to the nearest spoke, and this must hold 'for any number of series, and whatever start and end angle the circle is laid out with' — which maps directly to the varied series counts and start/end angle configurations (0..360, 45..405, 90..450) used in the f2p tests. The task intentionally withholds the diagnosis (which of the three offset computations is wrong) and requires it to be read off the two screenshots, but this is a deliberate 'hard' / visual-essentiality-required design rather than an undocumented behavior — the externally observable behavior under test (self-consistency, nearest-spoke attribution) is stated in prose.",
+          "outcome": "pass"
+        },
+        "behavior_in_tests": {
+          "explanation": "The tests in test.patch cover exactly what instruction.md promises: nearest-spoke pointer attribution across multiple series counts/angle ranges, wrap-around hover behavior, label-vs-plotted-series agreement, and regression coverage for default orientation and pie charts (p2p). No described behavior is left untested.",
+          "outcome": "pass"
+        },
+        "informative_test_structure": {
+          "explanation": "test.patch is organized into clearly named describe/it blocks ('full-circle polar chart pointer attribution', 'full-circle polar chart series placement', 'polar tooltip regressions') with helper functions (pointAt, directionOf, nearestSpoke, readSpokes) that are documented with short comments explaining intent, and test.sh is divided into clearly labeled numbered steps (restore, apply patch, install deps, run tests, compute reward).",
+          "outcome": "pass"
+        },
+        "anti_cheating_measures": {
+          "explanation": "The Dockerfile strips .git history after checkout to prevent inspecting the future fix commit, only copies assets/ into the image (tests/ and solution/ are supplied only at verify time), the verifier explicitly avoids grepping source for the fix and derives reward purely from the JUnit report, and test.sh resets test/harness files from harbor_base before applying test.patch so an agent cannot neuter the test suite by editing it. The screenshots were also re-captured from the base commit specifically to ensure they still reproduce on this tree rather than being stale/misleading artifacts from the original issue.",
+          "outcome": "pass"
+        },
+        "structured_data_schema": {
+          "explanation": "This task is a UI/chart-behavior bug fix (recharts polar chart), not an API or file-output task; there is no structured data schema (JSON/CSV/DB) that the agent must produce, so this criterion does not apply.",
+          "outcome": "not_applicable"
+        },
+        "pinned_dependencies": {
+          "explanation": "The Dockerfile pins the base image to node:22.23.2-bookworm, pins the repo checkout to an exact base_commit hash, uses `npm ci` against a committed package-lock.json for byte-identical dependency trees, and pins pnpm to an exact version (9.15.9) via corepack.",
+          "outcome": "pass"
+        },
+        "typos": {
+          "explanation": "No typos were found in filenames, paths, commands, or identifiers across instruction.md, task.toml, Dockerfile, test.sh, verifier.py, config.json, or the patches; file paths referenced in task.toml/config.json/test.sh/patches are mutually consistent.",
+          "outcome": "pass"
+        },
+        "tests_or_solution_in_image": {
+          "explanation": "The Dockerfile's only COPY instruction copies assets/ (the screenshots) into /app/.harbor_assets/; tests/ and solution/ are not referenced anywhere in the Dockerfile and are explicitly noted as 'supplied by the harness at verify time — NOT baked in.'",
+          "outcome": "pass"
+        },
+        "test_deps_in_image": {
+          "explanation": "vitest and all JS dependencies are installed at image build time via `npm ci` against the repo's own package-lock.json (these are the project's normal dependencies, not test-harness-only additions), and test.sh explicitly notes 'pnpm is already installed in the image; no extra deps needed for vitest' — no additional test-only dependency installation happens inside test.sh that should have been in the image instead, nor vice versa.",
+          "outcome": "pass"
+        },
+        "hardcoded_solution": {
+          "explanation": "solution/fix.patch modifies three real source files (axisSelectors.ts, tooltipSelectors.ts, getActiveCoordinate.ts) with substantive logic changes (fixing the offset-sign derivation and adding modulo-circle interval checks), and solve.sh applies this patch via git apply/patch rather than writing out or echoing any final answer — it demonstrates the actual code fix, not a shortcut.",
+          "outcome": "pass"
+        },
+        "file_reference_mentioned": {
+          "explanation": "The agent is not expected to produce any output files for tests to check; this is a source-code bug-fix task verified by running an existing (patched-in) test suite against the agent's code changes, so there is no output filename that needs to be documented in instruction.md.",
+          "outcome": "not_applicable"
+        }
+      },
+      "cost_usd": 1.2817774499999999,
+      "task_name": "Tasks",
+      "error": null
+    }
+  ]
+}

@@ -1,0 +1,527 @@
+diff --git a/app/eventyay/base/pdf.py b/app/eventyay/base/pdf.py
+index 81bb37f50cb..0ce08dcd430 100644
+--- a/app/eventyay/base/pdf.py
++++ b/app/eventyay/base/pdf.py
+@@ -722,7 +722,13 @@ def __init__(self, event, layout, background_file):
+         self.event = event
+         if self.background_file:
+             self.bg_bytes = self.background_file.read()
++            try:
++                self.background_file.close()
++            except OSError:
++                pass
++            self.background_file = None
+             self.bg_pdf = PdfReader(BytesIO(self.bg_bytes), strict=False)
++            correct_page_media_box(self.bg_pdf.pages[0])
+         else:
+             self.bg_bytes = None
+             self.bg_pdf = None
+@@ -908,6 +914,15 @@ def _draw_textarea(self, canvas: Canvas, op: OrderPosition, order: Order, o: dic
+         canvas.restoreState()
+ 
+     def draw_page(self, canvas: Canvas, order: Order, op: OrderPosition, show_page=True):
++        if self.bg_pdf:
++            bg_page = self.bg_pdf.pages[0]
++            page_size = (
++                bg_page.mediabox[2] - bg_page.mediabox[0],
++                bg_page.mediabox[3] - bg_page.mediabox[1],
++            )
++            if bg_page.get('/Rotate') in (90, 270):
++                page_size = page_size[::-1]
++            canvas.setPageSize(page_size)
+         for o in self.layout:
+             if o['type'] == 'barcodearea':
+                 self._draw_barcodearea(canvas, op, o)
+@@ -917,11 +932,19 @@ def draw_page(self, canvas: Canvas, order: Order, op: OrderPosition, show_page=T
+                 self._draw_textarea(canvas, op, order, o)
+             elif o['type'] == 'poweredby':
+                 self._draw_poweredby(canvas, op, o)
+-            if self.bg_pdf:
+-                canvas.setPageSize((self.bg_pdf.pages[0].mediabox[2], self.bg_pdf.pages[0].mediabox[3]))
+         if show_page:
+             canvas.showPage()
+ 
++    def merge_foreground_buffer(self, buffer):
++        buffer.seek(0)
++        fg_pdf = PdfReader(buffer, strict=False)
++        if not self.bg_pdf:
++            return list(fg_pdf.pages)
++        bg_page = self.bg_pdf.pages[0]
++        for page in fg_pdf.pages:
++            page.merge_page(bg_page, over=False)
++        return list(fg_pdf.pages)
++
+     def render_background(self, buffer, title=_('Ticket')):
+         if settings.PDFTK:
+             buffer.seek(0)
+@@ -945,16 +968,11 @@ def render_background(self, buffer, title=_('Ticket')):
+                 with open(os.path.join(d, 'out.pdf'), 'rb') as f:
+                     return BytesIO(f.read())
+         else:
+-            from pypdf import PdfReader, PdfWriter
++            from pypdf import PdfWriter
+ 
+-            buffer.seek(0)
+-            new_pdf = PdfReader(buffer)
+             output = PdfWriter()
+-
+-            for page in new_pdf.pages:
+-                bg_page = copy.copy(self.bg_pdf.pages[0])
+-                bg_page.merge_page(page)
+-                output.add_page(bg_page)
++            for page in self.merge_foreground_buffer(buffer):
++                output.add_page(page)
+ 
+             output.add_metadata(
+                 {
+@@ -966,3 +984,30 @@ def render_background(self, buffer, title=_('Ticket')):
+             output.write(outbuffer)
+             outbuffer.seek(0)
+             return outbuffer
++
++
++def correct_page_media_box(page):
++    import pypdf
++    from pypdf.generic import NameObject, RectangleObject
++
++    if page.rotation != 0:
++        page.transfer_rotation_to_content()
++    media_box = page.mediabox
++    trsf = pypdf.Transformation()
++    if media_box.bottom != 0:
++        trsf = trsf.translate(0, -media_box.bottom)
++    if media_box.left != 0:
++        trsf = trsf.translate(-media_box.left, 0)
++    page.add_transformation(trsf, False)
++    for box in ('/MediaBox', '/CropBox', '/BleedBox', '/TrimBox', '/ArtBox'):
++        if box in page:
++            rect = RectangleObject(page[box])
++            pt1 = trsf.apply_on(rect.lower_left)
++            pt2 = trsf.apply_on(rect.upper_right)
++            page[NameObject(box)] = RectangleObject((
++                min(pt1[0], pt2[0]),
++                min(pt1[1], pt2[1]),
++                max(pt1[0], pt2[0]),
++                max(pt1[1], pt2[1]),
++            ))
++
+diff --git a/app/eventyay/plugins/badges/apps.py b/app/eventyay/plugins/badges/apps.py
+index f332722fadf..79c7d982d8e 100644
+--- a/app/eventyay/plugins/badges/apps.py
++++ b/app/eventyay/plugins/badges/apps.py
+@@ -77,7 +77,7 @@ def installed(self, event):
+             for template_name, template_data in templates.items():
+                 design_name = template_data['name']
+                 template_path = os.path.join(media_dir, f'{design_name}.pdf')
+-                if os.path.exists(templates_path):
++                if os.path.exists(template_path):
+                     with open(template_path, 'rb') as f:
+                         content = f.read()
+                     content_file = ContentFile(content, name=f'{design_name}.pdf')
+diff --git a/app/eventyay/plugins/badges/exporters.py b/app/eventyay/plugins/badges/exporters.py
+index 16ff20a456e..b1716de66ef 100644
+--- a/app/eventyay/plugins/badges/exporters.py
++++ b/app/eventyay/plugins/badges/exporters.py
+@@ -1,8 +1,12 @@
+-import copy
+ import json
++import os
++import tempfile
+ from collections import OrderedDict
++from decimal import Decimal
+ from io import BytesIO
+-from typing import Tuple
++from typing import BinaryIO, List, Tuple
++
++from pathlib import Path
+ 
+ from django import forms
+ from django.conf import settings
+@@ -13,7 +17,7 @@
+ from django.db.models.functions import Coalesce
+ from django.utils.translation import gettext as _
+ from django.utils.translation import gettext_lazy
+-from pypdf import Transformation
++from pypdf import PdfReader, PdfWriter, Transformation
+ from reportlab.lib import pagesizes
+ from reportlab.lib.units import mm
+ from reportlab.pdfgen import canvas
+@@ -53,13 +57,49 @@ def _get_text_content(self, op: OrderPosition, order: Order, o: dict, inner=Fals
+         return super()._get_text_content(op, order, o, inner=inner)
+ 
+ 
+-def _renderer(event, layout):
+-    if layout is None:
++def _is_placeholder_pdf(bgf):
++    pos = bgf.tell()
++    try:
++        bgf.seek(0, os.SEEK_END)
++        size = bgf.tell()
++        bgf.seek(pos)
++        if size < 1_000:
++            return True
++        if size < 15_000:
++            header = bgf.read(200)
++            return b'ReportLab Generated PDF' in header
++        return False
++    finally:
++        bgf.seek(pos)
++
++
++def _bundled_background_for_layout(layout):
++    media_dir = Path(settings.BASE_DIR) / 'plugins/badges/media'
++    if not media_dir.is_dir():
+         return None
++    name_lower = layout.name.lower()
++    for pdf_path in sorted(media_dir.glob('*.pdf')):
++        if pdf_path.stem.lower() in name_lower:
++            return open(pdf_path, 'rb')
++    return None
++
++
++def _open_layout_background(layout):
+     if isinstance(layout.background, File) and layout.background.name:
+         bgf = default_storage.open(layout.background.name, 'rb')
+-    else:
+-        bgf = open(finders.find('pretixplugins/badges/badge_default_a6l.pdf'), 'rb')
++        if not _is_placeholder_pdf(bgf):
++            return bgf
++        bgf.close()
++    bundled = _bundled_background_for_layout(layout)
++    if bundled:
++        return bundled
++    return open(finders.find('pretixplugins/badges/badge_default_a6l.pdf'), 'rb')
++
++
++def _renderer(event, layout):
++    if layout is None:
++        return None
++    bgf = _open_layout_background(layout)
+     return BadgeRenderer(
+         event,
+         layout.layout_data,
+@@ -104,7 +144,7 @@ def _renderer(event, layout):
+                 'margins': [0 * mm, 0 * mm, 0 * mm, 0 * mm],
+                 'offsets': [
+                     pagesizes.portrait(pagesizes.A4)[0] / 2,
+-                    pagesizes.portrait(pagesizes.A4)[0] / 2,
++                    pagesizes.portrait(pagesizes.A4)[1] / 2,
+                 ],
+                 'pagesize': pagesizes.portrait(pagesizes.A4),
+             },
+@@ -132,7 +172,7 @@ def _renderer(event, layout):
+                 'margins': [0 * mm, 0 * mm, 0 * mm, 0 * mm],
+                 'offsets': [
+                     pagesizes.landscape(pagesizes.A4)[0] / 4,
+-                    pagesizes.landscape(pagesizes.A4)[0] / 2,
++                    pagesizes.landscape(pagesizes.A4)[1] / 2,
+                 ],
+                 'pagesize': pagesizes.landscape(pagesizes.A4),
+             },
+@@ -196,11 +236,117 @@ def _renderer(event, layout):
+ )
+ 
+ 
+-def render_pdf(event, positions, opt):
+-    from pypdf import PdfReader, PdfWriter
++def chunks(items, size):
++    for i in range(0, len(items), size):
++        yield items[i : i + size]
+ 
+-    Renderer._register_fonts()
+ 
++def _fit_badge_to_slot(page, slot_width, slot_height):
++    page_width = float(page.mediabox.width)
++    page_height = float(page.mediabox.height)
++    if page_width <= 0 or page_height <= 0:
++        return None
++
++    scale = min(slot_width / page_width, slot_height / page_height)
++    offset_x = (slot_width - page_width * scale) / 2
++    offset_y = (slot_height - page_height * scale) / 2
++    writer = PdfWriter()
++    fitted = writer.add_blank_page(
++        width=Decimal('%.5f' % slot_width),
++        height=Decimal('%.5f' % slot_height),
++    )
++    fitted.merge_transformed_page(
++        page,
++        Transformation().scale(scale, scale).translate(offset_x, offset_y),
++        expand=False,
++    )
++    return fitted
++
++
++def render_nup_page(nup_pdf: PdfWriter, input_pages, opt: dict):
++    badges_per_page = opt['cols'] * opt['rows']
++    slot_width = float(opt['offsets'][0])
++    slot_height = float(opt['offsets'][1])
++    nup_page = nup_pdf.add_blank_page(
++        width=Decimal('%.5f' % (opt['pagesize'][0])),
++        height=Decimal('%.5f' % (opt['pagesize'][1])),
++    )
++    for i, page in enumerate(input_pages):
++        slot = i % badges_per_page
++        tx = float(opt['margins'][3] + (slot % opt['cols']) * opt['offsets'][0])
++        ty = float(opt['margins'][2] + (opt['rows'] - 1 - (slot // opt['cols'])) * opt['offsets'][1])
++        fitted = _fit_badge_to_slot(page, slot_width, slot_height)
++        if fitted is None:
++            continue
++        nup_page.merge_transformed_page(
++            fitted,
++            Transformation().translate(tx, ty),
++            expand=False,
++        )
++    return nup_page
++
++
++def merge_pages(file_paths: List[str], output_file: BinaryIO):
++    merger = PdfWriter()
++    merger.add_metadata({
++        '/Title': 'Badges',
++        '/Creator': 'eventyay',
++    })
++    for pdf in file_paths:
++        merger.append(pdf)
++    merger.write(output_file)
++
++
++def render_nup(input_files: List[str], num_pages: int, output_file: BinaryIO, opt: dict):
++    badges_per_page = opt['cols'] * opt['rows']
++    max_nup_pages = 20
++    nup_pdf_files = []
++    temp_dir = None
++    if num_pages > badges_per_page * max_nup_pages:
++        try:
++            temp_dir = tempfile.TemporaryDirectory()
++        except OSError:
++            pass
++
++    try:
++        badges_pdf = PdfReader(input_files.pop(0))
++        offset = 0
++        for i, chunk_indices in enumerate(chunks(list(range(num_pages)), badges_per_page * max_nup_pages)):
++            chunk = []
++            for j in chunk_indices:
++                if j - offset >= len(badges_pdf.pages):
++                    offset += len(badges_pdf.pages)
++                    badges_pdf = PdfReader(input_files.pop(0))
++                chunk.append(badges_pdf.pages[j - offset])
++
++            nup_pdf = PdfWriter()
++            nup_pdf.add_metadata({
++                '/Title': 'Badges',
++                '/Creator': 'eventyay',
++            })
++
++            for page_chunk in chunks(chunk, badges_per_page):
++                render_nup_page(nup_pdf, page_chunk, opt)
++
++            if temp_dir:
++                file_path = os.path.join(temp_dir.name, f'badges-{i}.pdf')
++                nup_pdf.write(file_path)
++                nup_pdf_files.append(file_path)
++            else:
++                nup_pdf.write(output_file)
++                return
++
++        if temp_dir:
++            merge_pages(nup_pdf_files, output_file)
++    finally:
++        if temp_dir:
++            try:
++                temp_dir.cleanup()
++            except OSError:
++                pass
++
++
++def render_badges(event, positions, opt, apply_output_pagesize=False):
+     renderermap = {
+         bi.product_id: _renderer(event, bi.layout)
+         for bi in BadgeProduct.objects.select_related('layout').filter(product__event=event)
+@@ -209,64 +355,58 @@ def render_pdf(event, positions, opt):
+         default_renderer = _renderer(event, event.badge_layouts.get(default=True))
+     except BadgeLayout.DoesNotExist:
+         default_renderer = None
+-    output_pdf_writer = PdfWriter()
+ 
+-    any = False
+-    npp = opt['cols'] * opt['rows']
++    op_renderers = [
++        (op, renderermap.get(op.product_id, default_renderer))
++        for op in positions
++        if renderermap.get(op.product_id, default_renderer)
++    ]
++    if not op_renderers:
++        raise OrderError(_('None of the selected products is configured to print badges.'))
+ 
+-    def render_page(positions):
++    badge_pdf = PdfWriter()
++    badge_pdf.add_metadata({
++        '/Title': 'Badges',
++        '/Creator': 'eventyay',
++    })
++    for op, renderer in op_renderers:
+         buffer = BytesIO()
+-        p = canvas.Canvas(buffer, pagesize=pagesizes.A4)
+-        for i, (op, r) in enumerate(positions):
+-            offsetx = opt['margins'][3] + (i % opt['cols']) * opt['offsets'][0]
+-            offsety = opt['margins'][2] + (opt['rows'] - 1 - i // opt['cols']) * opt['offsets'][1]
+-            p.translate(offsetx, offsety)
+-            with language(op.order.locale, op.order.event.settings.region):
+-                r.draw_page(p, op.order, op, show_page=False)
+-            p.translate(-offsetx, -offsety)
+-
+-        if opt['pagesize']:
+-            p.setPageSize(opt['pagesize'])
+-        p.showPage()
+-        p.save()
+-        buffer.seek(0)
+-        canvas_pdf_reader = PdfReader(buffer)
+-        empty_pdf_page = output_pdf_writer.add_blank_page(
+-            width=opt['pagesize'][0] if opt['pagesize'] else positions[0][1].bg_pdf.pages[0].mediabox[2],
+-            height=opt['pagesize'][1] if opt['pagesize'] else positions[0][1].bg_pdf.pages[0].mediabox[3],
+-        )
+-        for i, (op, r) in enumerate(positions):
+-            bg_page = copy.copy(r.bg_pdf.pages[0])
+-            offsetx = opt['margins'][3] + (i % opt['cols']) * opt['offsets'][0]
+-            offsety = opt['margins'][2] + (opt['rows'] - 1 - i // opt['cols']) * opt['offsets'][1]
+-            bg_page.add_transformation(Transformation().translate(offsetx, offsety))
+-            empty_pdf_page.merge_page(bg_page)
+-        empty_pdf_page.merge_page(canvas_pdf_reader.pages[0])
+-
+-    pagebuffer = []
++        page = canvas.Canvas(buffer, pagesize=pagesizes.A4)
++        with language(op.order.locale, op.order.event.settings.region):
++            renderer.draw_page(page, op.order, op, show_page=False)
++        if apply_output_pagesize and opt['pagesize']:
++            page.setPageSize(opt['pagesize'])
++        page.showPage()
++        page.save()
++        for merged_page in renderer.merge_foreground_buffer(buffer):
++            badge_pdf.add_page(merged_page)
++
++    return badge_pdf, len(badge_pdf.pages)
++
++
++def render_pdf(event, positions, opt):
++    Renderer._register_fonts()
++    badges_per_page = opt['cols'] * opt['rows']
+     outbuffer = BytesIO()
+-    for op in positions:
+-        r = renderermap.get(op.product_id, default_renderer)
+-        if not r:
+-            continue
+-        any = True
+-        pagebuffer.append((op, r))
+-        if len(pagebuffer) == npp:
+-            render_page(pagebuffer)
+-            pagebuffer.clear()
+ 
+-    if pagebuffer:
+-        render_page(pagebuffer)
++    if badges_per_page == 1:
++        badge_pdf, _ = render_badges(event, positions, opt, apply_output_pagesize=True)
++        badge_pdf.write(outbuffer)
++    else:
++        with tempfile.TemporaryDirectory() as tmp_dir:
++            page_pdfs = []
++            total_num_pages = 0
++            for position_chunk in chunks(list(positions), 200):
++                badge_pdf, num_pages = render_badges(event, position_chunk, opt)
++                out_pdf_name = os.path.join(tmp_dir, f'chunk-{len(page_pdfs)}.pdf')
++                with open(out_pdf_name, 'wb') as out_pdf:
++                    badge_pdf.write(out_pdf)
++                page_pdfs.append(out_pdf_name)
++                total_num_pages += num_pages
++                del badge_pdf
++
++            render_nup(page_pdfs, total_num_pages, outbuffer, opt)
+ 
+-    if not any:
+-        raise OrderError(_('None of the selected products is configured to print badges.'))
+-    output_pdf_writer.add_metadata(
+-        {
+-            '/Title': 'Badges',
+-            '/Creator': 'eventyay',
+-        }
+-    )
+-    output_pdf_writer.write(outbuffer)
+     outbuffer.seek(0)
+     return outbuffer
+ 
+diff --git a/app/eventyay/plugins/badges/views.py b/app/eventyay/plugins/badges/views.py
+index 89dd8dd5c9f..e74a7d22619 100644
+--- a/app/eventyay/plugins/badges/views.py
++++ b/app/eventyay/plugins/badges/views.py
+@@ -3,7 +3,6 @@
+ from io import BytesIO
+ 
+ from django.contrib import messages
+-from django.contrib.staticfiles import finders
+ from django.core.files import File
+ from django.core.files.storage import default_storage
+ from django.db import transaction
+@@ -29,7 +28,7 @@
+ from eventyay.plugins.badges.tasks import badges_create_pdf
+ from eventyay.plugins.badges.utils import clear_badge_layout_cache
+ 
+-from .exporters import BadgeRenderer
++from .exporters import BadgeRenderer, _open_layout_background
+ from .models import BadgeLayout
+ 
+ 
+@@ -322,10 +321,8 @@ def generate(self, op: OrderPosition, override_layout=None, override_background=
+         buffer = BytesIO()
+         if override_background:
+             bgf = default_storage.open(override_background.name, 'rb')
+-        elif isinstance(self.layout.background, File) and self.layout.background.name:
+-            bgf = default_storage.open(self.layout.background.name, 'rb')
+         else:
+-            bgf = open(finders.find('pretixplugins/badges/badge_default_a6l.pdf'), 'rb')
++            bgf = _open_layout_background(self.layout)
+         r = BadgeRenderer(
+             self.request.event,
+             override_layout or self.get_current_layout(),
+@@ -351,6 +348,19 @@ def _open_saved_background_pdf(self):
+         )
+ 
+     def save_background(self, f: CachedFile):
++        # The editor creates a blank placeholder PDF for on-canvas sizing. Do not
++        # replace the layout artwork when the user only saves field positions.
++        if not f.file:
++            return
++        if f.file.name.endswith('empty.pdf'):
++            return
++        try:
++            if f.file.size < 15_000:
++                with f.file.open('rb') as handle:
++                    if b'ReportLab Generated PDF' in handle.read(120):
++                        return
++        except OSError:
++            pass
+         if self.layout.background:
+             self.layout.background.delete()
+         self.layout.background.save('background.pdf', f.file)
+diff --git a/app/eventyay/static/pretixcontrol/js/ui/editor.js b/app/eventyay/static/pretixcontrol/js/ui/editor.js
+index 679bd17be21..73626a2d269 100644
+--- a/app/eventyay/static/pretixcontrol/js/ui/editor.js
++++ b/app/eventyay/static/pretixcontrol/js/ui/editor.js
+@@ -1137,11 +1137,14 @@ var editor = {
+         }
+         $btn.prop("disabled", true).prepend('<span class="fa fa-cog fa-spin"></span> ');
+         editor._sync_active_text_object_from_toolbox();
+-        $.post(window.location.href, {
++        var payload = {
+             data: JSON.stringify(editor.dump()),
+             csrfmiddlewaretoken: editor._csrf_token(),
+-            background: editor.uploaded_file_id,
+-        }, function (data) {
++        };
++        if (editor.uploaded_file_id) {
++            payload.background = editor.uploaded_file_id;
++        }
++        $.post(window.location.href, payload, function (data) {
+             editor._finish_save_button($btn, defaultLabel, data.status === "ok");
+         }, "json").fail(function () {
+             editor._finish_save_button($btn, defaultLabel, false);

@@ -1,0 +1,130 @@
+diff --git a/test/chart/PieChart.spec.tsx b/test/chart/PieChart.spec.tsx
+index 533d2f60..269efd3a 100644
+--- a/test/chart/PieChart.spec.tsx
++++ b/test/chart/PieChart.spec.tsx
+@@ -72,6 +72,125 @@ describe('<PieChart />', () => {
+     ]);
+   });
+ 
++  test('minAngle does not shift segments when all are already above the threshold', () => {
++    // data [300, 30, 20, 10], sum = 360 → natural angles = [300°, 30°, 20°, 10°]
++    // All natural angles are above minAngle=9, so no redistribution should happen
++    const { container } = rechartsTestRender(
++      <PieChart width={800} height={400}>
++        <Pie
++          dataKey="value"
++          isAnimationActive={false}
++          data={[
++            { name: 'A', value: 300 },
++            { name: 'B', value: 30 },
++            { name: 'C', value: 20 },
++            { name: 'D', value: 10 },
++          ]}
++          cx={200}
++          cy={200}
++          outerRadius={80}
++          fill="#ff7300"
++          minAngle={9}
++        />
++      </PieChart>,
++    );
++    expectPieSectorAngles(container, [
++      { startAngle: 0, endAngle: 300 },
++      { startAngle: 300, endAngle: 330 },
++      { startAngle: 330, endAngle: 350 },
++      { startAngle: 350, endAngle: 0 },
++    ]);
++  });
++
++  test('minAngle does not redistribute when a segment equals the threshold exactly', () => {
++    // data [350, 10], sum = 360 → natural angles = [350°, 10°]
++    // Segment B is EXACTLY at minAngle=10, strict < means no redistribution
++    const { container } = rechartsTestRender(
++      <PieChart width={800} height={400}>
++        <Pie
++          dataKey="value"
++          isAnimationActive={false}
++          data={[
++            { name: 'A', value: 350 },
++            { name: 'B', value: 10 },
++          ]}
++          cx={200}
++          cy={200}
++          outerRadius={80}
++          fill="#ff7300"
++          minAngle={10}
++        />
++      </PieChart>,
++    );
++    expectPieSectorAngles(container, [
++      { startAngle: 0, endAngle: 350 },
++      { startAngle: 350, endAngle: 0 },
++    ]);
++  });
++
++  test('minAngle still redistributes sectors that fall below the threshold', () => {
++    // data [270, 9, 9, 72], sum = 360
++    // B(9°) and C(9°) are below minAngle=10 → redistribution SHOULD happen
++    // realTotalAngle = 360 - 4*10 - 0 = 320
++    // A: 10 + (270/360)*320 = 250°, B: 10 + (9/360)*320 = 18°
++    // C: 18°, D: 10 + (72/360)*320 = 74°
++    const { container } = rechartsTestRender(
++      <PieChart width={800} height={400}>
++        <Pie
++          dataKey="value"
++          isAnimationActive={false}
++          data={[
++            { name: 'A', value: 270 },
++            { name: 'B', value: 9 },
++            { name: 'C', value: 9 },
++            { name: 'D', value: 72 },
++          ]}
++          cx={200}
++          cy={200}
++          outerRadius={80}
++          fill="#ff7300"
++          minAngle={10}
++        />
++      </PieChart>,
++    );
++    expectPieSectorAngles(container, [
++      { startAngle: 0, endAngle: 250 },
++      { startAngle: 250, endAngle: 268 },
++      { startAngle: 268, endAngle: 286 },
++      { startAngle: 286, endAngle: 0 },
++    ]);
++  });
++
++  test('minAngle does not redistribute in a partial pie when all segments are above threshold', () => {
++    // Partial pie: startAngle=180, endAngle=0 → absDeltaAngle=180
++    // data [100, 20], sum=120 → natural angles: A=150°, B=30°
++    // Both above minAngle=18, so no redistribution should happen
++    // Base would incorrectly give: A=138°, B=42°
++    const { container } = rechartsTestRender(
++      <PieChart width={800} height={400}>
++        <Pie
++          dataKey="value"
++          isAnimationActive={false}
++          data={[
++            { name: 'A', value: 100 },
++            { name: 'B', value: 20 },
++          ]}
++          cx={200}
++          cy={200}
++          outerRadius={80}
++          fill="#ff7300"
++          startAngle={180}
++          endAngle={0}
++          minAngle={18}
++        />
++      </PieChart>,
++    );
++    expectPieSectorAngles(container, [
++      { startAngle: 180, endAngle: 30 },
++      { startAngle: 30,  endAngle: 0  },
++    ]);
++  });
++
+   test('Renders 6 sectors circles in simple PieChart', () => {
+     const { container } = rechartsTestRender(
+       <PieChart width={800} height={400}>

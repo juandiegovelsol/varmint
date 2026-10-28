@@ -1,0 +1,51 @@
+version = "1.0"
+
+[metadata]
+task_id = "fabricjs__fabric.js-10683-mm"
+title = "[Bug]: SVG Parsing ignores multiple style tags"
+repository_name = "fabricjs/fabric.js"
+repo_url = "https://github.com/fabricjs/fabric.js"
+issue_number = 10683
+pr_number = 10684
+base_commit = "d8c58db563c73f3887e70bdc59431acb6c87ba90"
+fix_commit = "28e0c05dbec68cd495fac831f856fc0334a347a0"
+task_type = "visual_bug_fix"
+language = "TypeScript"
+framework = "fabricjs"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = "The instruction shows only the multi-style SVG and the two-row posters; it does not name parser APIs or files. The multi-class case is stated only as required behavior, and its wrong fill is visible only in the bottom poster row, so the agent must perceive that fill and localize the renamed selector-test helper as well as the renamed sheet-rule helper. Producing the intended render requires coupled fixes across two source files: shared loop state and colon-truncating declaration splits in the sheet reader, and class-token matching that drops a longer class when a shorter class name is a prefix of it. Tests require poster colors, non-poster hex fills, reversed style order, three style elements, a colon-bearing url() fill, and a prefix-collision multi-class element, so screenshot hard-coding or repairing only one file cannot score 1.0."
+files_edited = [ "src/parser/getCSSRules.ts", "src/parser/selectorMatches.ts",]
+f2p = [
+  "can load svgs with multiple style tags",
+  "applies hex class fills across separate style elements",
+  "applies class fills when style element order is reversed",
+  "applies class fills across three separate style elements",
+  "preserves class fill values that contain a colon",
+  "applies class fills when one class name is a prefix of another",
+]
+p2p = [
+  "can load svgs with style tags with import statement",
+  "can load svgs with style tags with nested at-rules",
+  "applies both class fills when rules live in one style element",
+  "applies fills selected by element id",
+  "applies fills selected by element type",
+  "applies fills selected by a type and class compound selector",
+]
+tags = [ "multimodal", "visual_bug_fix", "fabricjs", "visual_required",]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "no-network"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

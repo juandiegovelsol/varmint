@@ -1,0 +1,102 @@
+version = "1.0"
+
+[metadata]
+task_id = "facebook__lexical-7959-mm"
+title = "Bug: in a collaborative session, carets and selections end up in the wrong place"
+repository_name = "facebook/lexical"
+repo_url = "https://github.com/facebook/lexical"
+issue_number = 7959
+pr_number = 7960
+base_commit = "34cab58e2ce3997d829ac7b68413fa0acf9c24dc"
+fix_commit = "174580dfbb2d1a54fa0b102e7938407d9c8aca34"
+task_type = "visual_bug_fix"
+language = "TypeScript"
+framework = "Lexical / React / vitest (unit, jsdom)"
+cross_file = true
+visual_essentiality = "essential"
+difficulty = "hard"
+difficulty_explanation = """
+The report gives only a symptom and a screen recording: in a collaborative session the text
+replicates fine, but caret and selection positions end up wrong. Nothing throws, nothing logs,
+and four independent defects across three files contribute to it.
+
+1. `useYjsCollaboration` (packages/lexical-react/src/shared/useYjsCollaboration.tsx), the hook
+   behind the main (non-experimental) `CollaborationPlugin`, never subscribes to the Yjs
+   Awareness 'update' event, so cursor rendering re-runs only from the Yjs document
+   tree-change listener -- which is why the reporter observed that the position after typing
+   is still synced. This is the upstream regression PR #7960 fixes.
+
+2. `syncCursorPositions` (packages/lexical-yjs/src/SyncCursors.ts) creates a remote cursor's
+   selection the first time it sees a participant but never rewrites it, so a remote caret
+   freezes at the first place it appeared.
+
+3. `$syncCursorFromYjs` (packages/lexical-yjs/src/SyncEditorStates.ts) no longer re-derives
+   the LOCAL editor's own selection from the relative position that client published, so a
+   participant's own caret keeps a raw offset and drifts whenever somebody edits earlier
+   content.
+
+4. `createRelativePosition` (packages/lexical-yjs/src/SyncCursors.ts) encodes a STRUCTURAL
+   (element) point -- the kind a caret has on a blank line or at a paragraph boundary -- the
+   way a text point is encoded: against the PARENT's shared type at the element's own slot,
+   rather than against the element's own shared type at the accumulated content offset of the
+   child boundary. Consequence: a collaborator's caret on a blank line does not appear, a
+   caret at the end of a paragraph is drawn in the NEXT paragraph, and a selection ending on a
+   blank line has that end land in the wrong place.
+
+Defects 1-3 are restoration-shaped: each has a working analogue within a screen or two (the v2
+hook, the creation branch three lines up, the same helper call in the sibling branch), and a
+prior trial repaired all three in about four minutes. Defect 4 is deliberately not of that
+shape. The correct algorithm is REPLACED by a plausible wrong one rather than deleted, so
+there is no adjacent line to copy; the v1 content-unit layout (a text child occupies 1 + length
+units, any other child 1) has to be derived from the decode walk in Utils.ts and from the node
+sizes, and the v2 encoder 30 lines below is a trap -- it counts children against the node's own
+shared type, which is right for v2's layout and wrong for v1's. A candidate reproducing the
+prior trial's three fixes exactly passes 11 of the 14 behavioural tests.
+"""
+files_edited = [
+  "packages/lexical-react/src/shared/useYjsCollaboration.tsx",
+  "packages/lexical-yjs/src/SyncCursors.ts",
+  "packages/lexical-yjs/src/SyncEditorStates.ts",
+]
+f2p = [
+  "packages/lexical-react/src/__tests__/unit/CollaborationAwareness.test.tsx > Collaboration: remote participant caret and selection state > shows a remote caret that appeared from a selection-only change, with no document edit",
+  "packages/lexical-react/src/__tests__/unit/CollaborationAwareness.test.tsx > Collaboration: remote participant caret and selection state > moves an already-visible remote caret to the position it moved to",
+  "packages/lexical-react/src/__tests__/unit/CollaborationAwareness.test.tsx > Collaboration: remote participant caret and selection state > shows both ends of a remote selection range, in the direction it was made",
+  "packages/lexical-react/src/__tests__/unit/CollaborationAwareness.test.tsx > Collaboration: remote participant caret and selection state > replaces a remote selection range with the new range, with no document edit",
+  "packages/lexical-react/src/__tests__/unit/CollaborationAwareness.test.tsx > Collaboration: remote participant caret and selection state > follows several consecutive remote selection changes with no typing in between",
+  "packages/lexical-react/src/__tests__/unit/CollaborationAwareness.test.tsx > Collaboration: remote participant caret and selection state > keeps two remote participant selections independent of each other",
+  "packages/lexical-react/src/__tests__/unit/CollaborationAwareness.test.tsx > Collaboration: remote participant caret and selection state > stops showing a remote participant once they leave the session",
+  "packages/lexical-react/src/__tests__/unit/CollaborationAwareness.test.tsx > Collaboration: remote participant caret and selection state > keeps following a remote participant selection after that participant typed",
+  "packages/lexical-react/src/__tests__/unit/CollaborationAwareness.test.tsx > Collaboration: remote participant caret and selection state > keeps the local caret on the same text when a remote edit inserts before it",
+  "packages/lexical-react/src/__tests__/unit/CollaborationAwareness.test.tsx > Collaboration: remote participant caret and selection state > keeps the local caret on the same text when a remote edit deletes before it",
+  "packages/lexical-react/src/__tests__/unit/CollaborationAwareness.test.tsx > Collaboration: remote participant caret and selection state > keeps both ends of the local selection on the same text through a remote edit",
+  "packages/lexical-react/src/__tests__/unit/CollaborationAwareness.test.tsx > Collaboration: remote participant caret and selection state > shows a remote caret sitting on an empty line, on that line",
+  "packages/lexical-react/src/__tests__/unit/CollaborationAwareness.test.tsx > Collaboration: remote participant caret and selection state > shows a remote caret at the end of a paragraph in that paragraph",
+  "packages/lexical-react/src/__tests__/unit/CollaborationAwareness.test.tsx > Collaboration: remote participant caret and selection state > shows both ends of a remote selection that runs into another paragraph",
+]
+p2p = [
+  "packages/lexical-react/src/__tests__/unit/CollaborationAwareness.test.tsx > Collaboration: remote participant caret and selection state > syncs plain document text between two participants",
+  "packages/lexical-react/src/__tests__/unit/CollaborationAwareness.test.tsx > Collaboration: remote participant caret and selection state > syncs a second, independent document edit after the first",
+  "packages/lexical-react/src/__tests__/unit/CollaborationAwareness.test.tsx > Collaboration: remote participant caret and selection state > keeps syncing document text after several selection-only changes",
+  "packages/lexical-react/src/__tests__/unit/CollaborationAwareness.test.tsx > Collaboration: remote participant caret and selection state > resumes document sync after a participant disconnects and reconnects",
+  "packages/lexical-react/src/__tests__/unit/CollaborationAwareness.test.tsx > Collaboration: remote participant caret and selection state > shows a remote caret that arrives together with a document update",
+  "packages/lexical-react/src/__tests__/unit/CollaborationAwareness.test.tsx > Collaboration: remote participant caret and selection state > leaves the local caret alone when a remote edit lands after it",
+  "packages/lexical-react/src/__tests__/unit/CollaborationAwareness.test.tsx > Collaboration: remote participant caret and selection state > shows ordinary text positions correctly across paragraphs",
+  "packages/lexical-react/src/__tests__/unit/CollaborationAwareness.test.tsx > Collaboration: remote participant caret and selection state > never shows a participant their own caret, and tracks exactly the others",
+]
+tags = ["multimodal", "visual_bug_fix"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

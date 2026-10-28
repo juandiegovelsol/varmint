@@ -1,0 +1,668 @@
+diff --git a/tests_harbor_leader_den_border/__init__.py b/tests_harbor_leader_den_border/__init__.py
+new file mode 100644
+index 000000000..e69de29bb
+diff --git a/tests_harbor_leader_den_border/_support.py b/tests_harbor_leader_den_border/_support.py
+new file mode 100644
+index 000000000..c31123179
+--- /dev/null
++++ b/tests_harbor_leader_den_border/_support.py
+@@ -0,0 +1,360 @@
++"""
++Head-less observation of the row of neighbouring-Clan tiles in the leader's den.
++
++Nothing here knows any coordinate, offset, font size, theme id or element key used
++by the screen.  Everything the tests assert is measured at run time from what the
++game actually paints:
++
++  * a tile is discovered from its rendered text-bearing container rather than
++    from a dictionary key or theme identifier;
++  * the three pieces of writing in a tile are identified by what they SAY
++    (the neighbour's name, its two temperament words, one of the standings the
++    game's own ``OtherClan.interaction_dict`` knows about), never by their order
++    in a dict or by a theme id;
++  * "is the writing covered by the box border?" is answered by painting the row
++    twice, once with the mouse away from the tiles and once with it over them,
++    and comparing only the pixels the standing itself contributes.
++
++The row is painted into an off-screen surface through the game's own UI manager,
++so the answers are exactly what a player would see.
++"""
++
++import os
++import re
++import sys
++
++os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
++os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
++
++REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
++os.chdir(REPO_ROOT)
++if REPO_ROOT not in sys.path:
++    sys.path.insert(0, REPO_ROOT)
++
++import init  # noqa: E402,F401  builds the pygame_gui manager under the dummy drivers
++
++import random  # noqa: E402
++
++import i18n  # noqa: E402
++import pygame  # noqa: E402
++import pygame_gui  # noqa: E402
++
++from scripts.game_structure import game  # noqa: E402
++from scripts.game_structure.screen_settings import MANAGER  # noqa: E402
++from scripts.cat.sprites.load_sprites import sprites  # noqa: E402
++from scripts.clan import Clan, OtherClan  # noqa: E402
++from scripts.screens.LeaderDenScreen import LeaderDenScreen  # noqa: E402
++
++PLAYER_CLAN = "Home"
++SEED = 4978
++
++_STATE = {}
++
++
++class _Silent:
++    """Stands in for the audio mixer and the rich-presence client."""
++
++    def __getattr__(self, _name):
++        return lambda *a, **k: None
++
++
++def squash(text) -> str:
++    """
++    Normalise a painted string for comparison.
++
++    pygame_gui inserts hyphens of its own when it word-wraps, and line breaks
++    become whitespace, so whitespace and hyphens are squashed on both sides of
++    every comparison.
++    """
++    if text is None:
++        return ""
++    return re.sub(r"[-\s‐-―−]+", " ", str(text)).strip().lower()
++
++
++def boot():
++    """Bring the game up far enough to paint a screen.  Idempotent."""
++    if _STATE.get("ready"):
++        return
++    game.audio = _Silent()
++    game.rpc = _Silent()
++    sprites.load_all()
++    game.clan = Clan(name=PLAYER_CLAN)
++    # Sprite sheets are loaded, but a symbol is still chosen explicitly so no
++    # observation ever depends on random.choice over the symbol pool.
++    _STATE["symbol"] = sprites.clan_symbols[0]
++    _STATE["ready"] = True
++
++
++def standing_spellings():
++    """
++    Every accepted spelling of every standing the game itself knows about.
++
++    The standings come from the game's own ``OtherClan.interaction_dict`` table,
++    not from a list written here, and each one is accepted either as the bare
++    word, as the screen's translation key, or as that key's shipped translation.
++    """
++    out = {}
++    for word in OtherClan.interaction_dict:
++        key = "screens.leader_den." + word
++        out[word] = {squash(word), squash(key), squash(i18n.t(key))}
++    return out
++
++
++def _painted(element) -> str:
++    """The string the element actually paints, after translation."""
++    shape = getattr(element, "drawable_shape", None)
++    if shape is not None:
++        theming = getattr(shape, "theming", None) or {}
++        if theming.get("text") is not None:
++            return theming["text"]
++    return getattr(element, "text", "") or ""
++
++
++def _walk(container):
++    for child in list(getattr(container, "elements", []) or []):
++        yield child
++        yield from _walk(child)
++
++
++def _live_elements():
++    return list(_walk(MANAGER.get_root_container()))
++
++
++def _rect_tuple(rect):
++    return (rect.left, rect.top, rect.width, rect.height)
++
++
++def _settle():
++    for _ in range(3):
++        MANAGER.update(0.05)
++
++
++def _paint():
++    """Paint everything the manager currently holds onto a fresh surface."""
++    surface = pygame.Surface(MANAGER.window_resolution, pygame.SRCALPHA)
++    surface.fill((255, 0, 255, 255))
++    MANAGER.update(0.02)
++    MANAGER.draw_ui(surface)
++    return surface
++
++
++def _pixels(surface, rect):
++    clip = pygame.Rect(rect).clip(surface.get_rect())
++    crop = pygame.Surface((clip.width, clip.height), pygame.SRCALPHA)
++    crop.fill((0, 0, 0, 0))
++    crop.blit(surface, (0, 0), clip)
++    to_bytes = getattr(pygame.image, "tobytes", None) or pygame.image.tostring
++    return clip, to_bytes(crop, "RGBA")
++
++
++def _differing(rect, a, b):
++    """Absolute coordinates of the pixels inside ``rect`` where a and b differ."""
++    clip, pa = _pixels(a, rect)
++    _, pb = _pixels(b, rect)
++    out = set()
++    width = clip.width
++    for index in range(0, len(pa), 4):
++        if pa[index:index + 4] != pb[index:index + 4]:
++            offset = index // 4
++            out.add((clip.left + offset % width, clip.top + offset // width))
++    return out
++
++
++def _purge():
++    """Kill everything left over from an earlier observation."""
++    for element in _live_elements():
++        try:
++            element.kill()
++        except Exception:
++            pass
++    _settle()
++
++
++def _is_tile(element):
++    """
++    A neighbour tile is a compact container carrying the three pieces of text
++    presented to the player. The test does not require a particular interactive
++    child or an exact child rectangle.
++    """
++    children = list(getattr(element, "elements", []) or [])
++    if not children:
++        return False
++    labels = [c for c in children if squash(_painted(c))]
++    return len(labels) >= 3
++
++
++class Tile(dict):
++    """Plain data about one neighbour tile; no live UI objects."""
++
++    @property
++    def rect(self):
++        return pygame.Rect(self["rect"])
++
++    def label_rect(self, key):
++        return pygame.Rect(self[key]["rect"])
++
++
++def observe(neighbours):
++    """
++    Build the leader's den row for ``neighbours`` and report what it paints.
++
++    ``neighbours`` is a list of ``(name, (first_temper, second_temper), relations)``.
++    Returns one ``Tile`` per painted tile, left to right.
++    """
++    boot()
++    random.seed(SEED)
++    _purge()
++
++    spellings = standing_spellings()
++    clans = []
++    for name, temperament, relations in neighbours:
++        # relations=0 is silently randomised by the constructor, so it is always
++        # assigned afterwards.
++        neighbour = OtherClan(
++            name=name,
++            relations=10,
++            temperament=tuple(temperament),
++            chosen_symbol=_STATE["symbol"],
++        )
++        neighbour.relations = relations
++        clans.append(neighbour)
++    game.clan.all_other_clans = clans
++
++    screen = LeaderDenScreen.__new__(LeaderDenScreen)
++    screen.other_clan_selection_container = None
++    screen.other_clan_selection_elements = {}
++    screen.create_other_clan_selection_box()
++    _settle()
++
++    elements = _live_elements()
++    tiles = sorted(
++        (e for e in elements if _is_tile(e)),
++        key=lambda e: (e.get_abs_rect().left, e.get_abs_rect().top),
++    )
++
++    # --- work out what each tile says -------------------------------------
++    described = []
++    for tile in tiles:
++        children = list(tile.elements)
++        labels = sorted(
++            (c for c in children if squash(_painted(c))),
++            key=lambda c: c.get_abs_rect().top,
++        )
++        standing = None
++        standing_word = None
++        for label in labels:
++            said = squash(_painted(label))
++            for word, accepted in spellings.items():
++                if said in accepted:
++                    standing, standing_word = label, word
++                    break
++            if standing is not None:
++                break
++        described.append((tile, children, labels, standing, standing_word))
++
++    # --- paint: normal, standings hidden, and each tile hovered -----------
++    normal = _paint()
++
++    for _t, _c, _l, standing, _w in described:
++        if standing is not None:
++            standing.hide()
++    _settle()
++    without_standings = _paint()
++    for _t, _c, _l, standing, _w in described:
++        if standing is not None:
++            standing.show()
++    _settle()
++
++    hovered_tiles = []
++    for tile, _children, _labels, standing, _word in described:
++        # pygame_gui determines hover during manager.update() by polling the
++        # current pointer position. Override that input at the pygame boundary
++        # so the normal hover machinery runs deterministically under SDL's
++        # headless dummy driver, where moving a real pointer is unavailable.
++        real_get_pos = pygame.mouse.get_pos
++        pygame.mouse.get_pos = lambda: tile.get_abs_rect().center
++        try:
++            _settle()
++            hovered = _paint()
++            if standing is not None:
++                standing.hide()
++                _settle()
++            hovered_without_standing = _paint()
++            if standing is not None:
++                standing.show()
++                _settle()
++        finally:
++            pygame.mouse.get_pos = real_get_pos
++        hovered_tiles.append((hovered, hovered_without_standing))
++    real_get_pos = pygame.mouse.get_pos
++    pygame.mouse.get_pos = lambda: (-1, -1)
++    try:
++        _settle()
++    finally:
++        pygame.mouse.get_pos = real_get_pos
++
++    # --- assemble the report ----------------------------------------------
++    report = []
++    for (
++        tile,
++        _children,
++        labels,
++        standing,
++        standing_word,
++    ), (hovered, hovered_without_standing) in zip(
++        described, hovered_tiles
++    ):
++        rect = tile.get_abs_rect()
++        touched_by_hover = _differing(rect, normal, hovered)
++        ink = set()
++        covered_count = 0
++        if standing is not None:
++            ink = _differing(rect, normal, without_standings)
++            hover_ink = _differing(rect, hovered, hovered_without_standing)
++            # Compare how much of the line contributes to the rendered tile in
++            # each state. This permits hover-specific colours or repainting and
++            # reports only ink that disappears while hovered.
++            covered_count = max(0, len(ink) - len(hover_ink))
++        entry = Tile(
++            rect=_rect_tuple(rect),
++            writing=[
++                {"says": squash(_painted(l)), "rect": _rect_tuple(l.get_abs_rect())}
++                for l in labels
++            ],
++            standing=(
++                None
++                if standing is None
++                else {
++                    "word": standing_word,
++                    "says": squash(_painted(standing)),
++                    "rect": _rect_tuple(standing.get_abs_rect()),
++                    "ink": len(ink),
++                    "covered_when_hovered": covered_count,
++                }
++            ),
++            pixels_changed_by_hover=len(touched_by_hover),
++        )
++        report.append(entry)
++
++    _purge()
++    return report
++
++
++def only_tile(neighbours):
++    tiles = observe(neighbours)
++    assert len(tiles) == 1, f"expected one tile, painted {len(tiles)}"
++    return tiles[0]
++
++
++def says_all_of(tile, *fragments):
++    """True when some single piece of writing in the tile carries every fragment."""
++    wanted = [squash(f) for f in fragments]
++    return any(
++        all(f in piece["says"] for f in wanted) for piece in tile["writing"]
++    )
++
++
++def writing_that_says(tile, *fragments):
++    wanted = [squash(f) for f in fragments]
++    hits = [p for p in tile["writing"] if all(f in p["says"] for f in wanted)]
++    return hits
+diff --git a/tests_harbor_leader_den_border/test_other_clan_box_border.py b/tests_harbor_leader_den_border/test_other_clan_box_border.py
+new file mode 100644
+index 000000000..a0666fee6
+--- /dev/null
++++ b/tests_harbor_leader_den_border/test_other_clan_box_border.py
+@@ -0,0 +1,293 @@
++"""
++The leader's den paints a small tile for every neighbouring Clan: a symbol, the
++Clan's name, its two temperament words and how the Clan stands towards it. The
++tile presents visible feedback while the mouse is on it.
++
++These tests paint that row through the game's own UI manager and check what a
++player would actually be able to read. They hard-code no coordinate, offset,
++font, theme id, element key, or solution technique. Writing is located by what
++it says, and obstruction is measured from rendered pixels with and
++without a mouse-motion event over each tile.
++"""
++
++import unittest
++
++import i18n
++
++from . import _support as den
++
++
++TWO_LINE_TEMPERAMENT = ("bloodthirsty", "methodical")
++OTHER_TWO_LINE_TEMPERAMENT = ("bloodthirsty", "welcoming")
++SHORT_TEMPERAMENT = ("proud", "eager")
++OTHER_SHORT_TEMPERAMENT = ("mellow", "decisive")
++
++SHORT_NAME = "Reed"
++OTHER_SHORT_NAME = "Sky"
++TWO_LINE_NAME = "Windywillowbrooke"
++OTHER_TWO_LINE_NAME = "Rainshadowvalley"
++
++
++def temperament_writing(tile, temperament):
++    """The piece of writing that carries both temperament words, if any."""
++    words = [den.squash(i18n.t("screens.leader_den." + w)) for w in temperament]
++    return den.writing_that_says(tile, *words)
++
++
++class AStandingThatTheHoverBorderCannotReach(unittest.TestCase):
++    """
++    Whatever else is written in a tile, the standing has to stay readable.
++    """
++
++    def assert_standing_is_inside_the_tile(self, tile):
++        self.assertIsNotNone(
++            tile["standing"],
++            "the tile paints no standing at all: " + repr(tile["writing"]),
++        )
++        self.assertTrue(
++            tile.rect.contains(tile.label_rect("standing")),
++            "the standing %r sits at %s, which runs outside its tile %s"
++            % (tile["standing"]["says"], tile["standing"]["rect"], tile["rect"]),
++        )
++
++    def assert_the_border_leaves_the_standing_alone(self, tile):
++        self.assertIsNotNone(
++            tile["standing"],
++            "the tile paints no standing at all: " + repr(tile["writing"]),
++        )
++        self.assertGreater(
++            tile["standing"]["ink"],
++            0,
++            "nothing of the standing %r is painted inside the tile at all"
++            % (tile["standing"]["says"],),
++        )
++        self.assertGreater(
++            tile["pixels_changed_by_hover"],
++            0,
++            "the tile does not change when the mouse is on it, so this test "
++            "cannot tell whether the border would cover anything",
++        )
++        self.assertEqual(
++            tile["standing"]["covered_when_hovered"],
++            0,
++            "%d of the %d pixels of the standing %r are painted over when the "
++            "mouse is on the tile"
++            % (
++                tile["standing"]["covered_when_hovered"],
++                tile["standing"]["ink"],
++                tile["standing"]["says"],
++            ),
++        )
++
++    def assert_the_temperament_needs_two_lines(self, tile, temperament):
++        """
++        Recomputed at run time: the awkward temperament must paint taller than
++        the same tile's short temperament, otherwise the fixture has drifted and
++        the test would be checking nothing.
++        """
++        control = den.only_tile([(SHORT_NAME, SHORT_TEMPERAMENT, 12)])
++        short = temperament_writing(control, SHORT_TEMPERAMENT)
++        tall = temperament_writing(tile, temperament)
++        self.assertEqual(len(short), 1, "control tile lost its temperament")
++        self.assertEqual(len(tall), 1, "tile lost its temperament")
++        self.assertGreater(
++            tall[0]["rect"][3],
++            short[0]["rect"][3],
++            "fixture drift: %r no longer needs more than one line" % (temperament,),
++        )
++
++    def test_a_neighbour_whose_temperament_needs_two_lines_keeps_its_standing_inside_the_tile(
++        self,
++    ):
++        tile = den.only_tile([(SHORT_NAME, TWO_LINE_TEMPERAMENT, 12)])
++        self.assert_the_temperament_needs_two_lines(tile, TWO_LINE_TEMPERAMENT)
++        self.assert_standing_is_inside_the_tile(tile)
++
++    def test_a_neighbour_whose_temperament_needs_two_lines_keeps_its_standing_out_from_under_the_border(
++        self,
++    ):
++        tile = den.only_tile([(OTHER_SHORT_NAME, OTHER_TWO_LINE_TEMPERAMENT, 25)])
++        self.assert_the_temperament_needs_two_lines(tile, OTHER_TWO_LINE_TEMPERAMENT)
++        self.assert_the_border_leaves_the_standing_alone(tile)
++
++    def test_a_neighbour_whose_name_needs_two_lines_keeps_its_standing_inside_the_tile(
++        self,
++    ):
++        control = den.only_tile([(SHORT_NAME, SHORT_TEMPERAMENT, 12)])
++        tile = den.only_tile([(TWO_LINE_NAME, SHORT_TEMPERAMENT, 3)])
++        short_name = den.writing_that_says(control, SHORT_NAME)
++        long_name = den.writing_that_says(tile, TWO_LINE_NAME)
++        self.assertEqual(len(short_name), 1)
++        self.assertEqual(len(long_name), 1)
++        self.assertGreater(
++            long_name[0]["rect"][3],
++            short_name[0]["rect"][3],
++            "fixture drift: %r no longer needs more than one line" % (TWO_LINE_NAME,),
++        )
++        self.assert_standing_is_inside_the_tile(tile)
++
++    def test_a_neighbour_whose_name_needs_two_lines_keeps_its_standing_out_from_under_the_border(
++        self,
++    ):
++        tile = den.only_tile([(OTHER_TWO_LINE_NAME, OTHER_SHORT_TEMPERAMENT, 20)])
++        self.assert_the_border_leaves_the_standing_alone(tile)
++
++    def test_a_whole_row_of_awkward_neighbours_stays_readable(self):
++        tiles = den.observe(
++            [
++                (SHORT_NAME, TWO_LINE_TEMPERAMENT, 25),
++                (OTHER_SHORT_NAME, OTHER_TWO_LINE_TEMPERAMENT, 3),
++                (TWO_LINE_NAME, SHORT_TEMPERAMENT, 12),
++                (OTHER_TWO_LINE_NAME, OTHER_SHORT_TEMPERAMENT, 20),
++            ]
++        )
++        self.assertEqual(len(tiles), 4)
++        for tile in tiles:
++            self.assert_standing_is_inside_the_tile(tile)
++            self.assert_the_border_leaves_the_standing_alone(tile)
++
++
++class ATemperamentThatIsReadInTheOrderTheGameRecordedIt(unittest.TestCase):
++    """
++    A neighbour's temperament is a pair of words. Whatever order the game
++    recorded them in, the tile has to read them out in that same order.
++    """
++
++    def test_the_first_recorded_temperament_word_is_read_before_the_second(self):
++        tile = den.only_tile([(SHORT_NAME, SHORT_TEMPERAMENT, 12)])
++        words = temperament_writing(tile, SHORT_TEMPERAMENT)
++        self.assertEqual(len(words), 1, "tile lost its temperament")
++        text = words[0]["says"]
++        first_word = den.squash(i18n.t("screens.leader_den." + SHORT_TEMPERAMENT[0]))
++        second_word = den.squash(i18n.t("screens.leader_den." + SHORT_TEMPERAMENT[1]))
++        self.assertLess(
++            text.index(first_word),
++            text.index(second_word),
++            "the temperament is read out of the order the game recorded it in: %r"
++            % (text,),
++        )
++
++    def test_a_different_pairs_first_word_is_still_read_before_its_second(self):
++        tile = den.only_tile([(OTHER_SHORT_NAME, OTHER_SHORT_TEMPERAMENT, 12)])
++        words = temperament_writing(tile, OTHER_SHORT_TEMPERAMENT)
++        self.assertEqual(len(words), 1, "tile lost its temperament")
++        text = words[0]["says"]
++        first_word = den.squash(
++            i18n.t("screens.leader_den." + OTHER_SHORT_TEMPERAMENT[0])
++        )
++        second_word = den.squash(
++            i18n.t("screens.leader_den." + OTHER_SHORT_TEMPERAMENT[1])
++        )
++        self.assertLess(
++            text.index(first_word),
++            text.index(second_word),
++            "the temperament is read out of the order the game recorded it in: %r"
++            % (text,),
++        )
++
++
++class AStandingThatMatchesHowFriendlyTheClanActuallyIs(unittest.TestCase):
++    """
++    The standing word painted in the tile has to reflect the neighbour's
++    actual relations score, at every score the game accepts as neutral.
++    """
++
++    def test_the_lowest_relations_score_that_still_counts_as_neutral_reads_neutral(
++        self,
++    ):
++        tile = den.only_tile([(SHORT_NAME, SHORT_TEMPERAMENT, 7)])
++        self.assertIsNotNone(
++            tile["standing"],
++            "the tile paints no standing at all: " + repr(tile["writing"]),
++        )
++        self.assertEqual(
++            tile["standing"]["word"],
++            "neutral",
++            "a relations score of 7 should read neutral, but the tile painted %r"
++            % (tile["standing"]["says"],),
++        )
++
++    def test_the_highest_relations_score_that_still_counts_as_neutral_reads_neutral(
++        self,
++    ):
++        tile = den.only_tile([(OTHER_SHORT_NAME, OTHER_SHORT_TEMPERAMENT, 17)])
++        self.assertIsNotNone(
++            tile["standing"],
++            "the tile paints no standing at all: " + repr(tile["writing"]),
++        )
++        self.assertEqual(
++            tile["standing"]["word"],
++            "neutral",
++            "a relations score of 17 should read neutral, but the tile painted %r"
++            % (tile["standing"]["says"],),
++        )
++
++
++class AClanNameThatReadsTheWayEveryOtherClanNameDoes(unittest.TestCase):
++    """
++    Every Clan in this game is named with the word "Clan" as a suffix
++    (SkyClan, ShadowClan, ...), never as a prefix.
++    """
++
++    def test_the_clan_name_is_the_neighbours_name_followed_by_the_word_clan(self):
++        tile = den.only_tile([(SHORT_NAME, SHORT_TEMPERAMENT, 12)])
++        name = den.writing_that_says(tile, SHORT_NAME)
++        self.assertEqual(len(name), 1, "no single piece of writing names the Clan")
++        self.assertEqual(
++            name[0]["says"],
++            den.squash(f"{SHORT_NAME}Clan"),
++            "the tile painted %r, which does not read as %r followed by 'Clan'"
++            % (name[0]["says"], SHORT_NAME),
++        )
++
++
++class TheRestOfTheNeighbourRowIsUntouched(unittest.TestCase):
++    """
++    Everything the row already got right has to survive.
++    """
++
++    ROW = [
++        (SHORT_NAME, SHORT_TEMPERAMENT, 25),
++        (OTHER_SHORT_NAME, OTHER_SHORT_TEMPERAMENT, 3),
++        ("Moss", ("gracious", "steadfast"), 12),
++        ("Fern", ("cunning", "observant"), 8),
++    ]
++
++    def test_every_neighbour_tile_names_its_clan_and_both_temperament_words(self):
++        tiles = den.observe(self.ROW)
++        self.assertEqual(len(tiles), len(self.ROW))
++        for (name, temperament, _relations), tile in zip(self.ROW, tiles):
++            self.assertEqual(
++                len(den.writing_that_says(tile, name)),
++                1,
++                "no single piece of writing in the tile names %r: %r"
++                % (name, tile["writing"]),
++            )
++            self.assertEqual(
++                len(temperament_writing(tile, temperament)),
++                1,
++                "no single piece of writing in the tile carries both of %r: %r"
++                % (temperament, tile["writing"]),
++            )
++
++    def test_a_neighbour_with_short_writing_already_kept_its_standing_clear_of_the_border(
++        self,
++    ):
++        tile = den.only_tile([(SHORT_NAME, SHORT_TEMPERAMENT, 12)])
++        self.assertIsNotNone(tile["standing"])
++        self.assertGreater(tile["standing"]["ink"], 0)
++        self.assertEqual(tile["standing"]["covered_when_hovered"], 0)
++        self.assertTrue(tile.rect.contains(tile.label_rect("standing")))
++
++    def test_every_neighbour_tile_retains_visible_hover_feedback(self):
++        tiles = den.observe(self.ROW)
++        for tile in tiles:
++            self.assertGreater(
++                tile["pixels_changed_by_hover"],
++                0,
++                "the tile no longer changes when the mouse is on it",
++            )
++
++
++if __name__ == "__main__":
++    unittest.main()

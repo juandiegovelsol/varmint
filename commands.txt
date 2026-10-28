@@ -1,0 +1,32 @@
+/run-check
+
+bash ~/.claude/skills/mmswe-runner/mm_run.sh /home/sandbox/Tasks oracle
+
+bash ~/.claude/skills/mmswe-runner/mm_run.sh /home/sandbox/Tasks nop
+
+bash ~/.claude/skills/mmswe-runner/mm_run.sh /home/sandbox/Tasks trial
+
+bash ~/.claude/skills/mmswe-runner/mm_run.sh /home/sandbox/Tasks analyze
+
+
+
+I need you to check that the instruction is fully image-dependent, that it contains no unnecessary requirements, that the tests/criteria are fully implementation-agnostic so that any correct solution would pass them, that the tests are behavioral and do not check for specific code lines, that any correct solution is fully covered by either tests or criteria so every incomplete solution would fail the tests, and that the tests are somehow implied either by the instructions or the images so that any model failure is fair (wihtout leaking key mechanisms that would make the image not necessary). Be organized in your response so that I can easily scan and understand all the information
+
+
+Could you inspect the new Trials and tell me why it failed the tests? Do you consider that the failed tests were fair to the model, so every correct solution would have passed them, considering the instructions + image context? Was the image checked at least once in Trials?
+
+
+Help me summarize and understand the changes made comparing the initial version of Tasks vs the final version where Trials failed.
+
+
+I need you to write two single, plain-text paragraphs in snippets that I can copy without line breaks. One of them should state briefly the modifications made to Tasks based on shape and content that would serve as a Justification for why the changes were needed in the Tasks folder. The other paragraph must focus on the edits that were made to the instructions, to the tests/rubrics, and lastly to the task shape, causing a new Trial to be run, serving as feedback to the previous contributor who did this task. 
+
+
+
+TASK68
+
+The Tasks bundle required hardening across both its structural shape and its behavioral content because, in its original state, it could not produce a trustworthy reward signal: task_type held a value outside the seven allowed types, the verifier's network_mode was left unset so a sealed container would falsely zero out a correct submission, reward.json used a non-canonical nested shape that harbor could not parse into a score, the reward policy itself allowed partial credit (0.5) for an incomplete fix instead of resolving to a strict pass/fail, an always-pass rubric and judge layer shipped that graded nothing while still reporting as passed, several f2p/p2p identifiers were truncated substrings that matched by accidental containment rather than naming a real test, and the evidence bundle and asset manifest were wrapped in extraneous metadata instead of the required flat arrays; on the content side, the original six-test suite only exercised a subset of the read/write directions on a single narrow defect, leaving whole components (such as the Clipping-panel minimum properties) completely unverified, so a materially broken fix could still score full credit, and the task as a whole was scoped to one already well-documented regression, which was not enough to meaningfully differentiate a capable solver from an incomplete one.
+
+
+
+The instruction file originally over-disclosed the bug by naming the exact Height/Angle swap and even the reporter's guessed fix, carried unnecessary scaffolding such as reproduction steps, a Sandcastle link, environment details, and issue/PR numbers, and needed to be rewritten to state only the intended behavior so the attached screenshots remain the sole way to diagnose the actual defect, with four additional hand-authored regressions later folded in and surfaced only as one plain symptom sentence apiece so they can't be solved by pattern-matching the images; the test suite needed hardening because it only checked getter or setter directions inconsistently per property and left the Clipping-panel minimum properties completely untested, meaning a partially wired fix could pass outright, so coverage was expanded to exercise every property in both directions, four new behaviorally-written test pairs were added for the newly injected defects without pinning any single correct implementation, and the always-pass rubric/judge layer was removed entirely since it graded nothing while still reporting success; on the task shape, task_type, the verifier's network_mode, and the reward.json/reward-policy logic were all corrected so the harness can record a valid, strictly binary score instead of silently letting a broken run appear scored or a correct one score zero; taken together, these changes are what justified spending a new agent Trial against the hardened bundle, and that Trial returned a genuine partial-failure result, reward 0.0 with 24 of 26 f2p passing, correctly catching that the submitted fix addressed the reported cylinder bug and three of the four injected regressions but only patched the symptom of the fifth rather than its underlying cause, which is precisely the kind of signal the original, unhardened version of this task was not built to catch.

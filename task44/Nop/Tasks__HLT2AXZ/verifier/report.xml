@@ -1,0 +1,327 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="10" skipped="0" tests="20" time="19.100" timestamp="2026-08-15T20:52:52.476640+00:00" hostname="vm-a3babb7a53fe4f35"><testcase classname="tests.harborbadges4203.test_badge_sheet_layout" name="test_every_badge_keeps_its_own_artwork_harbourfog" time="3.837"><failure message="AssertionError: the artwork of badge(s) [0, 1, 3] never reached the printed sheet; only 1 of 4 badge artworks printed at all&#10;assert not [0, 1, 3]">harbourfog = {'event': &lt;Event: Badge print harbourfog&gt;, 'products': [&lt;Product: render_nup ticket 0&gt;, &lt;Product: merge_foreground_buf..., 0, 0), (0, 230, 0), (0, 0, 230), (230, 230, 0)], 'ink': [(120, 0, 0), (0, 120, 0), (0, 0, 120), (120, 60, 180)], ...}
+
+    @pytest.mark.django_db
+    def test_every_badge_keeps_its_own_artwork_harbourfog(harbourfog):
+&gt;       _assert_every_artwork_printed(harbourfog)
+
+tests/harborbadges4203/test_badge_sheet_layout.py:540: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+env = {'event': &lt;Event: Badge print harbourfog&gt;, 'products': [&lt;Product: render_nup ticket 0&gt;, &lt;Product: merge_foreground_buf..., 0, 0), (0, 230, 0), (0, 0, 230), (230, 230, 0)], 'ink': [(120, 0, 0), (0, 120, 0), (0, 0, 120), (120, 60, 180)], ...}
+
+    def _assert_every_artwork_printed(env):
+        sheet = Sheet(_export(env['event'], env['products'], env['four_up'])[2])
+        n = len(env['products'])
+        slot_share = 1.0 / 4.0  # four badges to a sheet
+        found = _find_all(sheet, env['art'], min_frac=ART_MIN_FRAC)
+        missing = [i for i in range(n) if i not in found]
+&gt;       assert not missing, (
+            'the artwork of badge(s) %s never reached the printed sheet; only %d of %d '
+            'badge artworks printed at all' % (missing, len(found), n)
+        )
+E       AssertionError: the artwork of badge(s) [0, 1, 3] never reached the printed sheet; only 1 of 4 badge artworks printed at all
+E       assert not [0, 1, 3]
+
+tests/harborbadges4203/test_badge_sheet_layout.py:371: AssertionError</failure></testcase><testcase classname="tests.harborbadges4203.test_badge_sheet_layout" name="test_badge_artworks_do_not_overlap_harbourfog" time="0.470"><failure message="AssertionError: expected all 4 badge artworks somewhere on the sheet, printed 1 (per page: [1])&#10;assert 1 == 4">harbourfog = {'event': &lt;Event: Badge print harbourfog&gt;, 'products': [&lt;Product: render_nup ticket 0&gt;, &lt;Product: merge_foreground_buf..., 0, 0), (0, 230, 0), (0, 0, 230), (230, 230, 0)], 'ink': [(120, 0, 0), (0, 120, 0), (0, 0, 120), (120, 60, 180)], ...}
+
+    @pytest.mark.django_db
+    def test_badge_artworks_do_not_overlap_harbourfog(harbourfog):
+&gt;       _assert_artworks_do_not_overlap(harbourfog)
+
+tests/harborbadges4203/test_badge_sheet_layout.py:545: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+env = {'event': &lt;Event: Badge print harbourfog&gt;, 'products': [&lt;Product: render_nup ticket 0&gt;, &lt;Product: merge_foreground_buf..., 0, 0), (0, 230, 0), (0, 0, 230), (230, 230, 0)], 'ink': [(120, 0, 0), (0, 120, 0), (0, 0, 120), (120, 60, 180)], ...}
+
+    def _assert_artworks_do_not_overlap(env):
+        sheet = Sheet(_export(env['event'], env['products'], env['four_up'])[2])
+        n = len(env['products'])
+        per_page = []
+        for page_no, page in enumerate(sheet.pages):
+            page_px = page.shape[0] * page.shape[1]
+            present = []
+            for i, rgb in enumerate(env['art']):
+                region = _region(page, rgb)
+                if region is not None and region['count'] &gt;= 0.05 * page_px:
+                    present.append((i, region))
+            per_page.append(present)
+            for a in range(len(present)):
+                for b in range(a + 1, len(present)):
+                    box_a, box_b = _box(present[a][1]), _box(present[b][1])
+                    inter = _area(_intersection(box_a, box_b))
+                    smaller = min(_area(box_a), _area(box_b))
+                    assert inter &lt;= 0.03 * smaller, (
+                        'badge %d and badge %d overlap on sheet page %d (%.0f%% of a badge)'
+                        % (present[a][0], present[b][0], page_no, 100.0 * inter / smaller)
+                    )
+    
+        # A four-up sheet may not carry more than four badge artworks on a page, and
+        # every badge's artwork must reach the sheet somewhere. The exact split
+        # across pages is deliberately NOT pinned: any tiling the export chooses is
+        # accepted so long as no page is overfilled and no artwork is lost.
+        counts = sorted(len(p) for p in per_page)
+        overfull = [c for c in counts if c &gt; 4]
+        assert not overfull, (
+            'a four-up sheet page carries %s badge artworks; no page may carry more '
+            'than four (printed %s)' % (overfull, counts)
+        )
+        printed = sum(counts)
+&gt;       assert printed == n, (
+            'expected all %d badge artworks somewhere on the sheet, printed %d '
+            '(per page: %s)' % (n, printed, counts)
+        )
+E       AssertionError: expected all 4 badge artworks somewhere on the sheet, printed 1 (per page: [1])
+E       assert 1 == 4
+
+tests/harborbadges4203/test_badge_sheet_layout.py:417: AssertionError</failure></testcase><testcase classname="tests.harborbadges4203.test_badge_sheet_layout" name="test_badge_mark_sits_on_its_own_artwork_harbourfog" time="0.654"><failure message="AssertionError: the artwork of badge 0 is missing from the sheet&#10;assert 0 in {2: (0, {'count': 451772, 'x0': 0, 'y0': 620, 'x1': 877, ...})}">harbourfog = {'event': &lt;Event: Badge print harbourfog&gt;, 'products': [&lt;Product: render_nup ticket 0&gt;, &lt;Product: merge_foreground_buf..., 0, 0), (0, 230, 0), (0, 0, 230), (230, 230, 0)], 'ink': [(120, 0, 0), (0, 120, 0), (0, 0, 120), (120, 60, 180)], ...}
+
+    @pytest.mark.django_db
+    def test_badge_mark_sits_on_its_own_artwork_harbourfog(harbourfog):
+&gt;       _assert_mark_sits_on_its_own_artwork(harbourfog)
+
+tests/harborbadges4203/test_badge_sheet_layout.py:550: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+env = {'event': &lt;Event: Badge print harbourfog&gt;, 'products': [&lt;Product: render_nup ticket 0&gt;, &lt;Product: merge_foreground_buf..., 0, 0), (0, 230, 0), (0, 0, 230), (230, 230, 0)], 'ink': [(120, 0, 0), (0, 120, 0), (0, 0, 120), (120, 60, 180)], ...}
+
+    def _assert_mark_sits_on_its_own_artwork(env):
+        sheet = Sheet(_export(env['event'], env['products'], env['four_up'])[2])
+        art = _find_all(sheet, env['art'], min_frac=ART_MIN_FRAC)
+        ink = _find_all(sheet, env['ink'], min_count=MIN_MARK_PX)
+        for i in range(len(env['products'])):
+            assert i in ink, 'the printed text of badge %d is missing from the sheet' % i
+&gt;           assert i in art, 'the artwork of badge %d is missing from the sheet' % i
+E           AssertionError: the artwork of badge 0 is missing from the sheet
+E           assert 0 in {2: (0, {'count': 451772, 'x0': 0, 'y0': 620, 'x1': 877, ...})}
+
+tests/harborbadges4203/test_badge_sheet_layout.py:429: AssertionError</failure></testcase><testcase classname="tests.harborbadges4203.test_badge_sheet_layout" name="test_sheet_badge_matches_the_lone_badge_render_harbourfog" time="1.258"><failure message="AssertionError: badge 0 lost its artwork on the shared sheet&#10;assert 0 in {2: (0, {'count': 451772, 'x0': 0, 'y0': 620, 'x1': 877, ...})}">harbourfog = {'event': &lt;Event: Badge print harbourfog&gt;, 'products': [&lt;Product: render_nup ticket 0&gt;, &lt;Product: merge_foreground_buf..., 0, 0), (0, 230, 0), (0, 0, 230), (230, 230, 0)], 'ink': [(120, 0, 0), (0, 120, 0), (0, 0, 120), (120, 60, 180)], ...}
+
+    @pytest.mark.django_db
+    def test_sheet_badge_matches_the_lone_badge_render_harbourfog(harbourfog):
+&gt;       _assert_sheet_badge_matches_lone_badge(harbourfog)
+
+tests/harborbadges4203/test_badge_sheet_layout.py:555: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+env = {'event': &lt;Event: Badge print harbourfog&gt;, 'products': [&lt;Product: render_nup ticket 0&gt;, &lt;Product: merge_foreground_buf..., 0, 0), (0, 230, 0), (0, 0, 230), (230, 230, 0)], 'ink': [(120, 0, 0), (0, 120, 0), (0, 0, 120), (120, 60, 180)], ...}
+
+    def _assert_sheet_badge_matches_lone_badge(env):
+        """A badge on a shared sheet must be the same badge it is on its own sheet."""
+        lone = Sheet(_export(env['event'], env['products'], 'one')[2])
+        lone_art = _find_all(lone, env['art'], min_frac=ART_MIN_FRAC)
+        lone_ink = _find_all(lone, env['ink'], min_count=MIN_MARK_PX)
+        assert len(lone_art) == len(env['products'])
+        assert len(lone_ink) == len(env['products'])
+    
+        sheet = Sheet(_export(env['event'], env['products'], env['four_up'])[2])
+        sheet_art = _find_all(sheet, env['art'], min_frac=ART_MIN_FRAC)
+        sheet_ink = _find_all(sheet, env['ink'], min_count=MIN_MARK_PX)
+    
+        for i in range(len(env['products'])):
+&gt;           assert i in sheet_art, 'badge %d lost its artwork on the shared sheet' % i
+E           AssertionError: badge 0 lost its artwork on the shared sheet
+E           assert 0 in {2: (0, {'count': 451772, 'x0': 0, 'y0': 620, 'x1': 877, ...})}
+
+tests/harborbadges4203/test_badge_sheet_layout.py:456: AssertionError</failure></testcase><testcase classname="tests.harborbadges4203.test_badge_sheet_layout" name="test_four_slot_sheet_layout_is_a_regular_grid_harbourfog" time="0.482" /><testcase classname="tests.harborbadges4203.test_badge_sheet_layout" name="test_eight_slot_sheet_layout_is_a_regular_grid_harbourfog" time="0.468" /><testcase classname="tests.harborbadges4203.test_badge_sheet_layout" name="test_sheet_count_matches_the_badge_count_harbourfog" time="0.276" /><testcase classname="tests.harborbadges4203.test_badge_sheet_layout" name="test_sheet_size_matches_the_rendering_option_harbourfog" time="0.272" /><testcase classname="tests.harborbadges4203.test_badge_sheet_layout" name="test_lone_badge_page_keeps_its_artwork_harbourfog" time="0.683" /><testcase classname="tests.harborbadges4203.test_badge_sheet_layout" name="test_export_without_any_badge_product_raises_an_error_harbourfog" time="0.118" /><testcase classname="tests.harborbadges4203.test_badge_sheet_layout" name="test_every_badge_keeps_its_own_artwork_nordkap" time="0.984"><failure message="AssertionError: the artwork of badge(s) [0, 1, 3, 5] never reached the printed sheet; only 2 of 6 badge artworks printed at all&#10;assert not [0, 1, 3, 5]">nordkap = {'event': &lt;Event: Badge print nordkap&gt;, 'products': [&lt;Product: render_nup ticket 0&gt;, &lt;Product: merge_foreground_buffer...00), (140, 200, 40)], 'ink': [(100, 0, 50), (0, 100, 50), (50, 0, 100), (100, 50, 0), (0, 50, 100), (50, 100, 0)], ...}
+
+    @pytest.mark.django_db
+    def test_every_badge_keeps_its_own_artwork_nordkap(nordkap):
+&gt;       _assert_every_artwork_printed(nordkap)
+
+tests/harborbadges4203/test_badge_sheet_layout.py:604: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+env = {'event': &lt;Event: Badge print nordkap&gt;, 'products': [&lt;Product: render_nup ticket 0&gt;, &lt;Product: merge_foreground_buffer...00), (140, 200, 40)], 'ink': [(100, 0, 50), (0, 100, 50), (50, 0, 100), (100, 50, 0), (0, 50, 100), (50, 100, 0)], ...}
+
+    def _assert_every_artwork_printed(env):
+        sheet = Sheet(_export(env['event'], env['products'], env['four_up'])[2])
+        n = len(env['products'])
+        slot_share = 1.0 / 4.0  # four badges to a sheet
+        found = _find_all(sheet, env['art'], min_frac=ART_MIN_FRAC)
+        missing = [i for i in range(n) if i not in found]
+&gt;       assert not missing, (
+            'the artwork of badge(s) %s never reached the printed sheet; only %d of %d '
+            'badge artworks printed at all' % (missing, len(found), n)
+        )
+E       AssertionError: the artwork of badge(s) [0, 1, 3, 5] never reached the printed sheet; only 2 of 6 badge artworks printed at all
+E       assert not [0, 1, 3, 5]
+
+tests/harborbadges4203/test_badge_sheet_layout.py:371: AssertionError</failure></testcase><testcase classname="tests.harborbadges4203.test_badge_sheet_layout" name="test_badge_artworks_do_not_overlap_nordkap" time="0.994"><failure message="AssertionError: expected all 6 badge artworks somewhere on the sheet, printed 2 (per page: [1, 1])&#10;assert 2 == 6">nordkap = {'event': &lt;Event: Badge print nordkap&gt;, 'products': [&lt;Product: render_nup ticket 0&gt;, &lt;Product: merge_foreground_buffer...00), (140, 200, 40)], 'ink': [(100, 0, 50), (0, 100, 50), (50, 0, 100), (100, 50, 0), (0, 50, 100), (50, 100, 0)], ...}
+
+    @pytest.mark.django_db
+    def test_badge_artworks_do_not_overlap_nordkap(nordkap):
+&gt;       _assert_artworks_do_not_overlap(nordkap)
+
+tests/harborbadges4203/test_badge_sheet_layout.py:609: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+env = {'event': &lt;Event: Badge print nordkap&gt;, 'products': [&lt;Product: render_nup ticket 0&gt;, &lt;Product: merge_foreground_buffer...00), (140, 200, 40)], 'ink': [(100, 0, 50), (0, 100, 50), (50, 0, 100), (100, 50, 0), (0, 50, 100), (50, 100, 0)], ...}
+
+    def _assert_artworks_do_not_overlap(env):
+        sheet = Sheet(_export(env['event'], env['products'], env['four_up'])[2])
+        n = len(env['products'])
+        per_page = []
+        for page_no, page in enumerate(sheet.pages):
+            page_px = page.shape[0] * page.shape[1]
+            present = []
+            for i, rgb in enumerate(env['art']):
+                region = _region(page, rgb)
+                if region is not None and region['count'] &gt;= 0.05 * page_px:
+                    present.append((i, region))
+            per_page.append(present)
+            for a in range(len(present)):
+                for b in range(a + 1, len(present)):
+                    box_a, box_b = _box(present[a][1]), _box(present[b][1])
+                    inter = _area(_intersection(box_a, box_b))
+                    smaller = min(_area(box_a), _area(box_b))
+                    assert inter &lt;= 0.03 * smaller, (
+                        'badge %d and badge %d overlap on sheet page %d (%.0f%% of a badge)'
+                        % (present[a][0], present[b][0], page_no, 100.0 * inter / smaller)
+                    )
+    
+        # A four-up sheet may not carry more than four badge artworks on a page, and
+        # every badge's artwork must reach the sheet somewhere. The exact split
+        # across pages is deliberately NOT pinned: any tiling the export chooses is
+        # accepted so long as no page is overfilled and no artwork is lost.
+        counts = sorted(len(p) for p in per_page)
+        overfull = [c for c in counts if c &gt; 4]
+        assert not overfull, (
+            'a four-up sheet page carries %s badge artworks; no page may carry more '
+            'than four (printed %s)' % (overfull, counts)
+        )
+        printed = sum(counts)
+&gt;       assert printed == n, (
+            'expected all %d badge artworks somewhere on the sheet, printed %d '
+            '(per page: %s)' % (n, printed, counts)
+        )
+E       AssertionError: expected all 6 badge artworks somewhere on the sheet, printed 2 (per page: [1, 1])
+E       assert 2 == 6
+
+tests/harborbadges4203/test_badge_sheet_layout.py:417: AssertionError</failure></testcase><testcase classname="tests.harborbadges4203.test_badge_sheet_layout" name="test_badge_mark_sits_on_its_own_artwork_nordkap" time="1.518"><failure message="AssertionError: the artwork of badge 0 is missing from the sheet&#10;assert 0 in {2: (0, {'count': 451982, 'x0': 0, 'y0': 877, 'x1': 620, ...}), 4: (1, {'count': 159960, 'x0': 0, 'y0': 876, 'x1': 620, ...})}">nordkap = {'event': &lt;Event: Badge print nordkap&gt;, 'products': [&lt;Product: render_nup ticket 0&gt;, &lt;Product: merge_foreground_buffer...00), (140, 200, 40)], 'ink': [(100, 0, 50), (0, 100, 50), (50, 0, 100), (100, 50, 0), (0, 50, 100), (50, 100, 0)], ...}
+
+    @pytest.mark.django_db
+    def test_badge_mark_sits_on_its_own_artwork_nordkap(nordkap):
+&gt;       _assert_mark_sits_on_its_own_artwork(nordkap)
+
+tests/harborbadges4203/test_badge_sheet_layout.py:614: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+env = {'event': &lt;Event: Badge print nordkap&gt;, 'products': [&lt;Product: render_nup ticket 0&gt;, &lt;Product: merge_foreground_buffer...00), (140, 200, 40)], 'ink': [(100, 0, 50), (0, 100, 50), (50, 0, 100), (100, 50, 0), (0, 50, 100), (50, 100, 0)], ...}
+
+    def _assert_mark_sits_on_its_own_artwork(env):
+        sheet = Sheet(_export(env['event'], env['products'], env['four_up'])[2])
+        art = _find_all(sheet, env['art'], min_frac=ART_MIN_FRAC)
+        ink = _find_all(sheet, env['ink'], min_count=MIN_MARK_PX)
+        for i in range(len(env['products'])):
+            assert i in ink, 'the printed text of badge %d is missing from the sheet' % i
+&gt;           assert i in art, 'the artwork of badge %d is missing from the sheet' % i
+E           AssertionError: the artwork of badge 0 is missing from the sheet
+E           assert 0 in {2: (0, {'count': 451982, 'x0': 0, 'y0': 877, 'x1': 620, ...}), 4: (1, {'count': 159960, 'x0': 0, 'y0': 876, 'x1': 620, ...})}
+
+tests/harborbadges4203/test_badge_sheet_layout.py:429: AssertionError</failure></testcase><testcase classname="tests.harborbadges4203.test_badge_sheet_layout" name="test_sheet_badge_matches_the_lone_badge_render_nordkap" time="2.698"><failure message="AssertionError: badge 0 lost its artwork on the shared sheet&#10;assert 0 in {2: (0, {'count': 451982, 'x0': 0, 'y0': 877, 'x1': 620, ...}), 4: (1, {'count': 159960, 'x0': 0, 'y0': 876, 'x1': 620, ...})}">nordkap = {'event': &lt;Event: Badge print nordkap&gt;, 'products': [&lt;Product: render_nup ticket 0&gt;, &lt;Product: merge_foreground_buffer...00), (140, 200, 40)], 'ink': [(100, 0, 50), (0, 100, 50), (50, 0, 100), (100, 50, 0), (0, 50, 100), (50, 100, 0)], ...}
+
+    @pytest.mark.django_db
+    def test_sheet_badge_matches_the_lone_badge_render_nordkap(nordkap):
+&gt;       _assert_sheet_badge_matches_lone_badge(nordkap)
+
+tests/harborbadges4203/test_badge_sheet_layout.py:619: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+env = {'event': &lt;Event: Badge print nordkap&gt;, 'products': [&lt;Product: render_nup ticket 0&gt;, &lt;Product: merge_foreground_buffer...00), (140, 200, 40)], 'ink': [(100, 0, 50), (0, 100, 50), (50, 0, 100), (100, 50, 0), (0, 50, 100), (50, 100, 0)], ...}
+
+    def _assert_sheet_badge_matches_lone_badge(env):
+        """A badge on a shared sheet must be the same badge it is on its own sheet."""
+        lone = Sheet(_export(env['event'], env['products'], 'one')[2])
+        lone_art = _find_all(lone, env['art'], min_frac=ART_MIN_FRAC)
+        lone_ink = _find_all(lone, env['ink'], min_count=MIN_MARK_PX)
+        assert len(lone_art) == len(env['products'])
+        assert len(lone_ink) == len(env['products'])
+    
+        sheet = Sheet(_export(env['event'], env['products'], env['four_up'])[2])
+        sheet_art = _find_all(sheet, env['art'], min_frac=ART_MIN_FRAC)
+        sheet_ink = _find_all(sheet, env['ink'], min_count=MIN_MARK_PX)
+    
+        for i in range(len(env['products'])):
+&gt;           assert i in sheet_art, 'badge %d lost its artwork on the shared sheet' % i
+E           AssertionError: badge 0 lost its artwork on the shared sheet
+E           assert 0 in {2: (0, {'count': 451982, 'x0': 0, 'y0': 877, 'x1': 620, ...}), 4: (1, {'count': 159960, 'x0': 0, 'y0': 876, 'x1': 620, ...})}
+
+tests/harborbadges4203/test_badge_sheet_layout.py:456: AssertionError</failure></testcase><testcase classname="tests.harborbadges4203.test_badge_sheet_layout" name="test_four_slot_sheet_layout_is_a_regular_grid_nordkap" time="0.993"><failure message="AssertionError: badge 2 sits 620.0 px down from badge 0 on sheet page 0, which is not a whole number of 877.0 px slots&#10;assert 257.0 &lt;= 24.82&#10; +  where 257.0 = abs((620.0 - (1 * 877.0)))">nordkap = {'event': &lt;Event: Badge print nordkap&gt;, 'products': [&lt;Product: render_nup ticket 0&gt;, &lt;Product: merge_foreground_buffer...00), (140, 200, 40)], 'ink': [(100, 0, 50), (0, 100, 50), (50, 0, 100), (100, 50, 0), (0, 50, 100), (50, 100, 0)], ...}
+
+    @pytest.mark.django_db
+    def test_four_slot_sheet_layout_is_a_regular_grid_nordkap(nordkap):
+&gt;       _assert_layout_is_a_regular_grid(nordkap, nordkap['four_up'], (2, 2))
+
+tests/harborbadges4203/test_badge_sheet_layout.py:624: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+env = {'event': &lt;Event: Badge print nordkap&gt;, 'products': [&lt;Product: render_nup ticket 0&gt;, &lt;Product: merge_foreground_buffer...00), (140, 200, 40)], 'ink': [(100, 0, 50), (0, 100, 50), (50, 0, 100), (100, 50, 0), (0, 50, 100), (50, 100, 0)], ...}
+rendering = 'a4_a6p', grid = (2, 2)
+
+    def _assert_layout_is_a_regular_grid(env, rendering, grid):
+        """Badges must be laid out on the grid the rendering option describes."""
+        cols, rows = grid
+        sheet = Sheet(_export(env['event'], env['products'], rendering)[2])
+        per_page = cols * rows
+        n = len(env['products'])
+    
+        marks = _find_all(sheet, env['ink'], min_count=MIN_MARK_PX)
+        missing = [i for i in range(n) if i not in marks]
+        assert not missing, (
+            'badge(s) %s printed nothing readable on the %d-up sheet -- their content '
+            'fell outside the printable area' % (missing, per_page)
+        )
+    
+        by_page = {}
+        for i, (page_no, region) in marks.items():
+            by_page.setdefault(page_no, []).append((i, _centre(region)))
+    
+        for page_no, entries in by_page.items():
+            page = sheet.pages[page_no]
+            height_px, width_px = page.shape[0], page.shape[1]
+            cell_w = width_px / float(cols)
+            cell_h = height_px / float(rows)
+            tol = 0.04 * min(cell_w, cell_h)
+            ref = entries[0][1]
+            for i, centre in entries[1:]:
+                for axis, pitch, name in ((0, cell_w, 'across'), (1, cell_h, 'down')):
+                    delta = centre[axis] - ref[axis]
+                    steps = round(delta / pitch)
+&gt;                   assert abs(delta - steps * pitch) &lt;= tol, (
+                        'badge %d sits %.1f px %s from badge %d on sheet page %d, which '
+                        'is not a whole number of %.1f px slots'
+                        % (i, delta, name, entries[0][0], page_no, pitch)
+                    )
+E                   AssertionError: badge 2 sits 620.0 px down from badge 0 on sheet page 0, which is not a whole number of 877.0 px slots
+E                   assert 257.0 &lt;= 24.82
+E                    +  where 257.0 = abs((620.0 - (1 * 877.0)))
+
+tests/harborbadges4203/test_badge_sheet_layout.py:519: AssertionError</failure></testcase><testcase classname="tests.harborbadges4203.test_badge_sheet_layout" name="test_eight_slot_sheet_layout_is_a_regular_grid_nordkap" time="0.603"><failure message="AssertionError: badge(s) [0, 1, 2, 3] printed nothing readable on the 8-up sheet -- their content fell outside the printable area&#10;assert not [0, 1, 2, 3]">nordkap = {'event': &lt;Event: Badge print nordkap&gt;, 'products': [&lt;Product: render_nup ticket 0&gt;, &lt;Product: merge_foreground_buffer...00), (140, 200, 40)], 'ink': [(100, 0, 50), (0, 100, 50), (50, 0, 100), (100, 50, 0), (0, 50, 100), (50, 100, 0)], ...}
+
+    @pytest.mark.django_db
+    def test_eight_slot_sheet_layout_is_a_regular_grid_nordkap(nordkap):
+&gt;       _assert_layout_is_a_regular_grid(nordkap, nordkap['eight_up'], nordkap['eight_up_grid'])
+
+tests/harborbadges4203/test_badge_sheet_layout.py:629: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+env = {'event': &lt;Event: Badge print nordkap&gt;, 'products': [&lt;Product: render_nup ticket 0&gt;, &lt;Product: merge_foreground_buffer...00), (140, 200, 40)], 'ink': [(100, 0, 50), (0, 100, 50), (50, 0, 100), (100, 50, 0), (0, 50, 100), (50, 100, 0)], ...}
+rendering = 'a4_a7p', grid = (4, 2)
+
+    def _assert_layout_is_a_regular_grid(env, rendering, grid):
+        """Badges must be laid out on the grid the rendering option describes."""
+        cols, rows = grid
+        sheet = Sheet(_export(env['event'], env['products'], rendering)[2])
+        per_page = cols * rows
+        n = len(env['products'])
+    
+        marks = _find_all(sheet, env['ink'], min_count=MIN_MARK_PX)
+        missing = [i for i in range(n) if i not in marks]
+&gt;       assert not missing, (
+            'badge(s) %s printed nothing readable on the %d-up sheet -- their content '
+            'fell outside the printable area' % (missing, per_page)
+        )
+E       AssertionError: badge(s) [0, 1, 2, 3] printed nothing readable on the 8-up sheet -- their content fell outside the printable area
+E       assert not [0, 1, 2, 3]
+
+tests/harborbadges4203/test_badge_sheet_layout.py:499: AssertionError</failure></testcase><testcase classname="tests.harborbadges4203.test_badge_sheet_layout" name="test_sheet_count_matches_the_badge_count_nordkap" time="0.420" /><testcase classname="tests.harborbadges4203.test_badge_sheet_layout" name="test_sheet_size_matches_the_rendering_option_nordkap" time="0.424" /><testcase classname="tests.harborbadges4203.test_badge_sheet_layout" name="test_lone_badge_page_keeps_its_artwork_nordkap" time="1.239" /><testcase classname="tests.harborbadges4203.test_badge_sheet_layout" name="test_export_returns_a_pdf_attachment_nordkap" time="0.276" /></testsuite></testsuites>

@@ -1,0 +1,307 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="5" skipped="0" tests="14" time="0.550" timestamp="2026-08-14T14:49:47.407436+00:00" hostname="53af220e6d68"><testcase classname="tests.test_unset_adoptive_parent.UnsetAdoptiveParentOfAGrandparent" name="test_a_second_family_palette_unsets_the_same_way" time="0.002"><failure message="AssertionError: unsetting Ivystorm as an adoptive parent of Duskpelt raised AttributeError: 'Inheritance' object has no attribute 'grandparents'">self = &lt;tests.test_unset_adoptive_parent.UnsetAdoptiveParentOfAGrandparent testMethod=test_a_second_family_palette_unsets_the_same_way&gt;
+child = CAT OBJECT:2, parent = CAT OBJECT:1
+
+    def unset_parent(self, child, parent):
+        """Unset an adoptive parent, failing loudly instead of erroring out."""
+        try:
+&gt;           child.unset_adoptive_parent(parent)
+
+tests/test_unset_adoptive_parent.py:54: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/cat/cats.py:2584: in unset_adoptive_parent
+    other_cat.create_inheritance_new_cat()
+scripts/cat/cats.py:2626: in create_inheritance_new_cat
+    self.inheritance = Inheritance(self, True)
+                       ^^^^^^^^^^^^^^^^^^^^^^^
+scripts/cat_relations/inheritance.py:59: in __init__
+    self.update_all_related_inheritance()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;scripts.cat_relations.inheritance.Inheritance object at 0x7f63dcb11890&gt;
+
+    def update_all_related_inheritance(self):
+        """Update all the inheritances of the cats, which are related to the current cat."""
+        # only adding/removing parents or kits will use this function, because all inheritances are based on parents
+        for cat_id in self.all_involved:
+            # Don't update the inheritance of faded cats
+            # They are not viewable by the player and won't be used in any checks.
+            if (
+                cat_id in self.all_inheritances
+                and self.cat.fetch_cat(cat_id)
+                and not self.cat.fetch_cat(cat_id).faded
+            ):
+                if self.cat.ID in self.all_inheritances[cat_id].all_involved:
+                    self.all_inheritances[cat_id].all_involved.remove(self.cat.ID)
+                    if self.cat.ID in self.all_inheritances[cat_id].all_but_cousins:
+                        self.all_inheritances[cat_id].all_but_cousins.remove(
+                            self.cat.ID
+                        )
+    
+                if cat_id in self.kits:
+                    self.all_inheritances[cat_id].init_parents()
+                if cat_id in self.grand_kits:
+&gt;                   if self.cat.ID in self.all_inheritances[cat_id].grandparents:
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                   AttributeError: 'Inheritance' object has no attribute 'grandparents'
+
+scripts/cat_relations/inheritance.py:157: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = &lt;tests.test_unset_adoptive_parent.UnsetAdoptiveParentOfAGrandparent testMethod=test_a_second_family_palette_unsets_the_same_way&gt;
+
+    def test_a_second_family_palette_unsets_the_same_way(self):
+        elder, adopted, born, grandkit = self.two_route_grandparent(self.PALETTE_B)
+&gt;       self.unset_parent(adopted, elder)
+
+tests/test_unset_adoptive_parent.py:160: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_unset_adoptive_parent.py:56: in unset_parent
+    self.fail(
+E   AssertionError: unsetting Ivystorm as an adoptive parent of Duskpelt raised AttributeError: 'Inheritance' object has no attribute 'grandparents'</failure></testcase><testcase classname="tests.test_unset_adoptive_parent.UnsetAdoptiveParentOfAGrandparent" name="test_the_grandkit_tree_forgets_the_route_through_the_adoption" time="0.002"><failure message="AssertionError: unsetting Sandbuzz as an adoptive parent of Warmshadow raised AttributeError: 'Inheritance' object has no attribute 'grandparents'">self = &lt;tests.test_unset_adoptive_parent.UnsetAdoptiveParentOfAGrandparent testMethod=test_the_grandkit_tree_forgets_the_route_through_the_adoption&gt;
+child = CAT OBJECT:6, parent = CAT OBJECT:5
+
+    def unset_parent(self, child, parent):
+        """Unset an adoptive parent, failing loudly instead of erroring out."""
+        try:
+&gt;           child.unset_adoptive_parent(parent)
+
+tests/test_unset_adoptive_parent.py:54: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/cat/cats.py:2584: in unset_adoptive_parent
+    other_cat.create_inheritance_new_cat()
+scripts/cat/cats.py:2626: in create_inheritance_new_cat
+    self.inheritance = Inheritance(self, True)
+                       ^^^^^^^^^^^^^^^^^^^^^^^
+scripts/cat_relations/inheritance.py:59: in __init__
+    self.update_all_related_inheritance()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;scripts.cat_relations.inheritance.Inheritance object at 0x7f63dc998cd0&gt;
+
+    def update_all_related_inheritance(self):
+        """Update all the inheritances of the cats, which are related to the current cat."""
+        # only adding/removing parents or kits will use this function, because all inheritances are based on parents
+        for cat_id in self.all_involved:
+            # Don't update the inheritance of faded cats
+            # They are not viewable by the player and won't be used in any checks.
+            if (
+                cat_id in self.all_inheritances
+                and self.cat.fetch_cat(cat_id)
+                and not self.cat.fetch_cat(cat_id).faded
+            ):
+                if self.cat.ID in self.all_inheritances[cat_id].all_involved:
+                    self.all_inheritances[cat_id].all_involved.remove(self.cat.ID)
+                    if self.cat.ID in self.all_inheritances[cat_id].all_but_cousins:
+                        self.all_inheritances[cat_id].all_but_cousins.remove(
+                            self.cat.ID
+                        )
+    
+                if cat_id in self.kits:
+                    self.all_inheritances[cat_id].init_parents()
+                if cat_id in self.grand_kits:
+&gt;                   if self.cat.ID in self.all_inheritances[cat_id].grandparents:
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                   AttributeError: 'Inheritance' object has no attribute 'grandparents'
+
+scripts/cat_relations/inheritance.py:157: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = &lt;tests.test_unset_adoptive_parent.UnsetAdoptiveParentOfAGrandparent testMethod=test_the_grandkit_tree_forgets_the_route_through_the_adoption&gt;
+
+    def test_the_grandkit_tree_forgets_the_route_through_the_adoption(self):
+        elder, adopted, born, grandkit = self.two_route_grandparent(self.PALETTE_A)
+        before = self.notes_about(grandkit, elder)
+        self.assertIn(str(adopted.name), before)
+    
+&gt;       self.unset_parent(adopted, elder)
+
+tests/test_unset_adoptive_parent.py:138: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_unset_adoptive_parent.py:56: in unset_parent
+    self.fail(
+E   AssertionError: unsetting Sandbuzz as an adoptive parent of Warmshadow raised AttributeError: 'Inheritance' object has no attribute 'grandparents'</failure></testcase><testcase classname="tests.test_unset_adoptive_parent.UnsetAdoptiveParentOfAGrandparent" name="test_unsetting_the_adoption_of_a_grandparents_kit_survives" time="0.002"><failure message="AssertionError: unsetting Sandbuzz as an adoptive parent of Warmshadow raised AttributeError: 'Inheritance' object has no attribute 'grandparents'">self = &lt;tests.test_unset_adoptive_parent.UnsetAdoptiveParentOfAGrandparent testMethod=test_unsetting_the_adoption_of_a_grandparents_kit_survives&gt;
+child = CAT OBJECT:10, parent = CAT OBJECT:9
+
+    def unset_parent(self, child, parent):
+        """Unset an adoptive parent, failing loudly instead of erroring out."""
+        try:
+&gt;           child.unset_adoptive_parent(parent)
+
+tests/test_unset_adoptive_parent.py:54: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/cat/cats.py:2584: in unset_adoptive_parent
+    other_cat.create_inheritance_new_cat()
+scripts/cat/cats.py:2626: in create_inheritance_new_cat
+    self.inheritance = Inheritance(self, True)
+                       ^^^^^^^^^^^^^^^^^^^^^^^
+scripts/cat_relations/inheritance.py:59: in __init__
+    self.update_all_related_inheritance()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;scripts.cat_relations.inheritance.Inheritance object at 0x7f63dc9f3410&gt;
+
+    def update_all_related_inheritance(self):
+        """Update all the inheritances of the cats, which are related to the current cat."""
+        # only adding/removing parents or kits will use this function, because all inheritances are based on parents
+        for cat_id in self.all_involved:
+            # Don't update the inheritance of faded cats
+            # They are not viewable by the player and won't be used in any checks.
+            if (
+                cat_id in self.all_inheritances
+                and self.cat.fetch_cat(cat_id)
+                and not self.cat.fetch_cat(cat_id).faded
+            ):
+                if self.cat.ID in self.all_inheritances[cat_id].all_involved:
+                    self.all_inheritances[cat_id].all_involved.remove(self.cat.ID)
+                    if self.cat.ID in self.all_inheritances[cat_id].all_but_cousins:
+                        self.all_inheritances[cat_id].all_but_cousins.remove(
+                            self.cat.ID
+                        )
+    
+                if cat_id in self.kits:
+                    self.all_inheritances[cat_id].init_parents()
+                if cat_id in self.grand_kits:
+&gt;                   if self.cat.ID in self.all_inheritances[cat_id].grandparents:
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                   AttributeError: 'Inheritance' object has no attribute 'grandparents'
+
+scripts/cat_relations/inheritance.py:157: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = &lt;tests.test_unset_adoptive_parent.UnsetAdoptiveParentOfAGrandparent testMethod=test_unsetting_the_adoption_of_a_grandparents_kit_survives&gt;
+
+    def test_unsetting_the_adoption_of_a_grandparents_kit_survives(self):
+        elder, adopted, born, grandkit = self.two_route_grandparent(self.PALETTE_A)
+&gt;       self.unset_parent(adopted, elder)
+
+tests/test_unset_adoptive_parent.py:127: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_unset_adoptive_parent.py:56: in unset_parent
+    self.fail(
+E   AssertionError: unsetting Sandbuzz as an adoptive parent of Warmshadow raised AttributeError: 'Inheritance' object has no attribute 'grandparents'</failure></testcase><testcase classname="tests.test_unset_adoptive_parent.AdoptionChangesOnCatsWithGrandkits" name="test_an_elder_with_grandkits_can_gain_an_adoptive_parent" time="0.002"><failure message="AssertionError: setting Frostgaze as an adoptive parent of Birchfang raised AttributeError: 'Inheritance' object has no attribute 'grandparents'">self = &lt;tests.test_unset_adoptive_parent.AdoptionChangesOnCatsWithGrandkits testMethod=test_an_elder_with_grandkits_can_gain_an_adoptive_parent&gt;
+child = CAT OBJECT:14, parent = CAT OBJECT:13
+
+    def set_parent(self, child, parent):
+        """Set an adoptive parent, failing loudly instead of erroring out."""
+        try:
+&gt;           child.set_adoptive_parent(parent)
+
+tests/test_unset_adoptive_parent.py:65: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/cat/cats.py:2604: in set_adoptive_parent
+    self.create_inheritance_new_cat()
+scripts/cat/cats.py:2626: in create_inheritance_new_cat
+    self.inheritance = Inheritance(self, True)
+                       ^^^^^^^^^^^^^^^^^^^^^^^
+scripts/cat_relations/inheritance.py:59: in __init__
+    self.update_all_related_inheritance()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;scripts.cat_relations.inheritance.Inheritance object at 0x7f63dc9e91d0&gt;
+
+    def update_all_related_inheritance(self):
+        """Update all the inheritances of the cats, which are related to the current cat."""
+        # only adding/removing parents or kits will use this function, because all inheritances are based on parents
+        for cat_id in self.all_involved:
+            # Don't update the inheritance of faded cats
+            # They are not viewable by the player and won't be used in any checks.
+            if (
+                cat_id in self.all_inheritances
+                and self.cat.fetch_cat(cat_id)
+                and not self.cat.fetch_cat(cat_id).faded
+            ):
+                if self.cat.ID in self.all_inheritances[cat_id].all_involved:
+                    self.all_inheritances[cat_id].all_involved.remove(self.cat.ID)
+                    if self.cat.ID in self.all_inheritances[cat_id].all_but_cousins:
+                        self.all_inheritances[cat_id].all_but_cousins.remove(
+                            self.cat.ID
+                        )
+    
+                if cat_id in self.kits:
+                    self.all_inheritances[cat_id].init_parents()
+                if cat_id in self.grand_kits:
+&gt;                   if self.cat.ID in self.all_inheritances[cat_id].grandparents:
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                   AttributeError: 'Inheritance' object has no attribute 'grandparents'
+
+scripts/cat_relations/inheritance.py:157: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = &lt;tests.test_unset_adoptive_parent.AdoptionChangesOnCatsWithGrandkits testMethod=test_an_elder_with_grandkits_can_gain_an_adoptive_parent&gt;
+
+    def test_an_elder_with_grandkits_can_gain_an_adoptive_parent(self):
+        new_parent, elder, kit, grandkit = self.build_elder_with_grandkits()
+    
+&gt;       self.set_parent(elder, new_parent)
+
+tests/test_unset_adoptive_parent.py:203: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_unset_adoptive_parent.py:67: in set_parent
+    self.fail(
+E   AssertionError: setting Frostgaze as an adoptive parent of Birchfang raised AttributeError: 'Inheritance' object has no attribute 'grandparents'</failure></testcase><testcase classname="tests.test_unset_adoptive_parent.AdoptionChangesOnCatsWithGrandkits" name="test_an_elder_with_grandkits_can_lose_an_adoptive_parent" time="0.002"><failure message="AssertionError: unsetting Frostgaze as an adoptive parent of Birchfang raised AttributeError: 'Inheritance' object has no attribute 'grandparents'">self = &lt;tests.test_unset_adoptive_parent.AdoptionChangesOnCatsWithGrandkits testMethod=test_an_elder_with_grandkits_can_lose_an_adoptive_parent&gt;
+child = CAT OBJECT:19, parent = CAT OBJECT:18
+
+    def unset_parent(self, child, parent):
+        """Unset an adoptive parent, failing loudly instead of erroring out."""
+        try:
+&gt;           child.unset_adoptive_parent(parent)
+
+tests/test_unset_adoptive_parent.py:54: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+scripts/cat/cats.py:2583: in unset_adoptive_parent
+    self.create_inheritance_new_cat()
+scripts/cat/cats.py:2626: in create_inheritance_new_cat
+    self.inheritance = Inheritance(self, True)
+                       ^^^^^^^^^^^^^^^^^^^^^^^
+scripts/cat_relations/inheritance.py:59: in __init__
+    self.update_all_related_inheritance()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;scripts.cat_relations.inheritance.Inheritance object at 0x7f63dca5f5d0&gt;
+
+    def update_all_related_inheritance(self):
+        """Update all the inheritances of the cats, which are related to the current cat."""
+        # only adding/removing parents or kits will use this function, because all inheritances are based on parents
+        for cat_id in self.all_involved:
+            # Don't update the inheritance of faded cats
+            # They are not viewable by the player and won't be used in any checks.
+            if (
+                cat_id in self.all_inheritances
+                and self.cat.fetch_cat(cat_id)
+                and not self.cat.fetch_cat(cat_id).faded
+            ):
+                if self.cat.ID in self.all_inheritances[cat_id].all_involved:
+                    self.all_inheritances[cat_id].all_involved.remove(self.cat.ID)
+                    if self.cat.ID in self.all_inheritances[cat_id].all_but_cousins:
+                        self.all_inheritances[cat_id].all_but_cousins.remove(
+                            self.cat.ID
+                        )
+    
+                if cat_id in self.kits:
+                    self.all_inheritances[cat_id].init_parents()
+                if cat_id in self.grand_kits:
+&gt;                   if self.cat.ID in self.all_inheritances[cat_id].grandparents:
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E                   AttributeError: 'Inheritance' object has no attribute 'grandparents'
+
+scripts/cat_relations/inheritance.py:157: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+self = &lt;tests.test_unset_adoptive_parent.AdoptionChangesOnCatsWithGrandkits testMethod=test_an_elder_with_grandkits_can_lose_an_adoptive_parent&gt;
+
+    def test_an_elder_with_grandkits_can_lose_an_adoptive_parent(self):
+        old_parent, elder, kit, grandkit = self.build_elder_with_grandkits(adopted=True)
+        self.assertIn(old_parent.ID, elder.inheritance.parents)
+    
+&gt;       self.unset_parent(elder, old_parent)
+
+tests/test_unset_adoptive_parent.py:191: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_unset_adoptive_parent.py:56: in unset_parent
+    self.fail(
+E   AssertionError: unsetting Frostgaze as an adoptive parent of Birchfang raised AttributeError: 'Inheritance' object has no attribute 'grandparents'</failure></testcase><testcase classname="tests.test_unset_adoptive_parent.AdoptionNeighbourhood" name="test_a_blood_family_tree_spans_three_generations" time="0.001" /><testcase classname="tests.test_unset_adoptive_parent.AdoptionNeighbourhood" name="test_a_cat_with_no_parents_has_an_empty_family_tree" time="0.000" /><testcase classname="tests.test_unset_adoptive_parent.AdoptionNeighbourhood" name="test_a_plain_adoption_can_be_set" time="0.001" /><testcase classname="tests.test_unset_adoptive_parent.AdoptionNeighbourhood" name="test_a_plain_adoption_can_be_unset" time="0.001" /><testcase classname="tests.test_unset_adoptive_parent.AdoptionNeighbourhood" name="test_grandparents_of_a_bystander_kit_are_not_duplicated" time="0.002" /><testcase classname="tests.test_unset_adoptive_parent.AdoptionNeighbourhood" name="test_mate_bookkeeping_survives_the_birth_of_a_kit" time="0.001" /><testcase classname="tests.test_unset_adoptive_parent.AdoptionNeighbourhood" name="test_removing_a_parent_who_was_never_set_is_a_no_op" time="0.001" /><testcase classname="tests.test_unset_adoptive_parent.AdoptionNeighbourhood" name="test_the_blood_parent_survives_an_unset" time="0.001" /><testcase classname="tests.test_unset_adoptive_parent.AdoptionNeighbourhood" name="test_the_other_adoptive_parent_survives_an_unset" time="0.001" /></testsuite></testsuites>

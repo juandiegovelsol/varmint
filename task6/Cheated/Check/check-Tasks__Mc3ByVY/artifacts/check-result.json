@@ -1,0 +1,46 @@
+{
+  "behavior_in_task_description": {
+    "outcome": "fail",
+    "explanation": "instruction.md (and its verbatim copy at tests/instruction.md) contains only the symptom narrative ('one of two text objects doesn't render' / 'both should be visible') plus two screenshots. It never mentions the triggering property (lineHeight = 0), the affected file/API (Text.ts, calcTextHeight/getHeightOfLine), or the concrete acceptance behavior the tests actually check (finite text height, lines painted inside the box rather than above/below it). Both f2p tests in test.patch assert very specific numeric/pixel behavior tied to lineHeight=0 that is not derivable from the instruction text — only from reverse-engineering the screenshots and the source, which the task's own difficulty_explanation confirms is the intended (deliberately hard) design."
+  },
+  "behavior_in_tests": {
+    "outcome": "pass",
+    "explanation": "The core behavior described in instruction.md — that both multi-line text objects must be visible on the canvas — is exercised by the added pixel-based test ('zero lineHeight piles every rendered line onto the first row'), which renders a StaticCanvas and checks that ink exists and lands inside the expected band, directly corresponding to the 'invisible text object' bug and its visual fix. The companion height test backs this with a numeric invariant. Together they test the same rendering behavior shown in the bug/expected screenshots."
+  },
+  "informative_test_structure": {
+    "outcome": "pass",
+    "explanation": "tests/test.patch adds two clearly named vitest cases with inline comments explaining the intent of each assertion (e.g. 'every line piles onto the first row, so the box stays one line tall'). tests/test.sh is broken into clearly labeled steps (reset test files, apply patch, run vitest, compute reward) with echoed section markers, and verifier.py/judge.py carry explanatory module docstrings and comments describing the reward/rubric contract."
+  },
+  "anti_cheating_measures": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile clones the repo, checks out the pinned base commit, then deletes .git and re-inits a fresh repo (tagged harbor_base) so no future-commit history or PR references leak into the container; it also scrubs package.json repository/homepage/bugs fields and blocks DNS/network access to github.com and the npm registry via /etc/hosts + registry override, and removes curl/wget. tests/ and solution/ are not copied into the image at all — test.sh resets test files from harbor_base and applies test.patch only at grading time. judge.py explicitly withholds the golden fix.patch, test.patch, and the before/after images from the rubric judge to avoid turning it into a similarity checker."
+  },
+  "structured_data_schema": {
+    "outcome": "not_applicable",
+    "explanation": "This is a source-code bug-fix task graded by running an existing unit test suite against the repository; the agent does not need to produce any structured output (JSON/CSV/API) for the tests to consume."
+  },
+  "pinned_dependencies": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile installs Node dependencies with `npm ci`, which is reproducible against the repository's committed package-lock.json. Only unpinned apt packages (ca-certificates, curl, git, python3) are installed, which is acceptable per guidance since apt packages generally do not need pinning. No additional Python packages are installed for verifier/judge, which use only the standard library."
+  },
+  "typos": {
+    "outcome": "pass",
+    "explanation": "No typos were found in filenames, paths, commands, or variable/identifier names across instruction.md, task.toml, tests/config.json, rubrics.json, test.sh, verifier.py, judge.py, or the Dockerfile; commit SHAs are well-formed 40-character hashes and match between task.toml and the Dockerfile checkout. A cosmetic misspelling ('lineHeigth') appears only inside a code comment carried over from the upstream fix.patch and is not a variable name, filename, or command, so it has no functional or navigational impact."
+  },
+  "tests_or_solution_in_image": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile only COPYs environment/assets/ (the two bug screenshots) into the image; it does not reference or copy the tests/ or solution/ directories, which live outside the Docker build context entirely."
+  },
+  "test_deps_in_image": {
+    "outcome": "pass",
+    "explanation": "No grading-specific dependencies are baked into the image build beyond what the repository itself already requires. `npm ci` installs the project's own declared dependencies (including its existing vitest test tooling) from the repo's lockfile, and verifier.py/judge.py rely solely on the Python standard library, so nothing extra needs to be (or is) installed at image-build time purely for grading."
+  },
+  "hardcoded_solution": {
+    "outcome": "pass",
+    "explanation": "solution/solve.sh applies solution/fix.patch, which is a real multi-hunk source-code change to src/shapes/Text/Text.ts (introducing getHeightOfLineImpl, fixing calcTextHeight, _renderTextLinesBackground, and _renderTextLine to stop dividing/multiplying by a zero lineHeight). This demonstrates an actual code fix that must independently satisfy the test suite, rather than printing or hardcoding an expected test result."
+  },
+  "file_reference_mentioned": {
+    "outcome": "not_applicable",
+    "explanation": "The task requires the agent to fix a bug in-place in the existing repository source tree (verified by running the project's own test suite against whatever files the agent modifies); there is no separate output artifact file (e.g., a report or data file) that the agent must create and that instruction.md would need to name."
+  }
+}

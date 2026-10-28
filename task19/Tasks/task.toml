@@ -1,0 +1,54 @@
+version = "1.0"
+
+[metadata]
+task_id = "recharts__recharts-6814-mm"
+title = "Pie chart sectors shift unexpectedly when a minimum sector angle is set"
+repository_name = "recharts/recharts"
+repo_url = "https://github.com/recharts/recharts"
+issue_number = 6814
+pr_number = 7097
+base_commit = "92064250666c820551c3e3a52a5b852aca662066"
+fix_commit = "f67fbddc213aa1b268112b4ab214ff606dff0d3f"
+task_type = "data_viz_correctness"
+language = "TypeScript"
+framework = "React / recharts"
+cross_file = false
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = "The instruction is unresolvable without the screenshot: every clause in it is a dangling reference into the image. It names no prop, component, file, or mechanism, and instead says that two renders of 'the same dataset' differ by 'the one extra setting visible on the second', then constrains 'the amount that setting asks for'. A reader who cannot see the poster does not know what the dataset is, which of Pie's many geometry inputs the second chart adds, or in which direction the boundaries moved, so none of the four stated invariants can even be instantiated - let alone localized to computePieSectors' angle-reservation arithmetic. The image supplies all of it: the editor pane shows the two Pie elements side by side, identical except that the second carries a minimum-sector-angle prop, and the browser pane shows the resulting boundary rotation on data whose natural angles all clear that minimum. The fix is non-trivial in three independent ways, none of which is discoverable from the symptom sentence alone: (1) the reservation must be skipped entirely when no non-zero sector's natural angle falls below the floor, with a strict comparison so a sector landing exactly on the floor does not trigger it; (2) the natural angle has to be measured against the span that is left after paddingAngle is carved out, not the raw span, otherwise a padded pie silently drops sectors below the floor it promised - a regression the base code does not have; and (3) the reservation has to be capped at the available span divided by the number of non-zero sectors, because notZeroItemCount * minAngle can exceed the arc, drive the remaining pool negative, and draw sectors backwards over each other. Missing any one of the three leaves a fail-to-pass or a pass-to-pass test red."
+files_edited = ["src/polar/Pie.tsx"]
+f2p = [
+  "minAngle does not shift segments when all are already above the threshold",
+  "minAngle does not redistribute when a segment equals the threshold exactly",
+  "minAngle does not redistribute in a partial pie when all segments are above threshold",
+  "minAngle does not redistribute when padding is present and every segment clears the threshold",
+  "sectors stay inside the pie span when minAngle cannot be granted to every segment"
+]
+p2p = [
+  "Renders 6 sectors circles in simple PieChart",
+  "render 4 equal sectors in PieChart with 4 data points",
+  "minAngle still redistributes sectors that fall below the threshold",
+  "every non-zero segment keeps at least minAngle when padding shrinks the available span",
+  "zero-value segments stay collapsed while minAngle is applied to the rest"
+]
+tags = ["multimodal", "data_viz_correctness", "recharts"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"
+
+[verifier.env]
+EVAL_API_KEY = "${OPENAI_API_KEY}"
+EVAL_BASE_URL = "${OPENAI_API_BASE}"
+EVAL_MODEL = "${EVAL_MODEL:-anthropic/claude-opus-4-5-20251101}"

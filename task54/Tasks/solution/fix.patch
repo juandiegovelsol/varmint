@@ -1,0 +1,37 @@
+diff --git a/suite-common/backup/src/shamir.ts b/suite-common/backup/src/shamir.ts
+index 4f233df7..44809b48 100644
+--- a/suite-common/backup/src/shamir.ts
++++ b/suite-common/backup/src/shamir.ts
+@@ -3,7 +3,7 @@ import { type PROTO } from '@trezor/connect';
+ const BACKUP_TYPE_EXTENDABILITY: Record<PROTO.BackupType, boolean> = {
+     Slip39_Single_Extendable: true,
+     Slip39_Basic_Extendable: true,
+-    Slip39_Advanced_Extendable: false,
++    Slip39_Advanced_Extendable: true,
+     Slip39_Advanced: false,
+     Slip39_Basic: false,
+     Bip39: false,
+diff --git a/suite/backup/src/MultiShareBackup.tsx b/suite/backup/src/MultiShareBackup.tsx
+index b7965137..38cd52c6 100644
+--- a/suite/backup/src/MultiShareBackup.tsx
++++ b/suite/backup/src/MultiShareBackup.tsx
+@@ -16,9 +16,7 @@ export const MultiShareBackup = ({ isDeviceLocked }: { isDeviceLocked: boolean }
+     const device = useSelector(selectSelectedDevice);
+     const dispatch = useDispatch();
+     const isN4w1BackupEnabled = useSelector(selectIsN4w1BackupEnabled);
+-
+-    // "NotAvailable" means, that backup has been already done and thus is not available.
+-    const isBackupDone = device?.features?.backup_availability === 'NotAvailable';
++    const isBackupRequired = device?.features?.backup_availability === 'Required';
+ 
+     // When N4W1 backup is enabled, multi-share backup is replaced by the NFC-based
+     // additional backup flow (CreateWalletBackup), which uses a different backup method.
+@@ -26,7 +24,7 @@ export const MultiShareBackup = ({ isDeviceLocked }: { isDeviceLocked: boolean }
+         isN4w1BackupEnabled ||
+         !device?.features ||
+         !doesSupportMultiShare(device.features) ||
+-        !isBackupDone
++        isBackupRequired
+     ) {
+         return;
+     }

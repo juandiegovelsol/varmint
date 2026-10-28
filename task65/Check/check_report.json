@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "checks": {
+        "behavior_in_task_description": {
+          "explanation": "instruction.md states both asks precisely: the duration format's options object (locale, style), the exact five style outputs in a table, that it must be wired into 'the same public surface consumers already import from', and that the fix is 'done' when the duration table matches and the two embedded demo screenshots render per the reference table and each row's own caption. Since this is a declared visual_bug_fix task where visual_essentiality is 'required', the screenshots (with self-labelling captions and side-by-side locale/style columns) are legitimately part of the specification rather than an omission — verified against the images, each injected regression tested by the suite (relative under-a-minute threshold, relative default style, sub-minute locale drop, absolute default styles across 4 functions, formatRange locale drop, overflow cap, overflow indicator) is visibly represented in one of the two screenshots or the reference table.",
+          "outcome": "pass"
+        },
+        "behavior_in_tests": {
+          "explanation": "Every behavior instruction.md asks for is covered: the 5 duration styles plus barrel-export wiring (duration-test.js), the 6 documented-convention regressions across relative/absolute formatters (defaults-test.js), and the 2 overflow-handler regressions (overflow-behavior-test.js) — matching the 16 f2p entries in tests/config.json. Pre-existing relative-test.js/absolute-test.js supply the 130 p2p regression guards so a fix can't pass narrowly while breaking untouched call paths.",
+          "outcome": "pass"
+        },
+        "informative_test_structure": {
+          "explanation": "test.patch's three new spec files use descriptive describe/test blocks ('relative.format conventions', 'absolute conventions', 'overflow contract') with named assertions, and each file opens with a comment block explaining what is being checked and why (e.g. 'Expected values are always derived from the Intl APIs directly, never hardcoded'). test.sh and verifier.py are both heavily commented, naming each of the four test files' role (f2p vs p2p) and explaining each processing step (restore, patch, config, run, reward).",
+          "outcome": "pass"
+        },
+        "anti_cheating_measures": {
+          "explanation": "Multiple concrete measures: the injected-regression patch (bug_01.patch) is applied at build time then deleted from both the build context and the agent-visible assets dir, with build-time assertions that no *.patch survives; .git history is stripped and a single harbor_base commit is created so the agent cannot inspect real fix history; the agent runs with network_mode='no-network' so the upstream PR/commit can't be fetched; test.sh explicitly restores test.patch's own files AND the untouched p2p pool (relative-test.js/absolute-test.js) from harbor_base before running, preventing the agent from editing test files to force a pass; expected values in the new tests are derived from Intl APIs at runtime rather than hardcoded strings, so no answer key leaks through the test file itself; verifier.py computes reward purely from the JUnit report, never inspecting source.",
+          "outcome": "pass"
+        },
+        "structured_data_schema": {
+          "explanation": "This task is a source-code bug-fix/feature task (TypeScript utility functions), not one that produces an API/JSON/CSV/DB output for the tests to validate against a schema. The 'schema' analogue here — the duration format's options shape and expected string outputs — is fully specified via the table and prose in instruction.md, but there is no structured-data contract in the sense this criterion targets.",
+          "outcome": "not_applicable"
+        },
+        "pinned_dependencies": {
+          "explanation": "The base repo is fetched by exact commit SHA (217994d...) rather than a branch/tag, making the whole dependency graph reproducible. JS dependency versions come from the repo's own lockfile/packageManager field (yarn@4.10.3 via corepack, called out explicitly in the Dockerfile) rather than being installed unpinned. apt packages (git, ca-certificates) are left unpinned, which is acceptable per guidance. The base image uses a major-version tag (node:24-bookworm) which is a reasonable pin for this context.",
+          "outcome": "pass"
+        },
+        "typos": {
+          "explanation": "No typos found in filenames, commands, paths, or identifiers across instruction.md, task.toml, evidence_bundle.json, the Dockerfile, test.sh, verifier.py, or the patches. Referenced file paths (e.g. /app/.harbor_assets/*.png) match consistently between instruction.md, ASSET_MANIFEST.json, evidence_bundle.json, and the Dockerfile's COPY targets. f2p/p2p lists in task.toml and tests/config.json are verified byte-identical.",
+          "outcome": "pass"
+        },
+        "tests_or_solution_in_image": {
+          "explanation": "The Dockerfile only COPYs environment/assets/ (screenshots) into the image, plus a transient /tmp/ctx used solely to apply the bug patch during build and then removed. tests/ and solution/ directories are never referenced by the Dockerfile and are explicitly documented as 'supplied by the harness at verify time - NOT baked in'. The build even asserts no *.patch file remains under the agent-visible directory.",
+          "outcome": "pass"
+        },
+        "test_deps_in_image": {
+          "explanation": "jest, babel-jest, jest-junit, and @testing-library/jest-dom are installed via the repo's own `yarn workspaces focus` at build time, which the Dockerfile comments justify as the repo's normal root devDependencies rather than grading-only tooling fetched separately. test.sh only authors a jest config file and applies test.patch at verify time — it does not install any additional test-only package at that point.",
+          "outcome": "pass"
+        },
+        "hardcoded_solution": {
+          "explanation": "solve.sh applies solution/fix.patch, a genuine multi-file source diff that reverts the six injected default/locale regressions and adds the new duration.ts module wired through index.ts — it does not print or hardcode any expected test output. The apply step also verifies completeness via `git apply --reverse --check` rather than just trusting exit codes.",
+          "outcome": "pass"
+        },
+        "file_reference_mentioned": {
+          "explanation": "The task requires editing/adding TypeScript source files within an existing repository structure (e.g. a new duration.ts module wired into index.ts) rather than producing a discrete output artifact (like output.csv) that tests check for existence/content. instruction.md intentionally leaves the exact new-file path undocumented, instructing the agent to follow 'the same conventions' and 'the same public surface' as sibling formatters already in the directory — consistent with this being a codebase-convention task rather than a file-deliverable task this criterion targets.",
+          "outcome": "not_applicable"
+        }
+      },
+      "cost_usd": 0.371726,
+      "task_name": "Tasks",
+      "error": null
+    }
+  ]
+}

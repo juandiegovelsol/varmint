@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "checks": {
+        "behavior_in_task_description": {
+          "explanation": "instruction.md is intentionally terse ('a formatting inconsistency ... find them and fix them') but embeds the two bug screenshots directly, and those screenshots visually show the exact numbers (2000, 17, 16) rendered as plain, unformatted digits (one even circled in blue) that the tests check get wrapped in formatInt. For a visual_bug_fix task type, the images are the behavioral spec; the specific implementation detail of which existing helper (formatInt) to call is a normal code-discovery step, analogous to a real bug ticket, not an undisclosed requirement.",
+          "outcome": "pass"
+        },
+        "behavior_in_tests": {
+          "explanation": "notation.test.js exercises both call sites named in task.toml's f2p/config.json (Effarig effects() glyphLevelCap formatting, and PelleTab's static '17' and dynamic completedRows formatting), matching the two screenshots referenced in the instructions. No described behavior is left untested.",
+          "outcome": "pass"
+        },
+        "informative_test_structure": {
+          "explanation": "notation.test.js is organized into clearly named describe/test blocks per component, with extensive inline comments explaining what each assertion rules out (falsy-guard traps, hardcoded copies, boundary values), making the intent of each check easy to follow.",
+          "outcome": "pass"
+        },
+        "anti_cheating_measures": {
+          "explanation": "The Dockerfile strips .git history after checkout (removing access to the real fix commit/PR), re-inits a single base commit, and explicitly does not COPY tests/ or solution/ into the image ('the harness supplies them at verify time'). Screenshots use generic filenames/alt text with no code identifiers. test.sh resets any patch-touched paths to harbor_base before applying the hidden test patch, and explicitly notes it 'NEVER greps candidate source for the fix — the test runs the production code,' preventing trivial shortcuts.",
+          "outcome": "pass"
+        },
+        "structured_data_schema": {
+          "explanation": "This is a source-code visual bug fix task (editing existing JS/Vue files), not a task that produces structured output like JSON/CSV/API responses, so no schema documentation is required.",
+          "outcome": "not_applicable"
+        },
+        "pinned_dependencies": {
+          "explanation": "Test-only dependencies vitest and jsdom are pinned to exact versions (vitest@1.6.0, jsdom@24.1.3) in test.sh. The base image pins Node major version (node:18-bookworm) and apt packages are unpinned, which is acceptable per the guidance.",
+          "outcome": "pass"
+        },
+        "typos": {
+          "explanation": "Cross-checked file paths and identifiers across instruction.md, Dockerfile, fix.patch, test.patch, config.json, and verifier.py (e.g. relative import paths in notation.test.js resolving correctly to javascripts/core/celestials/celestials.js and src/components/tabs/celestial-pelle/PelleTab.vue); no filename, path, or command typos were found.",
+          "outcome": "pass"
+        },
+        "tests_or_solution_in_image": {
+          "explanation": "The Dockerfile only COPYs assets/ into /app/.harbor_assets/; it explicitly avoids copying tests/ or solution/, per the inline comment confirming they are supplied by the harness at verify time only.",
+          "outcome": "pass"
+        },
+        "test_deps_in_image": {
+          "explanation": "vitest and jsdom (test-only dependencies) are installed inside test.sh via 'npm install --no-save --no-package-lock' at verify time, not baked into the Dockerfile, which only runs 'npm install --prefix /app' for the repo's own runtime dependencies.",
+          "outcome": "pass"
+        },
+        "hardcoded_solution": {
+          "explanation": "solve.sh applies fix.patch via git apply/patch, which is the actual multi-file source code diff (celestials.js template literal and PelleTab.vue template) representing the real code change a developer would make, rather than printing or echoing a final answer string.",
+          "outcome": "pass"
+        },
+        "file_reference_mentioned": {
+          "explanation": "The task requires in-place edits to existing repository source files discoverable by the agent, not generation of a new named output file for tests to check, so explicit file-reference naming in instruction.md is not required.",
+          "outcome": "not_applicable"
+        }
+      },
+      "cost_usd": 0.44985145,
+      "task_name": "Tasks",
+      "error": null
+    }
+  ]
+}

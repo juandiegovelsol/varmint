@@ -1,0 +1,463 @@
+diff --git a/packages/widgets/Specs/VoxelInspector/__tests__/VoxelInspectorViewModelSpec.js b/packages/widgets/Specs/VoxelInspector/__tests__/VoxelInspectorViewModelSpec.js
+new file mode 100644
+index 0000000000..b2b7a01580
+--- /dev/null
++++ b/packages/widgets/Specs/VoxelInspector/__tests__/VoxelInspectorViewModelSpec.js
+@@ -0,0 +1,457 @@
++import {
++  Cartesian3,
++  HeadingPitchRoll,
++  Matrix3,
++  Matrix4,
++  VoxelShapeType,
++} from "@cesium/engine";
++import { VoxelInspectorViewModel } from "../../../index.js";
++
++// Regression #12521 ("Cylinder bounds are mislabeled in Voxel Inspector", fixed by PR #12522):
++// packages/widgets/Source/VoxelInspector/VoxelInspectorViewModel.js defines the cylinder
++// "Bounds"/"Clipping" editor properties (boundsCylinderMax/MinHeight, boundsCylinderMax/MinAngle,
++// and their clipping* counterparts) via getBoundSetter("maxBounds"|"minBounds"|
++// "maxClippingBounds"|"minClippingBounds", component), where `component` is one of "x"/"y"/"z"
++// into the primitive's Cartesian3 bound. VoxelCylinderShape's own (unchanged-by-this-bug)
++// convention -- confirmed directly in VoxelCylinderShape's constructor, which reads
++// this._minimumAngle from DefaultMinBounds.y and this._minimumHeight from DefaultMinBounds.z --
++// is x=radius, y=angle, z=height. Prior to the fix (introduced by #12432), the Height properties
++// were wired to the "y" (angle) component and the Angle properties were wired to the "z" (height)
++// component: dragging the Inspector's "Height" field actually changed the cylinder's angular
++// extent, and dragging "Angle" actually changed its height, exactly as reported ("play with the
++// height and angle sliders... they actually control the other parameter"; see
++// /app/.harbor_assets/bug_screenshot_1.png, where the "Max Height" field displays 3.14159...
++// (pi, the angle range) and /app/.harbor_assets/bug_screenshot_2.png, where dragging "Max Height"
++// visibly carves an angular wedge out of the cylinder).
++//
++// This spec drives VoxelInspectorViewModel directly (no Scene/WebGL/DOM needed -- the whole
++// class only ever calls `scene.requestRender()`, never anything else on `scene`, and the
++// `voxelPrimitive` setter only needs `.shape`, `.modelMatrix`, `.maxBounds`/`.minBounds`/
++// `.maxClippingBounds`/`.minClippingBounds` (real Cartesian3 instances, since getBoundSetter
++// calls `.clone()` on them), and `.customShaderCompilationEvent.addEventListener`), with a
++// lightweight mock "voxel primitive" carrying real, independently distinguishable radius/angle/
++// height values on each axis.
++//
++// Coverage is deliberately symmetric: every one of the 8 cylinder Height/Angle properties (Max
++// and Min, in both the "Bounds" and "Clipping" panels) is exercised in BOTH directions -- reading
++// the property off a fresh primitive, and writing through the property back onto the primitive.
++// The underlying bug is 8 independent one-line component swaps (4 "Bounds" addProperty blocks, 4
++// "Clipping" blocks), each wiring both a getter and a setter to a component letter, so a fix that
++// only touches some of those blocks (e.g. "Bounds" but not "Clipping", or Max but not Min), or
++// that updates a block's getter without its setter (or vice versa), is a genuine, still-broken
++// regression -- not merely a stylistic difference -- and must fail here.
++describe("Widgets/VoxelInspector/VoxelInspectorViewModel", function () {
++  const scene = {
++    requestRender: function () {},
++  };
++
++  // Distinct per-axis sentinel values so a component mix-up is unambiguous: x (radius), y
++  // (angle), z (height) never share a value.
++  const RADIUS_MAX = 7.0;
++  const RADIUS_MIN = 0.0;
++  const ANGLE_MAX = Math.PI;
++  const ANGLE_MIN = -Math.PI / 2;
++  const HEIGHT_MAX = 11.0;
++  const HEIGHT_MIN = -13.0;
++
++  function makeMockPrimitive() {
++    return {
++      shape: VoxelShapeType.CYLINDER,
++      modelMatrix: Matrix4.clone(Matrix4.IDENTITY, new Matrix4()),
++      maxBounds: new Cartesian3(RADIUS_MAX, ANGLE_MAX, HEIGHT_MAX),
++      minBounds: new Cartesian3(RADIUS_MIN, ANGLE_MIN, HEIGHT_MIN),
++      maxClippingBounds: new Cartesian3(RADIUS_MAX, ANGLE_MAX, HEIGHT_MAX),
++      minClippingBounds: new Cartesian3(RADIUS_MIN, ANGLE_MIN, HEIGHT_MIN),
++      // Read unconditionally by the "shaderString" property's getPrimitiveFunction, which runs
++      // for every registered getPrimitiveFunction whenever `voxelPrimitive` is assigned (not
++      // just when the shader-related properties are actually touched).
++      customShader: {
++        fragmentShaderText: "void fragmentVoxel(inout czm_voxelProperty voxel) {}",
++      },
++      customShaderCompilationEvent: {
++        addEventListener: function () {
++          return function () {};
++        },
++      },
++    };
++  }
++
++  // A real (if tiny) pub/sub, standing in for Cesium's actual Event class: addEventListener
++  // records a subscriber and returns a genuine unsubscribe function; raise() invokes whichever
++  // subscribers are still registered. Used where a test needs to observe an OUTCOME (does a
++  // listener still fire after cleanup?) rather than asserting that some specific function
++  // reference was called -- the latter would pin one implementation of "removal" among several
++  // equally-correct ones (e.g. filtering an array vs. a Set vs. a linked list of subscribers).
++  function makeEventBus() {
++    let subscribers = [];
++    return {
++      addEventListener: function (callback) {
++        subscribers.push(callback);
++        return function () {
++          subscribers = subscribers.filter(function (s) {
++            return s !== callback;
++          });
++        };
++      },
++      raise: function (error) {
++        subscribers.slice().forEach(function (s) {
++          s(error);
++        });
++      },
++    };
++  }
++
++  let viewModel;
++  let mockPrimitive;
++
++  beforeEach(function () {
++    viewModel = new VoxelInspectorViewModel(scene);
++    mockPrimitive = makeMockPrimitive();
++    viewModel.voxelPrimitive = mockPrimitive;
++  });
++
++  // --- f2p: the reported regression, "Bounds" panel -----------------------------------------
++
++  it("reads boundsCylinderMaxHeight from the height (z) component of maxBounds, not the angle (y) component (regression #12521)", function () {
++    expect(viewModel.boundsCylinderMaxHeight).toEqual(mockPrimitive.maxBounds.z);
++    expect(viewModel.boundsCylinderMaxHeight).not.toEqual(mockPrimitive.maxBounds.y);
++  });
++
++  it("setting boundsCylinderMaxHeight writes the height (z) component of maxBounds, leaving the angle (y) component unchanged (regression #12521)", function () {
++    const originalAngle = mockPrimitive.maxBounds.y;
++    viewModel.boundsCylinderMaxHeight = 99.0;
++    expect(mockPrimitive.maxBounds.z).toEqual(99.0);
++    expect(mockPrimitive.maxBounds.y).toEqual(originalAngle);
++  });
++
++  it("reads boundsCylinderMinHeight from the height (z) component of minBounds, not the angle (y) component (regression #12521)", function () {
++    expect(viewModel.boundsCylinderMinHeight).toEqual(mockPrimitive.minBounds.z);
++    expect(viewModel.boundsCylinderMinHeight).not.toEqual(mockPrimitive.minBounds.y);
++  });
++
++  it("setting boundsCylinderMinHeight writes the height (z) component of minBounds, leaving the angle (y) component unchanged (regression #12521)", function () {
++    const originalAngle = mockPrimitive.minBounds.y;
++    viewModel.boundsCylinderMinHeight = -99.0;
++    expect(mockPrimitive.minBounds.z).toEqual(-99.0);
++    expect(mockPrimitive.minBounds.y).toEqual(originalAngle);
++  });
++
++  it("reads boundsCylinderMaxAngle from the angle (y) component of maxBounds, not the height (z) component (regression #12521)", function () {
++    expect(viewModel.boundsCylinderMaxAngle).toEqual(mockPrimitive.maxBounds.y);
++    expect(viewModel.boundsCylinderMaxAngle).not.toEqual(mockPrimitive.maxBounds.z);
++  });
++
++  it("setting boundsCylinderMaxAngle writes the angle (y) component of maxBounds, leaving the height (z) component unchanged (regression #12521)", function () {
++    const originalHeight = mockPrimitive.maxBounds.z;
++    viewModel.boundsCylinderMaxAngle = 2.5;
++    expect(mockPrimitive.maxBounds.y).toEqual(2.5);
++    expect(mockPrimitive.maxBounds.z).toEqual(originalHeight);
++  });
++
++  it("reads boundsCylinderMinAngle from the angle (y) component of minBounds, not the height (z) component (regression #12521)", function () {
++    expect(viewModel.boundsCylinderMinAngle).toEqual(mockPrimitive.minBounds.y);
++    expect(viewModel.boundsCylinderMinAngle).not.toEqual(mockPrimitive.minBounds.z);
++  });
++
++  it("setting boundsCylinderMinAngle writes the angle (y) component of minBounds, leaving the height (z) component unchanged (regression #12521)", function () {
++    const originalHeight = mockPrimitive.minBounds.z;
++    viewModel.boundsCylinderMinAngle = -1.23;
++    expect(mockPrimitive.minBounds.y).toEqual(-1.23);
++    expect(mockPrimitive.minBounds.z).toEqual(originalHeight);
++  });
++
++  // --- f2p: the reported regression, "Clipping" panel ---------------------------------------
++
++  it("reads clippingCylinderMaxHeight from the height (z) component of maxClippingBounds, not the angle (y) component (regression #12521)", function () {
++    expect(viewModel.clippingCylinderMaxHeight).toEqual(
++      mockPrimitive.maxClippingBounds.z,
++    );
++    expect(viewModel.clippingCylinderMaxHeight).not.toEqual(
++      mockPrimitive.maxClippingBounds.y,
++    );
++  });
++
++  it("setting clippingCylinderMaxHeight writes the height (z) component of maxClippingBounds, leaving the angle (y) component unchanged (regression #12521)", function () {
++    const originalAngle = mockPrimitive.maxClippingBounds.y;
++    viewModel.clippingCylinderMaxHeight = 88.0;
++    expect(mockPrimitive.maxClippingBounds.z).toEqual(88.0);
++    expect(mockPrimitive.maxClippingBounds.y).toEqual(originalAngle);
++  });
++
++  it("reads clippingCylinderMinHeight from the height (z) component of minClippingBounds, not the angle (y) component (regression #12521)", function () {
++    expect(viewModel.clippingCylinderMinHeight).toEqual(
++      mockPrimitive.minClippingBounds.z,
++    );
++    expect(viewModel.clippingCylinderMinHeight).not.toEqual(
++      mockPrimitive.minClippingBounds.y,
++    );
++  });
++
++  it("setting clippingCylinderMinHeight writes the height (z) component of minClippingBounds, leaving the angle (y) component unchanged (regression #12521)", function () {
++    const originalAngle = mockPrimitive.minClippingBounds.y;
++    viewModel.clippingCylinderMinHeight = -77.0;
++    expect(mockPrimitive.minClippingBounds.z).toEqual(-77.0);
++    expect(mockPrimitive.minClippingBounds.y).toEqual(originalAngle);
++  });
++
++  it("reads clippingCylinderMaxAngle from the angle (y) component of maxClippingBounds, not the height (z) component (regression #12521)", function () {
++    expect(viewModel.clippingCylinderMaxAngle).toEqual(
++      mockPrimitive.maxClippingBounds.y,
++    );
++    expect(viewModel.clippingCylinderMaxAngle).not.toEqual(
++      mockPrimitive.maxClippingBounds.z,
++    );
++  });
++
++  it("setting clippingCylinderMaxAngle writes the angle (y) component of maxClippingBounds, leaving the height (z) component unchanged (regression #12521)", function () {
++    const originalHeight = mockPrimitive.maxClippingBounds.z;
++    viewModel.clippingCylinderMaxAngle = 2.5;
++    expect(mockPrimitive.maxClippingBounds.y).toEqual(2.5);
++    expect(mockPrimitive.maxClippingBounds.z).toEqual(originalHeight);
++  });
++
++  it("reads clippingCylinderMinAngle from the angle (y) component of minClippingBounds, not the height (z) component (regression #12521)", function () {
++    expect(viewModel.clippingCylinderMinAngle).toEqual(
++      mockPrimitive.minClippingBounds.y,
++    );
++    expect(viewModel.clippingCylinderMinAngle).not.toEqual(
++      mockPrimitive.minClippingBounds.z,
++    );
++  });
++
++  it("setting clippingCylinderMinAngle writes the angle (y) component of minClippingBounds, leaving the height (z) component unchanged (regression #12521)", function () {
++    const originalHeight = mockPrimitive.minClippingBounds.z;
++    viewModel.clippingCylinderMinAngle = -0.5;
++    expect(mockPrimitive.minClippingBounds.y).toEqual(-0.5);
++    expect(mockPrimitive.minClippingBounds.z).toEqual(originalHeight);
++  });
++
++  // --- p2p: adjacent code that must NOT be touched by the fix -------------------------------
++
++  it("still reads boundsCylinderMaxRadius from the radius (x) component of maxBounds (unaffected by the height/angle fix)", function () {
++    expect(viewModel.boundsCylinderMaxRadius).toEqual(mockPrimitive.maxBounds.x);
++  });
++
++  it("still reads clippingCylinderMinRadius from the radius (x) component of minClippingBounds (unaffected by the height/angle fix)", function () {
++    expect(viewModel.clippingCylinderMinRadius).toEqual(
++      mockPrimitive.minClippingBounds.x,
++    );
++  });
++
++  it("still writes boundsBoxMaxY to the box shape's maxBounds.y component (a distinct, box-only property sharing the same getBoundSetter('maxBounds','y') helper; must not be swapped by a fix scoped to cylinder-only properties)", function () {
++    viewModel.boundsBoxMaxY = 42.0;
++    expect(mockPrimitive.maxBounds.y).toEqual(42.0);
++  });
++
++  it("still reads boundsEllipsoidMaxHeight from the ellipsoid shape's maxBounds.z component (ellipsoid already used z for height before this bug; must remain unaffected by the cylinder fix)", function () {
++    expect(viewModel.boundsEllipsoidMaxHeight).toEqual(mockPrimitive.maxBounds.z);
++  });
++
++  it("still updates the primitive's modelMatrix translation when translationX changes (unrelated ViewModel functionality, unaffected by the bounds/clipping fix)", function () {
++    viewModel.translationX = 5.0;
++    const translation = Matrix4.getTranslation(
++      mockPrimitive.modelMatrix,
++      new Cartesian3(),
++    );
++    expect(translation.x).toEqual(5.0);
++  });
++
++  // --- f2p: boolean/number coercion in the shared addProperty() setter ----------------------
++  //
++  // Every boolean-valued property (show, depthTest, disableUpdate, debugDraw, jitter,
++  // nearestSampling, ...) is defined through the same addProperty() helper, which converts an
++  // incoming numeric 0/1 (as arrives from e.g. a checkbox bound through knockout's
++  // valueUpdate/checkedValue plumbing) to a boolean before storing it. A fix must repair the
++  // shared helper itself, not special-case any one property name -- so coverage below exercises
++  // more than one boolean property.
++
++  it("setting a boolean property to the numeric value 1 turns it on (show)", function () {
++    viewModel.show = 0;
++    viewModel.show = 1;
++    expect(viewModel.show).toBe(true);
++  });
++
++  it("setting a boolean property to the numeric value 0 turns it off (show)", function () {
++    viewModel.show = 1;
++    viewModel.show = 0;
++    expect(viewModel.show).toBe(false);
++  });
++
++  it("setting a different boolean property to the numeric value 1 turns it on (jitter), confirming the fix is not special-cased to a single property name", function () {
++    viewModel.jitter = 0;
++    viewModel.jitter = 1;
++    expect(viewModel.jitter).toBe(true);
++  });
++
++  it("still stores a plain numeric property (screenSpaceError) as the number itself, not coerced to a boolean, when set via a number (unaffected by the boolean-coercion fix)", function () {
++    viewModel.screenSpaceError = 8;
++    expect(viewModel.screenSpaceError).toBe(8);
++  });
++
++  // --- f2p: shape-type detection (shapeIsCylinder / shapeIsEllipsoid) -----------------------
++  //
++  // shapeIsBox/shapeIsEllipsoid/shapeIsCylinder each compare the primitive's `.shape` against
++  // one VoxelShapeType enum member. shapeIsCylinder and shapeIsEllipsoid must each report true
++  // for their own shape type and false for the other.
++
++  it("shapeIsCylinder is true and shapeIsEllipsoid is false when the primitive's shape is CYLINDER", function () {
++    // mockPrimitive (assigned in beforeEach) already has shape CYLINDER.
++    expect(viewModel.shapeIsCylinder).toBe(true);
++    expect(viewModel.shapeIsEllipsoid).toBe(false);
++  });
++
++  it("shapeIsEllipsoid is true and shapeIsCylinder is false when the primitive's shape is ELLIPSOID", function () {
++    const ellipsoidPrimitive = makeMockPrimitive();
++    ellipsoidPrimitive.shape = VoxelShapeType.ELLIPSOID;
++    viewModel.voxelPrimitive = ellipsoidPrimitive;
++    expect(viewModel.shapeIsEllipsoid).toBe(true);
++    expect(viewModel.shapeIsCylinder).toBe(false);
++  });
++
++  it("still reports shapeIsBox correctly, with shapeIsCylinder and shapeIsEllipsoid both false, for a BOX-shaped primitive (unaffected by the cylinder/ellipsoid fix)", function () {
++    const boxPrimitive = makeMockPrimitive();
++    boxPrimitive.shape = VoxelShapeType.BOX;
++    viewModel.voxelPrimitive = boxPrimitive;
++    expect(viewModel.shapeIsBox).toBe(true);
++    expect(viewModel.shapeIsCylinder).toBe(false);
++    expect(viewModel.shapeIsEllipsoid).toBe(false);
++  });
++
++  // --- f2p: Transform panel rotation (angleX/angleY/angleZ -> heading/pitch/roll) ------------
++  //
++  // setModelMatrix() builds a HeadingPitchRoll from angleX/angleY/angleZ (heading/pitch/roll
++  // respectively) and turns it into the primitive's modelMatrix rotation. Scale defaults to
++  // (1,1,1) and translation to (0,0,0), so with those left untouched the upper 3x3 of
++  // modelMatrix (Matrix4.getMatrix3) is exactly the HeadingPitchRoll rotation matrix -- computed
++  // here independently via Cesium's own Matrix3.fromHeadingPitchRoll, never by re-reading the
++  // ViewModel's internals.
++
++  it("the model matrix's rotation reflects angleX/angleY/angleZ as heading/pitch/roll respectively", function () {
++    viewModel.angleX = 0.3;
++    viewModel.angleY = 0.5;
++    viewModel.angleZ = 0.7;
++    const expectedRotation = Matrix3.fromHeadingPitchRoll(
++      new HeadingPitchRoll(0.3, 0.5, 0.7),
++      new Matrix3(),
++    );
++    const actualRotation = Matrix4.getMatrix3(
++      mockPrimitive.modelMatrix,
++      new Matrix3(),
++    );
++    expect(Matrix3.equalsEpsilon(actualRotation, expectedRotation, 1e-10)).toBe(
++      true,
++    );
++  });
++
++  it("setting only angleY rotates the model matrix as a pure pitch, not a pure roll (regression risk: pitch/roll cross-wired)", function () {
++    viewModel.angleY = 0.8;
++    const pitchRotation = Matrix3.fromHeadingPitchRoll(
++      new HeadingPitchRoll(0.0, 0.8, 0.0),
++      new Matrix3(),
++    );
++    const rollRotation = Matrix3.fromHeadingPitchRoll(
++      new HeadingPitchRoll(0.0, 0.0, 0.8),
++      new Matrix3(),
++    );
++    const actualRotation = Matrix4.getMatrix3(
++      mockPrimitive.modelMatrix,
++      new Matrix3(),
++    );
++    expect(Matrix3.equalsEpsilon(actualRotation, pitchRotation, 1e-10)).toBe(
++      true,
++    );
++    expect(Matrix3.equalsEpsilon(actualRotation, rollRotation, 1e-10)).toBe(
++      false,
++    );
++  });
++
++  it("setting only angleZ rotates the model matrix as a pure roll, not a pure pitch (regression risk: pitch/roll cross-wired)", function () {
++    viewModel.angleZ = 0.8;
++    const rollRotation = Matrix3.fromHeadingPitchRoll(
++      new HeadingPitchRoll(0.0, 0.0, 0.8),
++      new Matrix3(),
++    );
++    const pitchRotation = Matrix3.fromHeadingPitchRoll(
++      new HeadingPitchRoll(0.0, 0.8, 0.0),
++      new Matrix3(),
++    );
++    const actualRotation = Matrix4.getMatrix3(
++      mockPrimitive.modelMatrix,
++      new Matrix3(),
++    );
++    expect(Matrix3.equalsEpsilon(actualRotation, rollRotation, 1e-10)).toBe(
++      true,
++    );
++    expect(Matrix3.equalsEpsilon(actualRotation, pitchRotation, 1e-10)).toBe(
++      false,
++    );
++  });
++
++  it("still rotates the model matrix as a pure heading rotation when only angleX changes (unaffected by the pitch/roll fix)", function () {
++    viewModel.angleX = 0.9;
++    const headingRotation = Matrix3.fromHeadingPitchRoll(
++      new HeadingPitchRoll(0.9, 0.0, 0.0),
++      new Matrix3(),
++    );
++    const actualRotation = Matrix4.getMatrix3(
++      mockPrimitive.modelMatrix,
++      new Matrix3(),
++    );
++    expect(Matrix3.equalsEpsilon(actualRotation, headingRotation, 1e-10)).toBe(
++      true,
++    );
++  });
++
++  // --- f2p: shader-compilation listener cleanup on primitive swap ---------------------------
++  //
++  // Assigning `voxelPrimitive` must remove the PREVIOUS primitive's shader-compilation listener
++  // before/while attaching the new one, so repeatedly swapping primitives (as happens whenever
++  // the Inspector is pointed at a different VoxelPrimitive) never accumulates stale listeners.
++  //
++  // Each primitive here carries its own real event bus (makeEventBus(), above), so "was the
++  // listener removed" is checked by observing an OUTCOME -- raising the event on the OLD
++  // primitive's bus after a swap must have no effect on the ViewModel -- rather than by
++  // asserting that some specific function reference was invoked. Any correct implementation of
++  // "stop listening to the old primitive" passes this, regardless of how it tracks subscriptions
++  // internally.
++
++  it("removes the previous primitive's shader-compilation listener when a new voxelPrimitive is assigned", function () {
++    const primitiveA = makeMockPrimitive();
++    primitiveA.customShaderCompilationEvent = makeEventBus();
++    viewModel.voxelPrimitive = primitiveA;
++
++    const primitiveB = makeMockPrimitive();
++    viewModel.voxelPrimitive = primitiveB;
++
++    viewModel.shaderCompilationMessage = "untouched";
++    primitiveA.customShaderCompilationEvent.raise(new Error("stale, from A"));
++    expect(viewModel.shaderCompilationMessage).toEqual("untouched");
++  });
++
++  it("continues removing the immediately-previous primitive's listener on further swaps, not just the first one", function () {
++    const primitiveA = makeMockPrimitive();
++    primitiveA.customShaderCompilationEvent = makeEventBus();
++    const primitiveB = makeMockPrimitive();
++    primitiveB.customShaderCompilationEvent = makeEventBus();
++    const primitiveC = makeMockPrimitive();
++
++    viewModel.voxelPrimitive = primitiveA;
++    viewModel.voxelPrimitive = primitiveB;
++    viewModel.voxelPrimitive = primitiveC;
++
++    viewModel.shaderCompilationMessage = "untouched";
++    primitiveA.customShaderCompilationEvent.raise(new Error("stale, from A"));
++    primitiveB.customShaderCompilationEvent.raise(new Error("stale, from B"));
++    expect(viewModel.shaderCompilationMessage).toEqual("untouched");
++  });
++
++  it("still invokes the newly-assigned primitive's own shader-compilation callback correctly after a swap (unaffected by the listener-cleanup fix)", function () {
++    const primitiveA = makeMockPrimitive();
++    primitiveA.customShaderCompilationEvent = makeEventBus();
++    viewModel.voxelPrimitive = primitiveA;
++
++    primitiveA.customShaderCompilationEvent.raise(new Error("boom"));
++    expect(viewModel.shaderCompilationSuccess).toBe(false);
++    expect(viewModel.shaderCompilationMessage).toEqual("boom");
++  });
++});

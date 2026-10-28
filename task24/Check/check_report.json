@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "checks": {
+        "behavior_in_task_description": {
+          "explanation": "instruction.md deliberately gives only a generic precondition ('removing an entire group causes the regression') plus a vague hint that other menus/sections are affected. The tests, however, check three distinct, specifically-named submenus (export-as, copy-as, export-all-as) across two different menu surfaces (context menu and main menu), using the overrides.actions API to delete specific action ids. None of these concrete menus, surfaces, or the overrides API are named in the instruction — they are only implied by the single screenshot of the export-as submenu. This matches the FAIL condition of the criterion: tests require details (which menus, which mechanism) that are only implied, not explicitly specified.",
+          "outcome": "fail"
+        },
+        "behavior_in_tests": {
+          "explanation": "The core behavior described in instruction.md — that removing a whole group of related built-in actions causes a stale/empty menu entry to linger, and that this affects more than one menu — is exercised by the tests, which check the export-as, copy-as, and export-all-as submenus across the context menu and main menu, along with corresponding pass-to-pass regression guards.",
+          "outcome": "pass"
+        },
+        "informative_test_structure": {
+          "explanation": "test.patch organizes new tests into two clearly named describe blocks ('conversions submenus gate on their actions', 'main menu export-all-as submenu gates on its actions') with descriptive it() titles and inline comments explaining intent (e.g. 'the submenu should not linger once its actions are gone'). verifier.py and test.sh are also well commented, explaining the f2p/p2p distinction, the reward policy, and each processing step.",
+          "outcome": "pass"
+        },
+        "anti_cheating_measures": {
+          "explanation": "The Dockerfile clones the repo, checks out the base commit, then strips .git and re-inits a single-commit repo so the agent cannot recover the fix via git log/PR history. tests/ and solution/ are not copied into the image (only assets/ is). test.sh resets any test files the agent may have touched back to the harbor_base state before applying test.patch, preventing the agent from tampering with tests to force a pass. The verifier also never inspects source code for fix strings, deriving reward purely from executed test results.",
+          "outcome": "pass"
+        },
+        "structured_data_schema": {
+          "explanation": "This is a UI source-code bug-fix task (React/TypeScript); the agent produces code edits, not structured data output (JSON/CSV/API), so a documented data schema is not relevant.",
+          "outcome": "not_applicable"
+        },
+        "pinned_dependencies": {
+          "explanation": "The Docker base image is pinned to node:22-bookworm, and workspace JS dependencies are installed via 'yarn install --immutable', which enforces the repo's yarn.lock (a fully pinned lockfile). No unpinned pip packages are introduced; the verifier only uses Python standard library modules. apt packages are not required to be pinned per the guidance.",
+          "outcome": "pass"
+        },
+        "typos": {
+          "explanation": "No typos were found in filenames, commands, commit hashes (both base_commit and fix_commit are valid 40-character hex strings), or variable names across instruction.md, task.toml, Dockerfile, tests/*, and solution/*.",
+          "outcome": "pass"
+        },
+        "tests_or_solution_in_image": {
+          "explanation": "The Dockerfile only copies environment/assets/ into the image (as /app/.harbor_assets/); it does not COPY the tests/ or solution/ directories, consistent with its own comment stating they are supplied by the harness at verify time.",
+          "outcome": "pass"
+        },
+        "test_deps_in_image": {
+          "explanation": "The only 'test dependency' is vitest, which is already a devDependency of the tldraw monorepo itself and is installed via the standard 'yarn install --immutable' during image build (needed for the repo to function at all). No extra test-only tooling is baked in beyond what test.sh needs, and test.sh/verifier.py explicitly note no additional install step is required.",
+          "outcome": "pass"
+        },
+        "hardcoded_solution": {
+          "explanation": "solve.sh applies fix.patch via git apply/patch, which is the actual multi-file source diff (menu-items.tsx, DefaultMainMenuContent.tsx, index.ts) implementing the gating logic — it demonstrates the real code change rather than echoing or printing a final answer.",
+          "outcome": "pass"
+        },
+        "file_reference_mentioned": {
+          "explanation": "The task does not require the agent to produce a specific deliverable file (like an output.csv) for the tests to check; the tests instead exercise existing application UI behavior via the Vitest test file supplied by test.patch, so there is no output filename that instruction.md would need to reference.",
+          "outcome": "not_applicable"
+        }
+      },
+      "cost_usd": 0.3926931,
+      "task_name": "Tasks",
+      "error": null
+    }
+  ]
+}

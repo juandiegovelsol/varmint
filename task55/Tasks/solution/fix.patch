@@ -1,0 +1,132 @@
+diff --git a/packages/lexical-react/src/shared/useYjsCollaboration.tsx b/packages/lexical-react/src/shared/useYjsCollaboration.tsx
+index 0e3e29a..a954c42 100644
+--- a/packages/lexical-react/src/shared/useYjsCollaboration.tsx
++++ b/packages/lexical-react/src/shared/useYjsCollaboration.tsx
+@@ -170,6 +170,8 @@ export function useYjsCollaboration(
+     onBootstrap,
+   );
+ 
++  useAwareness(binding, provider);
++
+   return useYjsCursors(binding, cursorsContainerRef);
+ }
+ 
+@@ -251,7 +253,6 @@ export function useYjsCollaborationV2__EXPERIMENTAL(
+ 
+   useEffect(() => {
+     const {root} = binding;
+-    const {awareness} = provider;
+ 
+     if (diffSnapshots) {
+       renderSnapshot__EXPERIMENTAL(
+@@ -300,15 +301,9 @@ export function useYjsCollaborationV2__EXPERIMENTAL(
+       },
+     );
+ 
+-    const onAwarenessUpdate = () => {
+-      syncCursorPositions(binding, provider);
+-    };
+-    awareness.on('update', onAwarenessUpdate);
+-
+     return () => {
+       root.unobserveDeep(onYjsTreeChanges);
+       removeListener();
+-      awareness.off('update', onAwarenessUpdate);
+     };
+   }, [binding, provider, editor, diffSnapshots]);
+ 
+@@ -322,6 +317,8 @@ export function useYjsCollaborationV2__EXPERIMENTAL(
+     onBootstrap,
+   );
+ 
++  useAwareness(binding, provider);
++
+   return binding;
+ }
+ 
+@@ -423,6 +420,20 @@ function useProvider(
+   }, [connect, disconnect, editor]);
+ }
+ 
++function useAwareness(binding: Binding | BindingV2, provider: Provider) {
++  useEffect(() => {
++    const {awareness} = provider;
++    const onAwarenessUpdate = () => {
++      syncCursorPositions(binding, provider);
++    };
++    awareness.on('update', onAwarenessUpdate);
++
++    return () => {
++      awareness.off('update', onAwarenessUpdate);
++    };
++  }, [binding, provider]);
++}
++
+ export function useYjsCursors(
+   binding: BaseBinding,
+   cursorsContainerRef?: CursorsContainerRef,
+diff --git a/packages/lexical-yjs/src/SyncCursors.ts b/packages/lexical-yjs/src/SyncCursors.ts
+index 5fb27a0..31dc8dc 100644
+--- a/packages/lexical-yjs/src/SyncCursors.ts
++++ b/packages/lexical-yjs/src/SyncCursors.ts
+@@ -96,20 +96,20 @@ function createRelativePosition(
+     collabNode instanceof CollabElementNode &&
+     point.type === 'element'
+   ) {
+-    const parentCollabNode = collabNode._parent;
+-
+-    if (parentCollabNode === null) {
+-      return null;
+-    }
+-
+-    const currentOffset = collabNode.getOffset();
+-
+-    if (currentOffset === -1) {
+-      return null;
++    const parent = point.getNode();
++    invariant($isElementNode(parent), 'Element point must be an element node');
++    let accumulatedOffset = 0;
++    let i = 0;
++    let node = parent.getFirstChild();
++    while (node !== null && i++ < offset) {
++      if ($isTextNode(node)) {
++        accumulatedOffset += node.getTextContentSize() + 1;
++      } else {
++        accumulatedOffset++;
++      }
++      node = node.getNextSibling();
+     }
+-
+-    sharedType = parentCollabNode._xmlText;
+-    offset = currentOffset + offset;
++    offset = accumulatedOffset;
+   }
+ 
+   return createRelativePositionFromTypeIndex(sharedType, offset);
+@@ -661,6 +661,13 @@ export function syncCursorPositions(
+               focusKey,
+               focusOffset,
+             );
++          } else {
++            const anchor = selection.anchor;
++            const focus = selection.focus;
++            anchor.key = anchorKey;
++            anchor.offset = anchorOffset;
++            focus.key = focusKey;
++            focus.offset = focusOffset;
+           }
+         }
+       }
+diff --git a/packages/lexical-yjs/src/SyncEditorStates.ts b/packages/lexical-yjs/src/SyncEditorStates.ts
+index aaaa2cc..a797e83 100644
+--- a/packages/lexical-yjs/src/SyncEditorStates.ts
++++ b/packages/lexical-yjs/src/SyncEditorStates.ts
+@@ -200,6 +200,8 @@ function $syncCursorFromYjs(
+         prevSelection,
+         $getSelection(),
+       );
++    } else {
++      $syncLocalCursorPosition(binding, provider);
+     }
+   }
+ }

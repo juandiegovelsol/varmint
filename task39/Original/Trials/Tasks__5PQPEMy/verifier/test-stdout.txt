@@ -1,0 +1,113 @@
+== applying test.patch ==
+== installing pinned test-only deps (pytest==8.4.2, pytest-asyncio==1.4.0) ==
+pytest 8.4.2
+pytest-asyncio 1.4.0
+== running f2p + p2p tests ==
+(tests exited non-zero; parsing report)
+== computing reward ==
+{"reward": 0.0, "f2p": {"tests.test_key_panel_tooltip_alignment::test_help_panel_tooltip_only_cell_has_no_leading_space": "fail", "tests.test_key_panel_tooltip_alignment::test_help_panel_all_description_cells_match_recomputed_text": "fail", "tests.test_key_panel_tooltip_alignment::test_help_panel_tooltip_only_row_starts_in_the_description_column": "fail", "tests.test_key_panel_tooltip_alignment::test_direct_panel_tooltip_only_cell_has_no_leading_space": "fail", "tests.test_key_panel_tooltip_alignment::test_direct_panel_cells_match_recomputed_text": "fail", "tests.test_key_panel_tooltip_alignment::test_direct_panel_dim_tooltip_begins_at_the_description_column": "fail", "tests.test_key_panel_tooltip_alignment::test_direct_panel_tooltip_only_row_starts_in_the_description_column": "fail"}, "p2p": {"tests.test_key_panel_tooltip_alignment::test_help_panel_described_binding_keeps_one_space_before_its_tooltip": "pass", "tests.test_key_panel_tooltip_alignment::test_help_panel_description_without_a_tooltip_is_unpadded": "pass", "tests.test_key_panel_tooltip_alignment::test_help_panel_markup_in_a_description_is_still_rendered": "pass", "tests.test_key_panel_tooltip_alignment::test_help_panel_tooltip_text_is_still_dimmed": "pass", "tests.test_key_panel_tooltip_alignment::test_help_panel_described_rows_keep_their_painted_columns": "pass", "tests.test_key_panel_tooltip_alignment::test_direct_panel_described_binding_keeps_one_space_before_its_tooltip": "pass", "tests.test_key_panel_tooltip_alignment::test_direct_panel_key_column_is_unchanged": "pass", "tests.test_key_panel_tooltip_alignment::test_direct_panel_still_hides_system_bindings": "pass", "tests.test_key_panel_tooltip_alignment::test_direct_panel_group_title_row_survives": "pass"}}
+reward=0.0
+ m...'Delete', ...} == {'^t': 'Tag m...'Delete', ...}
+E             
+E             Omitting 3 identical items, use -vv to show
+E             Differing items:
+E             {'f9': ' Toggle hidden members'} != {'f9': 'Toggle hidden members'}
+E             {'f2': ' Rename the highlighted entry'} != {'f2': 'Rename the highlighted entry'}
+E             Use -v to get more diff
+
+tests/test_key_panel_tooltip_alignment.py:212: AssertionError
+______ test_help_panel_tooltip_only_row_starts_in_the_description_column _______
+
+    async def test_help_panel_tooltip_only_row_starts_in_the_description_column():
+        """The painted row for a tooltip-only binding lines up with the others."""
+        app = ArchiveApp()
+        async with app.run_test(size=ARCHIVE_SIZE) as pilot:
+            await _settle(pilot)
+            described = _column_of(app, "Delete")
+>           assert _column_of(app, "Rename the highlighted entry") == described
+E           AssertionError: assert 122 == 121
+E            +  where 122 = _column_of(ArchiveApp(title='ArchiveApp', classes={'-dark-mode'}, pseudo_classes={'dark', 'focus'}), 'Rename the highlighted entry')
+
+tests/test_key_panel_tooltip_alignment.py:221: AssertionError
+___________ test_direct_panel_tooltip_only_cell_has_no_leading_space ___________
+
+    async def test_direct_panel_tooltip_only_cell_has_no_leading_space():
+        """The same contract holds for a directly mounted panel and widget keys."""
+        app = QueryApp()
+        async with app.run_test(size=QUERY_SIZE) as pilot:
+            await _settle(pilot)
+            cells = _description_cells(app)
+            for binding in _own_bindings(app, "query_"):
+                if binding.tooltip and not binding.description:
+                    cell = cells[app.get_key_display(binding)]
+>                   assert cell.plain == binding.tooltip
+E                   AssertionError: assert ' Jump to first record' == 'Jump to first record'
+E                     
+E                     - Jump to first record
+E                     +  Jump to first record
+E                     ? +
+
+tests/test_key_panel_tooltip_alignment.py:274: AssertionError
+________________ test_direct_panel_cells_match_recomputed_text _________________
+
+    async def test_direct_panel_cells_match_recomputed_text():
+        """Every row of the directly mounted panel reads as the bindings say."""
+        app = QueryApp()
+        async with app.run_test(size=QUERY_SIZE) as pilot:
+            await _settle(pilot)
+            expected = _expected_descriptions(app, "query_")
+            cells = _description_cells(app)
+            actual = {key: cells[key].plain for key in expected}
+>           assert actual == expected
+E           AssertionError: assert {'g': ' Jump ... Copy record'} == {'g': 'Jump t...'Copy record'}
+E             
+E             Omitting 2 identical items, use -vv to show
+E             Differing items:
+E             {'y': ' Copy record'} != {'y': 'Copy record'}
+E             {'g': ' Jump to first record'} != {'g': 'Jump to first record'}
+E             Use -v to get more diff
+
+tests/test_key_panel_tooltip_alignment.py:285: AssertionError
+________ test_direct_panel_dim_tooltip_begins_at_the_description_column ________
+
+    async def test_direct_panel_dim_tooltip_begins_at_the_description_column():
+        """The dimmed tooltip of a description-less row starts where text starts."""
+        app = QueryApp()
+        async with app.run_test(size=QUERY_SIZE) as pilot:
+            await _settle(pilot)
+            described = _column_of(app, "Reset filter")
+            line, dim = _style_mask(app, "Jump to first record", "dim")
+            assert any(dim), "the tooltip must still be painted dim"
+>           assert dim.index(True) == described
+E           assert 95 == 94
+E            +  where 95 = <built-in method index of list object at 0x7f2ca23b1e00>(True)
+E            +    where <built-in method index of list object at 0x7f2ca23b1e00> = [False, False, False, False, False, False, ...].index
+
+tests/test_key_panel_tooltip_alignment.py:296: AssertionError
+_____ test_direct_panel_tooltip_only_row_starts_in_the_description_column ______
+
+    async def test_direct_panel_tooltip_only_row_starts_in_the_description_column():
+        """The painted rows of the query palette all share one description column."""
+        app = QueryApp()
+        async with app.run_test(size=QUERY_SIZE) as pilot:
+            await _settle(pilot)
+            described = _column_of(app, "Reset filter")
+>           assert _column_of(app, "Jump to first record") == described
+E           AssertionError: assert 95 == 94
+E            +  where 95 = _column_of(QueryApp(title='QueryApp', classes={'-dark-mode'}, pseudo_classes={'dark', 'focus'}), 'Jump to first record')
+
+tests/test_key_panel_tooltip_alignment.py:307: AssertionError
+---------------- generated xml file: /logs/verifier/report.xml -----------------
+=========================== short test summary info ============================
+FAILED tests/test_key_panel_tooltip_alignment.py::test_help_panel_tooltip_only_cell_has_no_leading_space
+FAILED tests/test_key_panel_tooltip_alignment.py::test_help_panel_all_description_cells_match_recomputed_text
+FAILED tests/test_key_panel_tooltip_alignment.py::test_help_panel_tooltip_only_row_starts_in_the_description_column
+FAILED tests/test_key_panel_tooltip_alignment.py::test_direct_panel_tooltip_only_cell_has_no_leading_space
+FAILED tests/test_key_panel_tooltip_alignment.py::test_direct_panel_cells_match_recomputed_text
+FAILED tests/test_key_panel_tooltip_alignment.py::test_direct_panel_dim_tooltip_begins_at_the_description_column
+FAILED tests/test_key_panel_tooltip_alignment.py::test_direct_panel_tooltip_only_row_starts_in_the_description_column
+7 failed, 9 passed in 3.35s
+(tests exited non-zero; parsing report)
+== computing reward ==
+{"reward": 0.0, "f2p": {"tests.test_key_panel_tooltip_alignment::test_help_panel_tooltip_only_cell_has_no_leading_space": "fail", "tests.test_key_panel_tooltip_alignment::test_help_panel_all_description_cells_match_recomputed_text": "fail", "tests.test_key_panel_tooltip_alignment::test_help_panel_tooltip_only_row_starts_in_the_description_column": "fail", "tests.test_key_panel_tooltip_alignment::test_direct_panel_tooltip_only_cell_has_no_leading_space": "fail", "tests.test_key_panel_tooltip_alignment::test_direct_panel_cells_match_recomputed_text": "fail", "tests.test_key_panel_tooltip_alignment::test_direct_panel_dim_tooltip_begins_at_the_description_column": "fail", "tests.test_key_panel_tooltip_alignment::test_direct_panel_tooltip_only_row_starts_in_the_description_column": "fail"}, "p2p": {"tests.test_key_panel_tooltip_alignment::test_help_panel_described_binding_keeps_one_space_before_its_tooltip": "pass", "tests.test_key_panel_tooltip_alignment::test_help_panel_description_without_a_tooltip_is_unpadded": "pass", "tests.test_key_panel_tooltip_alignment::test_help_panel_markup_in_a_description_is_still_rendered": "pass", "tests.test_key_panel_tooltip_alignment::test_help_panel_tooltip_text_is_still_dimmed": "pass", "tests.test_key_panel_tooltip_alignment::test_help_panel_described_rows_keep_their_painted_columns": "pass", "tests.test_key_panel_tooltip_alignment::test_direct_panel_described_binding_keeps_one_space_before_its_tooltip": "pass", "tests.test_key_panel_tooltip_alignment::test_direct_panel_key_column_is_unchanged": "pass", "tests.test_key_panel_tooltip_alignment::test_direct_panel_still_hides_system_bindings": "pass", "tests.test_key_panel_tooltip_alignment::test_direct_panel_group_title_row_survives": "pass"}}
+reward=0.0

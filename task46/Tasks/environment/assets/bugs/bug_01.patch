@@ -1,0 +1,43 @@
+diff --git a/src/common/dcgraph.cpp b/src/common/dcgraph.cpp
+index cb54c16..1c84cab 100644
+--- a/src/common/dcgraph.cpp
++++ b/src/common/dcgraph.cpp
+@@ -421,11 +421,14 @@ void wxGCDCImpl::DoSetDeviceClippingRegion( const wxRegion &region )
+     // Set clipping region
+     m_graphicContext->Clip(region);
+ 
+-    // Restore original transformation settings.
+-    m_graphicContext->SetTransform(currTransform);
+-
++    // Refresh the cached clipping box while the coordinate systems are still
++    // equivalent, so that we don't have to convert the region we've just been
++    // given back and forth.
+     m_clipping = true;
+     UpdateClipBox();
++
++    // Restore original transformation settings.
++    m_graphicContext->SetTransform(currTransform);
+ }
+ 
+ void wxGCDCImpl::DestroyClippingRegion()
+@@ -445,7 +448,11 @@ void wxGCDCImpl::DestroyClippingRegion()
+     m_graphicContext->SetBrush( m_brush );
+ 
+     wxDCImpl::DestroyClippingRegion();
+-    m_isClipBoxValid = false;
++
++    // The cached clipping box only has to be recomputed if a clipping region
++    // was really in effect, otherwise it already describes the whole DC.
++    if ( m_clipping )
++        m_isClipBoxValid = false;
+ }
+ 
+ void wxGCDCImpl::DoGetSizeMM( int* width, int* height ) const
+@@ -522,7 +529,6 @@ void wxGCDCImpl::ComputeScaleAndOrigin()
+         m_graphicContext->ConcatTransform( m_matrixCurrent );
+         m_matrixCurrentInv = m_matrixCurrent;
+         m_matrixCurrentInv.Invert();
+-        m_isClipBoxValid = false;
+     }
+ }
+ 

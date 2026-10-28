@@ -1,0 +1,2 @@
+- [talk test suite conftest drift](talk-test-suite-conftest-drift.md) — talk fixtures pass `organiser=` but Team model uses `organizer=`; suite dies at setup
+- [local postgres for tests](local-postgres-for-tests.md) — steps to bring up Postgres + pg_trgm so pytest runs in this container

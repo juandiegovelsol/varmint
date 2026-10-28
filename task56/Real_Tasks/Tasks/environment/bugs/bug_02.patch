@@ -1,0 +1,22 @@
+diff --git a/packages/web-components/src/components/tabs/tabs.ts b/packages/web-components/src/components/tabs/tabs.ts
+index fd2795e..6da4cac 100644
+--- a/packages/web-components/src/components/tabs/tabs.ts
++++ b/packages/web-components/src/components/tabs/tabs.ts
+@@ -103,7 +103,7 @@ export default class CDSTabs extends HostListenerMixin(CDSContentSwitcher) {
+     this._handleUserInitiatedSelectItem(nextItem as CDSTab, 'keyboard');
+     if (!immediate) {
+       forEach(this.querySelectorAll(selectorItem), (item) => {
+-        (item as CDSTab)[immediate ? 'selected' : 'highlighted'] =
++        (item as CDSTab)[immediate ? 'highlighted' : 'selected'] =
+           nextItem === item;
+       });
+     }
+@@ -126,7 +126,7 @@ export default class CDSTabs extends HostListenerMixin(CDSContentSwitcher) {
+     super._handleClick(event);
+     const { selectorItem } = this.constructor as typeof CDSTabs;
+     const currentItem = this._getCurrentItem(event.target as HTMLElement);
+-    if (currentItem) {
++    if (currentItem && this.selectionMode === 'automatic') {
+       forEach(this.querySelectorAll(selectorItem), (item) => {
+         (item as CDSTab).highlighted = false;
+       });

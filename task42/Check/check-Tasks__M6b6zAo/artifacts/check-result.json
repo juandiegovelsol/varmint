@@ -1,0 +1,46 @@
+{
+  "behavior_in_task_description": {
+    "outcome": "pass",
+    "explanation": "instruction.md is a visual_bug_fix task by design: it describes the symptom (intermittent rendering glitches while scrolling) and explicitly directs the agent to inspect the three screenshots as the evidence for diagnosis, then to 'fix the underlying rendering issue without breaking normal screen updates.' The tests check exactly that contract (stale cells not repainted when a scroll and a layout share a frame, plus preservation of normal repaint/layout/scroll behavior), which maps to the described symptom and the 'without breaking normal screen updates' requirement. Given the task_type/difficulty_explanation confirm the intent is diagnosis-from-evidence rather than a fully spelled-out spec, the instruction adequately signals what is required."
+  },
+  "behavior_in_tests": {
+    "outcome": "pass",
+    "explanation": "The instruction's two requirements -- fix the stale-cell/rendering glitch during scrolling, and do not break normal screen updates -- are both exercised: the f2p tests target the shared scroll+layout frame stale-cell bug, and the p2p tests cover a broad set of normal update paths (lone widget repaint, mount/remove, resize, scroll-only, plain repaint) that a careless fix could regress."
+  },
+  "informative_test_structure": {
+    "outcome": "pass",
+    "explanation": "tests/test.patch adds a single test file with clear section banners ('Terminal model', 'Palette one/two', 'f2p -- ...', 'p2p -- ...') and descriptive docstrings/comments on nearly every test explaining intent. tests/verifier.py and tests/test.sh are also heavily commented, explaining the idempotency handling, dependency install rationale, and reward policy."
+  },
+  "anti_cheating_measures": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile clones the repo, checks out the base commit, then strips and reinitializes .git as a single 'base' commit, preventing the agent from viewing future history/the real fix commit via git log. tests/ and solution/ are not copied into the image. The agent runs with network_mode=no-network (per task.toml), preventing it from fetching the real GitHub PR #5104 diff. The verifier only runs the (freshly re-checked-out) test file and parses JUnit XML -- it never greps candidate source for the fix. evidence_bundle.json (which contains prose that gives away the diagnosis, e.g. 'stale, unrepainted cells left over from a previous scroll position') lives at the task root, outside environment/, so it is not part of the Docker build context and is not shipped to the agent; only the raw screenshots and a neutral ASSET_MANIFEST.json are copied in."
+  },
+  "structured_data_schema": {
+    "outcome": "not_applicable",
+    "explanation": "This is a source-code bug-fix task (editing src/textual/screen.py) verified by running pytest tests, not a task that requires the agent to produce structured output like JSON/CSV/DB records, so no data schema is expected in instruction.md."
+  },
+  "pinned_dependencies": {
+    "outcome": "pass",
+    "explanation": "Test-only Python dependencies are pinned exactly in tests/test.sh (pytest==8.4.2, pytest-asyncio==1.4.0, pytest-textual-snapshot==1.1.0). The Dockerfile installs the target repo itself via 'pip install -e .' pinned to a specific base commit, and apt packages are unpinned, which is acceptable per the guidance that apt packages generally need not be pinned."
+  },
+  "typos": {
+    "outcome": "pass",
+    "explanation": "Commit hashes in task.toml and the Dockerfile match each other and are valid-length 40-character hex strings; asset paths (/app/.harbor_assets/...) are consistent across instruction.md, Dockerfile, and ASSET_MANIFEST.json; file/test identifiers in task.toml and tests/config.json match those defined in tests/test.patch. No filename, path, or command typos were found across the reviewed files."
+  },
+  "tests_or_solution_in_image": {
+    "outcome": "pass",
+    "explanation": "environment/Dockerfile only COPYs assets/ into /app/.harbor_assets/; it explicitly comments that tests/ and solution/ are intentionally not copied into the image and are supplied by the harness at verify time."
+  },
+  "test_deps_in_image": {
+    "outcome": "pass",
+    "explanation": "pytest, pytest-asyncio, and pytest-textual-snapshot are installed inside tests/test.sh at verify time (with an explicit comment explaining why), not baked into environment/Dockerfile, which only pre-installs the runtime repo's own dependencies."
+  },
+  "hardcoded_solution": {
+    "outcome": "pass",
+    "explanation": "solution/solve.sh applies solution/fix.patch, which is a genuine source-code diff to src/textual/screen.py (reordering when _scroll_required is cleared and passing scroll= through to _refresh_layout) mirroring the real upstream fix -- it is a code change that must make the actual test suite pass, not a literal answer value being echoed to a file."
+  },
+  "file_reference_mentioned": {
+    "outcome": "not_applicable",
+    "explanation": "The task requires a source-code fix (screen.py) verified by pytest; the agent is not required to produce any specific output file for tests to check, so there is no file reference that needs to be stated in instruction.md."
+  }
+}

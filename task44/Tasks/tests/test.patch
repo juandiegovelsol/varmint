@@ -1,0 +1,694 @@
+diff --git a/app/tests/harborbadges4203/__init__.py b/app/tests/harborbadges4203/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/app/tests/harborbadges4203/test_badge_sheet_layout.py b/app/tests/harborbadges4203/test_badge_sheet_layout.py
+new file mode 100644
+index 0000000..f86c8d5
+--- /dev/null
++++ b/app/tests/harborbadges4203/test_badge_sheet_layout.py
+@@ -0,0 +1,680 @@
++"""Behavioural contract for the attendee-badge PDF export.
++
++The export offers a set of *rendering options*: one badge per sheet, or several
++badges tiled onto a single sheet.  Whatever option is chosen, the printed result
++must be the same badge -- its artwork and its printed text together -- simply
++placed into its slot on the sheet.
++
++Everything asserted here is measured from the *rendered pixels* of the produced
++PDF (poppler raster) and every expectation is recomputed at run time from the
++fixture itself: from the artwork colours that were uploaded, from the sheet size
++that came back, and from what the very same badge looks like when it is printed
++one-per-sheet.  No symbol, key, helper name, module name or magic constant of
++any implementation appears in an assertion.
++
++Two independent, fully disjoint fixture palettes are used ("harbourfog" and
++"nordkap"): different artwork colours, different text colours, different badge
++orientation, different badge counts and different rendering options.
++"""
++
++import glob
++import json
++import math
++import os
++import re
++import subprocess
++import tempfile
++from datetime import timedelta
++from decimal import Decimal
++from io import BytesIO
++
++import numpy as np
++import pytest
++from django.core.files.base import ContentFile
++from django.utils.timezone import now
++from django_scopes import scopes_disabled
++from PIL import Image
++from pypdf import PdfReader, PdfWriter
++from reportlab.lib.units import mm
++from reportlab.pdfgen import canvas as rl_canvas
++
++from eventyay.base.models import Event, Order, OrderPosition, Organizer, Product
++from eventyay.base.services.orders import OrderError
++from eventyay.plugins.badges.exporters import BadgeExporter
++from eventyay.plugins.badges.models import BadgeProduct
++
++# ---------------------------------------------------------------------------
++# Paper geometry.  These are the ISO paper sizes in PostScript points, i.e. a
++# property of the paper, not of the application.
++# ---------------------------------------------------------------------------
++A4_SHORT = 595.2755905511812
++A4_LONG = 841.8897637795277
++A4_PORTRAIT = (A4_SHORT, A4_LONG)
++A4_LANDSCAPE = (A4_LONG, A4_SHORT)
++# Exactly half an A4 sheet in each direction -- "A6" as the rendering options use it.
++HALF_A4_PORTRAIT = (A4_SHORT / 2, A4_LONG / 2)
++HALF_A4_LANDSCAPE = (A4_LONG / 2, A4_SHORT / 2)
++
++DPI = 150
++PT_PER_INCH = 72.0
++COLOUR_TOL = 25  # L1 distance; solid fills come back exact, this only absorbs rounding
++MIN_MARK_PX = 1200  # a printed text mark is ~15k px at full size, ~3.8k at half size
++ART_MIN_FRAC = 0.02  # an artwork really printed on a sheet covers far more than 2% of it
++
++# ---------------------------------------------------------------------------
++# Palette "harbourfog": four landscape badges, four-up on a landscape sheet.
++# Palette "nordkap": six portrait badges, four-up and eight-up on A4 sheets.
++# The two colour sets are disjoint; inside a set every colour is at least
++# L1-distance 100 from every other one, from white, and from every blend of any
++# two painted colours -- so an anti-aliased edge can never be misread as a
++# different badge's colour.
++# ---------------------------------------------------------------------------
++HARBOURFOG_ART = [(230, 0, 0), (0, 230, 0), (0, 0, 230), (230, 230, 0)]
++HARBOURFOG_INK = [(120, 0, 0), (0, 120, 0), (0, 0, 120), (120, 60, 180)]
++
++NORDKAP_ART = [
++    (200, 40, 140),
++    (40, 200, 140),
++    (140, 40, 200),
++    (200, 140, 40),
++    (40, 140, 200),
++    (140, 200, 40),
++]
++NORDKAP_INK = [
++    (100, 0, 50),
++    (0, 100, 50),
++    (50, 0, 100),
++    (100, 50, 0),
++    (0, 50, 100),
++    (50, 100, 0),
++]
++
++# Names taken verbatim from the vocabulary a fix is likely to introduce, planted
++# in the fixture so that they already exist on an unfixed tree.  A suite that had
++# accidentally been keyed to such names instead of to the rendered result would
++# pass before the fix and be caught here.
++CANARY_WORDS = [
++    'render_nup',
++    'merge_foreground_buffer',
++    'correct_page_media_box',
++    'badge_default_a6l',
++    'ReportLab Generated PDF',
++    'empty.pdf',
++]
++
++
++@pytest.fixture(autouse=True)
++def _no_scopes():
++    with scopes_disabled():
++        yield
++
++
++# ---------------------------------------------------------------------------
++# Fixture artwork
++# ---------------------------------------------------------------------------
++def _artwork_pdf(rgb, size_pt):
++    """A single-page badge artwork: a solid colour field with a white text panel.
++
++    The file is deliberately a substantial, fully formed document (tens of kB of
++    metadata) so that it is plainly real artwork and not a stand-in.
++    """
++    width, height = size_pt
++    buf = BytesIO()
++    c = rl_canvas.Canvas(buf, pagesize=(width, height))
++    c.setFillColorRGB(rgb[0] / 255.0, rgb[1] / 255.0, rgb[2] / 255.0)
++    c.rect(0, 0, width, height, stroke=0, fill=1)
++    panel_w = min(width * 0.86, 230.0)
++    panel_h = 92.0
++    c.setFillColorRGB(1, 1, 1)
++    c.rect((width - panel_w) / 2, height / 2 - panel_h / 2, panel_w, panel_h, stroke=0, fill=1)
++    c.showPage()
++    c.save()
++    buf.seek(0)
++    reader = PdfReader(buf)
++    writer = PdfWriter()
++    writer.add_page(reader.pages[0])
++    writer.add_metadata({'/Title': 'Badge artwork', '/Subject': 'artwork ' * 6000})
++    out = BytesIO()
++    writer.write(out)
++    return out.getvalue()
++
++
++def _layout_json(ink, art, size_pt, canary):
++    """A badge layout with one big text mark centred on the artwork's white panel."""
++    width, height = size_pt
++    width_mm = width / mm
++    height_mm = height / mm
++    return json.dumps(
++        [
++            {
++                'type': 'textarea',
++                'left': '4',
++                'bottom': '%.3f' % (height_mm / 2 - 6.0),
++                'fontsize': '54',
++                'color': [ink[0], ink[1], ink[2], 1],
++                'fontfamily': 'Open Sans',
++                'bold': True,
++                'italic': False,
++                'width': '%.3f' % (width_mm - 8),
++                'content': 'other',
++                'text': 'HHH',
++                'align': 'center',
++            },
++            {
++                # deliberately invisible: same colour as the artwork behind it.
++                'type': 'textarea',
++                'left': '1',
++                'bottom': '1',
++                'fontsize': '3',
++                'color': [art[0], art[1], art[2], 1],
++                'fontfamily': 'Open Sans',
++                'bold': False,
++                'italic': False,
++                'width': '%.3f' % (width_mm - 2),
++                'content': 'other',
++                'text': canary,
++                'align': 'left',
++            },
++        ]
++    )
++
++
++class Sheet:
++    """A rendered export, as pixels."""
++
++    def __init__(self, pdf_bytes):
++        self.pdf_bytes = pdf_bytes
++        reader = PdfReader(BytesIO(pdf_bytes))
++        self.page_sizes = [
++            (float(p.mediabox.width), float(p.mediabox.height)) for p in reader.pages
++        ]
++        self.pages = _rasterise(pdf_bytes)
++        assert len(self.pages) == len(self.page_sizes)
++
++    def __len__(self):
++        return len(self.pages)
++
++
++def _rasterise(pdf_bytes):
++    with tempfile.TemporaryDirectory() as d:
++        src = os.path.join(d, 'sheet.pdf')
++        with open(src, 'wb') as fh:
++            fh.write(pdf_bytes)
++        subprocess.run(
++            ['pdftoppm', '-r', str(DPI), '-png', src, os.path.join(d, 'page')],
++            check=True,
++            capture_output=True,
++        )
++        files = glob.glob(os.path.join(d, 'page-*.png'))
++        files.sort(key=lambda p: int(re.search(r'page-(\d+)\.png$', p).group(1)))
++        return [np.asarray(Image.open(p).convert('RGB'), dtype=np.int16) for p in files]
++
++
++def _region(page, rgb):
++    """Where a given ink/artwork colour landed on one rendered page."""
++    dist = np.abs(page - np.array(rgb, dtype=np.int16)).sum(axis=2)
++    mask = dist <= COLOUR_TOL
++    count = int(mask.sum())
++    if count == 0:
++        return None
++    ys, xs = np.nonzero(mask)
++    return {
++        'count': count,
++        'x0': int(xs.min()),
++        'y0': int(ys.min()),
++        'x1': int(xs.max()) + 1,
++        'y1': int(ys.max()) + 1,
++    }
++
++
++def _box(region):
++    return (region['x0'], region['y0'], region['x1'], region['y1'])
++
++
++def _area(box):
++    return max(0, box[2] - box[0]) * max(0, box[3] - box[1])
++
++
++def _intersection(a, b):
++    return (max(a[0], b[0]), max(a[1], b[1]), min(a[2], b[2]), min(a[3], b[3]))
++
++
++def _centre(region):
++    return ((region['x0'] + region['x1']) / 2.0, (region['y0'] + region['y1']) / 2.0)
++
++
++def _find_all(sheet, colours, min_count=0, min_frac=0.0):
++    """colour index -> (page index, region), for every colour that really printed."""
++    found = {}
++    for i, rgb in enumerate(colours):
++        for page_no, page in enumerate(sheet.pages):
++            page_px = page.shape[0] * page.shape[1]
++            floor = max(min_count, min_frac * page_px)
++            region = _region(page, rgb)
++            if region is not None and region['count'] >= floor:
++                assert i not in found, (
++                    'artwork/ink colour %s printed on more than one sheet page' % (rgb,)
++                )
++                found[i] = (page_no, region)
++    return found
++
++
++# ---------------------------------------------------------------------------
++# Event fixtures
++# ---------------------------------------------------------------------------
++def _build_event(slug, badge_size_pt, art_colours, ink_colours):
++    organizer = Organizer.objects.create(name='Harbor %s' % slug, slug=slug)
++    event = Event.objects.create(
++        organizer=organizer,
++        name='Badge print %s' % slug,
++        slug=slug,
++        date_from=now() + timedelta(days=90),
++        live=True,
++    )
++    products = []
++    for i, (art, ink) in enumerate(zip(art_colours, ink_colours)):
++        canary = CANARY_WORDS[i % len(CANARY_WORDS)]
++        product = Product.objects.create(
++            event=event,
++            name='%s ticket %d' % (canary, i),
++            default_price=Decimal('10.00'),
++            admission=True,
++        )
++        layout = event.badge_layouts.create(
++            name='%s %d' % (canary, i),
++            default=(i == 0),
++            layout=_layout_json(ink, art, badge_size_pt, canary),
++        )
++        layout.background.save('artwork-%d.pdf' % i, ContentFile(_artwork_pdf(art, badge_size_pt)))
++        BadgeProduct.objects.create(product=product, layout=layout)
++        products.append(product)
++
++    order = Order.objects.create(
++        code='NUPXY%d' % len(products),
++        event=event,
++        email='badges@example.org',
++        status=Order.STATUS_PAID,
++        datetime=now(),
++        expires=now() + timedelta(days=10),
++        total=Decimal('10.00') * len(products),
++    )
++    for i, product in enumerate(products):
++        OrderPosition.objects.create(
++            order=order,
++            product=product,
++            price=Decimal('10.00'),
++            attendee_name_parts={'_legacy': '%s %d' % (CANARY_WORDS[i % len(CANARY_WORDS)], i)},
++            secret='harborsecret%02d' % i,
++            positionid=i + 1,
++        )
++    return event, products
++
++
++def _export(event, products, rendering):
++    fname, ftype, payload = BadgeExporter(event).render(
++        {
++            'products': [p.pk for p in products],
++            'rendering': rendering,
++            'include_pending': True,
++        }
++    )
++    return fname, ftype, payload
++
++
++@pytest.fixture
++def harbourfog():
++    """Four landscape badges, printed four-up on a landscape sheet."""
++    event, products = _build_event(
++        'harbourfog', HALF_A4_LANDSCAPE, HARBOURFOG_ART, HARBOURFOG_INK
++    )
++    return {
++        'event': event,
++        'products': products,
++        'art': HARBOURFOG_ART,
++        'ink': HARBOURFOG_INK,
++        'badge_size': HALF_A4_LANDSCAPE,
++        'four_up': 'a4_a6l',
++        'four_up_sheet': A4_LANDSCAPE,
++        'eight_up': 'a4_a7l',
++        'eight_up_sheet': A4_PORTRAIT,
++        'eight_up_grid': (2, 4),
++    }
++
++
++@pytest.fixture
++def nordkap():
++    """Six portrait badges, printed four-up and eight-up on A4 sheets."""
++    event, products = _build_event('nordkap', HALF_A4_PORTRAIT, NORDKAP_ART, NORDKAP_INK)
++    return {
++        'event': event,
++        'products': products,
++        'art': NORDKAP_ART,
++        'ink': NORDKAP_INK,
++        'badge_size': HALF_A4_PORTRAIT,
++        'four_up': 'a4_a6p',
++        'four_up_sheet': A4_PORTRAIT,
++        'eight_up': 'a4_a7p',
++        'eight_up_sheet': A4_LANDSCAPE,
++        'eight_up_grid': (4, 2),
++    }
++
++
++# ---------------------------------------------------------------------------
++# Shared assertions
++# ---------------------------------------------------------------------------
++def _assert_every_artwork_printed(env):
++    sheet = Sheet(_export(env['event'], env['products'], env['four_up'])[2])
++    n = len(env['products'])
++    slot_share = 1.0 / 4.0  # four badges to a sheet
++    found = _find_all(sheet, env['art'], min_frac=ART_MIN_FRAC)
++    missing = [i for i in range(n) if i not in found]
++    assert not missing, (
++        'the artwork of badge(s) %s never reached the printed sheet; only %d of %d '
++        'badge artworks printed at all' % (missing, len(found), n)
++    )
++    for i, (page_no, region) in sorted(found.items()):
++        page_px = sheet.pages[page_no].shape[0] * sheet.pages[page_no].shape[1]
++        share = region['count'] / float(page_px)
++        assert share > slot_share * 0.6, (
++            'badge %d covers only %.1f%% of its sheet; a badge printed four to a '
++            'sheet must fill about %.0f%% of it' % (i, 100 * share, 100 * slot_share)
++        )
++
++
++def _assert_artworks_do_not_overlap(env):
++    sheet = Sheet(_export(env['event'], env['products'], env['four_up'])[2])
++    n = len(env['products'])
++    per_page = []
++    for page_no, page in enumerate(sheet.pages):
++        page_px = page.shape[0] * page.shape[1]
++        present = []
++        for i, rgb in enumerate(env['art']):
++            region = _region(page, rgb)
++            if region is not None and region['count'] >= 0.05 * page_px:
++                present.append((i, region))
++        per_page.append(present)
++        for a in range(len(present)):
++            for b in range(a + 1, len(present)):
++                box_a, box_b = _box(present[a][1]), _box(present[b][1])
++                inter = _area(_intersection(box_a, box_b))
++                smaller = min(_area(box_a), _area(box_b))
++                assert inter <= 0.03 * smaller, (
++                    'badge %d and badge %d overlap on sheet page %d (%.0f%% of a badge)'
++                    % (present[a][0], present[b][0], page_no, 100.0 * inter / smaller)
++                )
++
++    # A four-up sheet may not carry more than four badge artworks on a page, and
++    # every badge's artwork must reach the sheet somewhere. The exact split
++    # across pages is deliberately NOT pinned: any tiling the export chooses is
++    # accepted so long as no page is overfilled and no artwork is lost.
++    counts = sorted(len(p) for p in per_page)
++    overfull = [c for c in counts if c > 4]
++    assert not overfull, (
++        'a four-up sheet page carries %s badge artworks; no page may carry more '
++        'than four (printed %s)' % (overfull, counts)
++    )
++    printed = sum(counts)
++    assert printed == n, (
++        'expected all %d badge artworks somewhere on the sheet, printed %d '
++        '(per page: %s)' % (n, printed, counts)
++    )
++
++
++def _assert_mark_sits_on_its_own_artwork(env):
++    sheet = Sheet(_export(env['event'], env['products'], env['four_up'])[2])
++    art = _find_all(sheet, env['art'], min_frac=ART_MIN_FRAC)
++    ink = _find_all(sheet, env['ink'], min_count=MIN_MARK_PX)
++    for i in range(len(env['products'])):
++        assert i in ink, 'the printed text of badge %d is missing from the sheet' % i
++        assert i in art, 'the artwork of badge %d is missing from the sheet' % i
++        assert ink[i][0] == art[i][0], (
++            'badge %d printed its text on sheet page %d but its artwork on page %d'
++            % (i, ink[i][0], art[i][0])
++        )
++        text_box = _box(ink[i][1])
++        art_box = _box(art[i][1])
++        grown = (art_box[0] - 3, art_box[1] - 3, art_box[2] + 3, art_box[3] + 3)
++        assert _area(_intersection(text_box, grown)) >= 0.98 * _area(text_box), (
++            'the text of badge %d (%s) is not printed on its own artwork (%s)'
++            % (i, text_box, art_box)
++        )
++
++
++def _assert_sheet_badge_matches_lone_badge(env):
++    """A badge on a shared sheet must be the same badge it is on its own sheet."""
++    lone = Sheet(_export(env['event'], env['products'], 'one')[2])
++    lone_art = _find_all(lone, env['art'], min_frac=ART_MIN_FRAC)
++    lone_ink = _find_all(lone, env['ink'], min_count=MIN_MARK_PX)
++    assert len(lone_art) == len(env['products'])
++    assert len(lone_ink) == len(env['products'])
++
++    sheet = Sheet(_export(env['event'], env['products'], env['four_up'])[2])
++    sheet_art = _find_all(sheet, env['art'], min_frac=ART_MIN_FRAC)
++    sheet_ink = _find_all(sheet, env['ink'], min_count=MIN_MARK_PX)
++
++    for i in range(len(env['products'])):
++        assert i in sheet_art, 'badge %d lost its artwork on the shared sheet' % i
++        assert i in sheet_ink, 'badge %d lost its printed text on the shared sheet' % i
++
++        lp, lr = lone_art[i]
++        lone_page = lone.pages[lp]
++        lone_h, lone_w = lone_page.shape[0], lone_page.shape[1]
++        lone_ink_box = _box(lone_ink[i][1])
++        # where the text sits inside the badge, as a fraction of the badge
++        want = (
++            (lone_ink_box[0] + lone_ink_box[2]) / 2.0 / lone_w,
++            (lone_ink_box[1] + lone_ink_box[3]) / 2.0 / lone_h,
++        )
++        lone_fill = lr['count'] / float(lone_w * lone_h)
++
++        sp, sr = sheet_art[i]
++        slot = _box(sr)
++        slot_w = float(slot[2] - slot[0])
++        slot_h = float(slot[3] - slot[1])
++        ink_box = _box(sheet_ink[i][1])
++        got = (
++            ((ink_box[0] + ink_box[2]) / 2.0 - slot[0]) / slot_w,
++            ((ink_box[1] + ink_box[3]) / 2.0 - slot[1]) / slot_h,
++        )
++        assert abs(got[0] - want[0]) < 0.05 and abs(got[1] - want[1]) < 0.05, (
++            'badge %d prints its text at %s of its slot on the shared sheet but at '
++            '%s of the sheet when printed on its own' % (i, got, want)
++        )
++        sheet_fill = sr['count'] / (slot_w * slot_h)
++        assert abs(sheet_fill - lone_fill) < 0.06, (
++            'badge %d covers %.1f%% of its slot on the shared sheet but %.1f%% of '
++            'its own sheet' % (i, 100 * sheet_fill, 100 * lone_fill)
++        )
++
++
++def _assert_layout_is_a_regular_grid(env, rendering, grid):
++    """Badges must be laid out on the grid the rendering option describes."""
++    cols, rows = grid
++    sheet = Sheet(_export(env['event'], env['products'], rendering)[2])
++    per_page = cols * rows
++    n = len(env['products'])
++
++    marks = _find_all(sheet, env['ink'], min_count=MIN_MARK_PX)
++    missing = [i for i in range(n) if i not in marks]
++    assert not missing, (
++        'badge(s) %s printed nothing readable on the %d-up sheet -- their content '
++        'fell outside the printable area' % (missing, per_page)
++    )
++
++    by_page = {}
++    for i, (page_no, region) in marks.items():
++        by_page.setdefault(page_no, []).append((i, _centre(region)))
++
++    for page_no, entries in by_page.items():
++        page = sheet.pages[page_no]
++        height_px, width_px = page.shape[0], page.shape[1]
++        cell_w = width_px / float(cols)
++        cell_h = height_px / float(rows)
++        tol = 0.04 * min(cell_w, cell_h)
++        ref = entries[0][1]
++        for i, centre in entries[1:]:
++            for axis, pitch, name in ((0, cell_w, 'across'), (1, cell_h, 'down')):
++                delta = centre[axis] - ref[axis]
++                steps = round(delta / pitch)
++                assert abs(delta - steps * pitch) <= tol, (
++                    'badge %d sits %.1f px %s from badge %d on sheet page %d, which '
++                    'is not a whole number of %.1f px slots'
++                    % (i, delta, name, entries[0][0], page_no, pitch)
++                )
++        occupied = set()
++        for i, centre in entries:
++            col = int(centre[0] // cell_w)
++            row = int(centre[1] // cell_h)
++            assert (row, col) not in occupied, (
++                'two badges share slot %s on sheet page %d' % ((row, col), page_no)
++            )
++            occupied.add((row, col))
++        assert len(entries) <= per_page
++
++
++# ---------------------------------------------------------------------------
++# harbourfog
++# ---------------------------------------------------------------------------
++@pytest.mark.django_db
++def test_every_badge_keeps_its_own_artwork_harbourfog(harbourfog):
++    _assert_every_artwork_printed(harbourfog)
++
++
++@pytest.mark.django_db
++def test_badge_artworks_do_not_overlap_harbourfog(harbourfog):
++    _assert_artworks_do_not_overlap(harbourfog)
++
++
++@pytest.mark.django_db
++def test_badge_mark_sits_on_its_own_artwork_harbourfog(harbourfog):
++    _assert_mark_sits_on_its_own_artwork(harbourfog)
++
++
++@pytest.mark.django_db
++def test_sheet_badge_matches_the_lone_badge_render_harbourfog(harbourfog):
++    _assert_sheet_badge_matches_lone_badge(harbourfog)
++
++
++@pytest.mark.django_db
++def test_four_slot_sheet_layout_is_a_regular_grid_harbourfog(harbourfog):
++    _assert_layout_is_a_regular_grid(harbourfog, harbourfog['four_up'], (2, 2))
++
++
++@pytest.mark.django_db
++def test_eight_slot_sheet_layout_is_a_regular_grid_harbourfog(harbourfog):
++    _assert_layout_is_a_regular_grid(
++        harbourfog, harbourfog['eight_up'], harbourfog['eight_up_grid']
++    )
++
++
++@pytest.mark.django_db
++def test_sheet_count_matches_the_badge_count_harbourfog(harbourfog):
++    sheet = Sheet(_export(harbourfog['event'], harbourfog['products'], harbourfog['four_up'])[2])
++    assert len(sheet) == math.ceil(len(harbourfog['products']) / 4.0)
++
++
++@pytest.mark.django_db
++def test_sheet_size_matches_the_rendering_option_harbourfog(harbourfog):
++    sheet = Sheet(_export(harbourfog['event'], harbourfog['products'], harbourfog['four_up'])[2])
++    want = harbourfog['four_up_sheet']
++    for i, size in enumerate(sheet.page_sizes):
++        assert abs(size[0] - want[0]) < 1.5 and abs(size[1] - want[1]) < 1.5, (
++            'sheet page %d is %s, not the %s sheet the option asks for' % (i, size, want)
++        )
++
++
++@pytest.mark.django_db
++def test_lone_badge_page_keeps_its_artwork_harbourfog(harbourfog):
++    _assert_lone_badge_pages(harbourfog)
++
++
++@pytest.mark.django_db
++def test_export_without_any_badge_product_raises_an_error_harbourfog(harbourfog):
++    with pytest.raises(OrderError):
++        BadgeExporter(harbourfog['event']).render(
++            {'products': [], 'rendering': 'one', 'include_pending': True}
++        )
++
++
++# ---------------------------------------------------------------------------
++# nordkap
++# ---------------------------------------------------------------------------
++@pytest.mark.django_db
++def test_every_badge_keeps_its_own_artwork_nordkap(nordkap):
++    _assert_every_artwork_printed(nordkap)
++
++
++@pytest.mark.django_db
++def test_badge_artworks_do_not_overlap_nordkap(nordkap):
++    _assert_artworks_do_not_overlap(nordkap)
++
++
++@pytest.mark.django_db
++def test_badge_mark_sits_on_its_own_artwork_nordkap(nordkap):
++    _assert_mark_sits_on_its_own_artwork(nordkap)
++
++
++@pytest.mark.django_db
++def test_sheet_badge_matches_the_lone_badge_render_nordkap(nordkap):
++    _assert_sheet_badge_matches_lone_badge(nordkap)
++
++
++@pytest.mark.django_db
++def test_four_slot_sheet_layout_is_a_regular_grid_nordkap(nordkap):
++    _assert_layout_is_a_regular_grid(nordkap, nordkap['four_up'], (2, 2))
++
++
++@pytest.mark.django_db
++def test_eight_slot_sheet_layout_is_a_regular_grid_nordkap(nordkap):
++    _assert_layout_is_a_regular_grid(nordkap, nordkap['eight_up'], nordkap['eight_up_grid'])
++
++
++@pytest.mark.django_db
++def test_sheet_count_matches_the_badge_count_nordkap(nordkap):
++    sheet = Sheet(_export(nordkap['event'], nordkap['products'], nordkap['four_up'])[2])
++    assert len(sheet) == math.ceil(len(nordkap['products']) / 4.0)
++
++
++@pytest.mark.django_db
++def test_sheet_size_matches_the_rendering_option_nordkap(nordkap):
++    sheet = Sheet(_export(nordkap['event'], nordkap['products'], nordkap['four_up'])[2])
++    want = nordkap['four_up_sheet']
++    for i, size in enumerate(sheet.page_sizes):
++        assert abs(size[0] - want[0]) < 1.5 and abs(size[1] - want[1]) < 1.5, (
++            'sheet page %d is %s, not the %s sheet the option asks for' % (i, size, want)
++        )
++
++
++@pytest.mark.django_db
++def test_lone_badge_page_keeps_its_artwork_nordkap(nordkap):
++    _assert_lone_badge_pages(nordkap)
++
++
++@pytest.mark.django_db
++def test_export_returns_a_pdf_attachment_nordkap(nordkap):
++    fname, ftype, payload = _export(nordkap['event'], nordkap['products'], nordkap['four_up'])
++    assert fname.endswith('.pdf')
++    assert ftype == 'application/pdf'
++    assert payload[:5] == b'%PDF-'
++
++
++def _assert_lone_badge_pages(env):
++    """One badge per sheet: every badge gets a sheet of its own, artwork and all."""
++    sheet = Sheet(_export(env['event'], env['products'], 'one')[2])
++    n = len(env['products'])
++    assert len(sheet) == n, 'expected one sheet per badge (%d), got %d' % (n, len(sheet))
++    art = _find_all(sheet, env['art'], min_frac=ART_MIN_FRAC)
++    ink = _find_all(sheet, env['ink'], min_count=MIN_MARK_PX)
++    for i in range(n):
++        assert i in art, 'badge %d has no artwork on its own sheet' % i
++        assert i in ink, 'badge %d has no printed text on its own sheet' % i
++        page_no, region = art[i]
++        page = sheet.pages[page_no]
++        page_px = page.shape[0] * page.shape[1]
++        assert region['count'] > 0.5 * page_px, (
++            'badge %d covers only %.1f%% of its own sheet'
++            % (i, 100.0 * region['count'] / page_px)
++        )
++        assert ink[i][0] == page_no
++        others = [j for j in art if j != i and art[j][0] == page_no]
++        assert not others, 'sheet %d carries the artwork of badges %s as well' % (page_no, others)
++        want = env['badge_size']
++        size = sheet.page_sizes[page_no]
++        assert abs(size[0] - want[0]) < 2.0 and abs(size[1] - want[1]) < 2.0, (
++            'a one-badge-per-page sheet is %s, not the badge size %s' % (size, want)
++        )

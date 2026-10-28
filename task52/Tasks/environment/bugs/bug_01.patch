@@ -1,0 +1,45 @@
+diff --git a/src/textual/css/stylesheet.py b/src/textual/css/stylesheet.py
+index 82f4ffa..0f0c2de 100644
+--- a/src/textual/css/stylesheet.py
++++ b/src/textual/css/stylesheet.py
+@@ -436,7 +436,7 @@ class Stylesheet:
+     # pseudo classes which iterate over multiple nodes
+     # These shouldn't be used in a cache key
+     _EXCLUDE_PSEUDO_CLASSES_FROM_CACHE: Final[set[str]] = {
+-        "first-of-type",
++        "first-of_type",
+         "last-of_type",
+         "odd",
+         "even",
+@@ -494,11 +494,17 @@ class Stylesheet:
+             self._EXCLUDE_PSEUDO_CLASSES_FROM_CACHE
+         ):
+             cache_key = (
+-                node._parent,
++                # Two nodes can only share an entry when the selectors see the same
++                # ancestry, and selectors are matched against the parent's type rather
++                # than against the parent object, so the type is what to key on.
++                type(node._parent),
+                 (
+                     None
+                     if node._id is None
+-                    else (node._id if f"#{node._id}" in rules_map else None)
++                    # Ids that a rule targets are already resolved through `rules_map`
++                    # when the entry is built, so only the remaining ids still need to
++                    # reach the key.
++                    else (node._id if f"#{node._id}" not in rules_map else None)
+                 ),
+                 node.classes,
+                 node._pseudo_classes_cache_key,
+diff --git a/src/textual/widget.py b/src/textual/widget.py
+index 5112a13..d6252f8 100644
+--- a/src/textual/widget.py
++++ b/src/textual/widget.py
+@@ -3609,7 +3609,6 @@ class Widget(DOMNode):
+         return (
+             self.mouse_hover,
+             self.has_focus,
+-            self.is_disabled,
+         )
+ 
+     def _get_justify_method(self) -> JustifyMethod | None:

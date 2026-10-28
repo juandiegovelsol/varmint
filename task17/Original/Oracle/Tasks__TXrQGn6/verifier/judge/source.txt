@@ -1,0 +1,140 @@
+diff --git a/src/parser/doesSomeParentMatch.ts b/src/parser/doesSomeParentMatch.ts
+index d9eeba5..7cd3cda 100644
+--- a/src/parser/doesSomeParentMatch.ts
++++ b/src/parser/doesSomeParentMatch.ts
+@@ -1,4 +1,4 @@
+-import { ruleSelectorTest } from './ruleSelectorTest';
++import { selectorMatches } from './selectorMatches';
+ 
+ export function doesSomeParentMatch(
+   element: HTMLElement | SVGElement,
+@@ -15,7 +15,7 @@ export function doesSomeParentMatch(
+       selector = selectors.pop()!;
+     }
+     element = element.parentElement;
+-    parentMatching = ruleSelectorTest(element, selector!);
++    parentMatching = selectorMatches(element, selector!);
+   }
+   return selectors.length === 0;
+ }
+diff --git a/src/parser/elementMatchesRule.ts b/src/parser/elementMatchesRule.ts
+index 3bfdd8f..366ff1c 100644
+--- a/src/parser/elementMatchesRule.ts
++++ b/src/parser/elementMatchesRule.ts
+@@ -1,4 +1,4 @@
+-import { ruleSelectorTest } from './ruleSelectorTest';
++import { selectorMatches } from './selectorMatches';
+ import { doesSomeParentMatch } from './doesSomeParentMatch';
+ 
+ /**
+@@ -11,7 +11,7 @@ export function elementMatchesRule(
+ ) {
+   let parentMatching = true;
+   // start from rightmost selector.
+-  const firstMatching = ruleSelectorTest(element, selectors.pop()!);
++  const firstMatching = selectorMatches(element, selectors.pop()!);
+   if (firstMatching && selectors.length) {
+     parentMatching = doesSomeParentMatch(element, selectors);
+   }
+diff --git a/src/parser/collectSheetRules.ts b/src/parser/getCSSRules.ts
+similarity index 81%
+rename from src/parser/collectSheetRules.ts
+rename to src/parser/getCSSRules.ts
+index a5b0c03..3693805 100644
+--- a/src/parser/collectSheetRules.ts
++++ b/src/parser/getCSSRules.ts
+@@ -5,14 +5,12 @@ import type { CSSRules } from './typedefs';
+  * @param {Document} doc
+  * @return {Object}
+  */
+-export function collectSheetRules(doc: Document) {
++export function getCSSRules(doc: Document) {
+   const styles = doc.getElementsByTagName('style');
+-  let i;
+-  let len;
+   const allRules: CSSRules = {};
+ 
+   // very crude parsing of style contents
+-  for (i = 0, len = styles.length; i < len; i++) {
++  for (let i = 0; i < styles.length; i++) {
+     const styleContents = (styles[i].textContent || '').replace(
+       // remove comments
+       /\/\*[\s\S]*?\*\//g,
+@@ -47,10 +45,14 @@ export function collectSheetRules(doc: Document) {
+             return pair.trim();
+           });
+ 
+-        for (i = 0, len = propertyValuePairs.length; i < len; i++) {
+-          const pair = propertyValuePairs[i].split(':'),
+-            property = pair[0].trim(),
+-            value = pair[1].trim();
++        for (let j = 0; j < propertyValuePairs.length; j++) {
++          const pair = propertyValuePairs[j];
++          const colonIndex = pair.indexOf(':');
++          if (colonIndex === -1) {
++            continue;
++          }
++          const property = pair.slice(0, colonIndex).trim();
++          const value = pair.slice(colonIndex + 1).trim();
+           ruleObj[property] = value;
+         }
+         rule = match[0].trim();
+diff --git a/src/parser/ruleSelectorTest.ts b/src/parser/selectorMatches.ts
+similarity index 64%
+rename from src/parser/ruleSelectorTest.ts
+rename to src/parser/selectorMatches.ts
+index 8e7827a..627feb6 100644
+--- a/src/parser/ruleSelectorTest.ts
++++ b/src/parser/selectorMatches.ts
+@@ -1,11 +1,11 @@
+-export function ruleSelectorTest(
++export function selectorMatches(
+   element: HTMLElement | SVGElement,
+   selector: string,
+ ) {
+   const nodeName = element.nodeName;
+   const classNames = element.getAttribute('class');
+   const id = element.getAttribute('id');
+-  const azAz = '(?![a-zA-Z\\-]+)';
++  const azAz = '(?![\\w\\-])';
+   let matcher;
+   // i check if a selector matches slicing away part from it.
+   // if i get empty string i should match
+@@ -16,8 +16,13 @@ export function ruleSelectorTest(
+     selector = selector.replace(matcher, '');
+   }
+   if (classNames && selector.length) {
+-    const splitClassNames = classNames.split(' ');
+-    for (let i = splitClassNames.length; i--; ) {
++    // match longer class names first so a shorter class that is a prefix of a
++    // longer one (e.g. `st1` vs `st12`) cannot consume part of the longer token
++    const splitClassNames = classNames
++      .split(' ')
++      .filter(Boolean)
++      .sort((a, b) => b.length - a.length);
++    for (let i = 0; i < splitClassNames.length; i++) {
+       matcher = new RegExp('\\.' + splitClassNames[i] + azAz, 'i');
+       selector = selector.replace(matcher, '');
+     }
+diff --git a/src/parser/svgTreeRead.ts b/src/parser/svgTreeRead.ts
+index cf012ef..4b801cc 100644
+--- a/src/parser/svgTreeRead.ts
++++ b/src/parser/svgTreeRead.ts
+@@ -12,7 +12,7 @@ import type { FabricObject } from '../shapes/Object/FabricObject';
+ import { Point } from '../Point';
+ import { CENTER, FILL, STROKE } from '../constants';
+ import { getGradientDefs } from './getGradientDefs';
+-import { collectSheetRules } from './collectSheetRules';
++import { getCSSRules } from './getCSSRules';
+ import type { LoadImageOptions } from '../util';
+ import type { CSSRules, TSvgReviverCallback } from './typedefs';
+ import type { ParsedViewboxTransform } from './applyViewboxTransform';
+@@ -60,7 +60,7 @@ export class ElementsParser {
+     this.doc = doc;
+     this.clipPaths = clipPaths;
+     this.gradientDefs = getGradientDefs(doc);
+-    this.cssRules = collectSheetRules(doc);
++    this.cssRules = getCSSRules(doc);
+   }
+ 
+   parse(): Promise<Array<FabricObject | null>> {

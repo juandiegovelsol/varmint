@@ -1,0 +1,430 @@
+diff --git a/jest.config.js b/jest.config.js
+new file mode 100644
+index 0000000..172ded9
+--- /dev/null
++++ b/jest.config.js
+@@ -0,0 +1,41 @@
++/**
++ * Jest configuration — synthetic test only, added by test.patch.
++ * Not used in production builds (vue-cli-service is the build tool).
++ *
++ * Stack: jest@27 + custom vue-script-transformer + babel-jest + jsdom
++ *
++ * Key choices:
++ *  - moduleFileExtensions: must include 'vue' so @/foo/Bar resolves to Bar.vue
++ *    when no explicit extension is given (jest's default list omits 'vue').
++ *  - Custom .vue transformer: extracts <script> + compiles <template> to a
++ *    render function via vue-template-compiler (already in node_modules).
++ *    Avoids the vue-jest@4/jest@27 getCacheKey API incompatibility.
++ *  - moduleNameMapper: maps @/ to <rootDir>/src/ (matching webpack alias).
++ *  - transformIgnorePatterns: only exclude node_modules, so /javascripts/
++ *    is transformed by babel-jest (wordShift.js uses ES module syntax).
++ *  - testMatch: scoped to exactly the synthetic reactivity spec.
++ */
++module.exports = {
++  testEnvironment: "jsdom",
++  // 'vue' must appear here or @/components/CustomizeableTooltip won't resolve to .vue
++  moduleFileExtensions: ["js", "jsx", "json", "vue"],
++  transform: {
++    "^.+\\.vue$":
++      "<rootDir>/src/components/tabs/celestial-pelle/__tests__/vue-script-transformer.js",
++    "^.+\\.js$": [
++      "babel-jest",
++      {
++        presets: [["@babel/preset-env", { targets: { node: "current" } }]],
++        configFile: false,
++        babelrc: false,
++      },
++    ],
++  },
++  moduleNameMapper: {
++    "^@/(.*)$": "<rootDir>/src/$1",
++  },
++  transformIgnorePatterns: ["/node_modules/"],
++  testMatch: [
++    "**/src/components/tabs/celestial-pelle/__tests__/PelleRiftBar.reactivity.spec.js",
++  ],
++};
+diff --git a/src/components/tabs/celestial-pelle/__tests__/PelleRiftBar.reactivity.spec.js b/src/components/tabs/celestial-pelle/__tests__/PelleRiftBar.reactivity.spec.js
+new file mode 100644
+index 0000000..5c0e00e
+--- /dev/null
++++ b/src/components/tabs/celestial-pelle/__tests__/PelleRiftBar.reactivity.spec.js
+@@ -0,0 +1,300 @@
++/**
++ * Synthetic behavioral tests for PelleRiftBar.vue — the bar stops keeping up.
++ *
++ * BUG (base commit b07bff4e):
++ *   Every milestone-derived thing this component draws comes from a source Vue cannot
++ *   track, so nothing invalidates the render and the whole bar freezes:
++ *     - the tooltip description is a getter that re-runs a word-cycling function;
++ *     - the tooltip resource line calls percentageToFill() on the rift config;
++ *     - the tooltip highlight comes from a computed reading the milestone's
++ *       canBeApplied — a PROTOTYPE getter on the game-state class, which Vue's
++ *       observer never converts (it only walks own enumerable properties), so that
++ *       computed's cache is never invalidated;
++ *     - the markers along the bar read the same canBeApplied in the parent template.
++ *   On top of that the tooltip body is a v-slot template handed to CustomizeableTooltip,
++ *   which Vue 2.6 compiles as a STABLE scoped slot: it re-renders only when a reactive
++ *   value read INSIDE it changes, so a parent-level $forceUpdate() does not reach it.
++ *
++ * These tests are implementation-agnostic. They mount the real component together with
++ * the real CustomizeableTooltip (both SFC templates compiled by
++ * vue-script-transformer.js), drive the game tick by calling vm.update() exactly as
++ * GameUI does, drive hovering through the component's own mousemove handler, and assert
++ * only RENDERED output. No property, function or file name is asserted anywhere, and
++ * the appearance checks compare rendered markup rather than any particular colour,
++ * class or style property — so a reactive data cache under any name, computed
++ * properties keyed off a tick counter, a watcher, or a fix living in the tooltip
++ * component all pass equally.
++ */
++
++import Vue from "vue";
++import PelleRiftBar from "../PelleRiftBar.vue";
++
++Vue.config.productionTip = false;
++Vue.config.devtools = false;
++
++// Template uses the whitelisted global Math with AD's custom clampMax.
++Math.clampMax = (value, max) => Math.min(value, max);
++
++// Globals the component reads (created() / update() / methods).
++const themeStub = { isDark: () => false };
++global.Themes = { find: () => themeStub };
++global.player = { options: { theme: "S0" } };
++global.Pelle = { hasGalaxyGenerator: false };
++global.PelleRifts = {
++  chaos: { milestones: [{ canBeApplied: false }] },
++  decay: { name: ["Decay"] },
++};
++const formatPercents = (value, places = 1) =>
++  `${(value * 100).toFixed(places)}%`;
++const format = value => String(value);
++global.formatPercents = formatPercents;
++global.format = format;
++
++// 1rem = 10px, so the component's rem-based hover maths is predictable in jsdom.
++const REM_PX = 10;
++// The bar is 31.6rem wide inside its border — the same figure the component uses to
++// turn a milestone's requirement into a horizontal offset.
++const BAR_REM = 31.6;
++
++// The backing game state is held OUTSIDE the milestone objects, in a WeakMap. That
++// matters: Vue observes the rift prop deeply, so anything stored as an own enumerable
++// property of a milestone would be turned reactive by the observer and would then
++// re-render the component by itself — which would stop these tests discriminating.
++// In the real game the state likewise lives outside the component, in the player save.
++const backingState = new WeakMap();
++
++/**
++ * Mirrors RiftMilestoneState: `description` and `canBeApplied` are PROTOTYPE getters
++ * over live game state, so Vue's observer cannot turn either into a dependency —
++ * exactly the situation the component has to cope with.
++ */
++class FixtureMilestone {
++  constructor(state, requirement, wordKey, reachedKey) {
++    this.requirement = requirement;
++    backingState.set(this, { state, wordKey, reachedKey });
++  }
++
++  get description() {
++    const { state, wordKey } = backingState.get(this);
++    return `${state[wordKey]} also affects EP gain`;
++  }
++
++  get canBeApplied() {
++    const { state, reachedKey } = backingState.get(this);
++    return state[reachedKey];
++  }
++}
++
++function buildFixtures() {
++  const state = {
++    cycleWord: "AAAA",
++    secondWord: "SECOND",
++    fillSource: "SourceA",
++    reachedFirst: false,
++    reachedSecond: false,
++  };
++  const milestones = [
++    new FixtureMilestone(state, 0.25, "cycleWord", "reachedFirst"),
++    new FixtureMilestone(state, 0.75, "secondWord", "reachedSecond"),
++  ];
++  const rift = {
++    id: 1,
++    isActive: false,
++    isMaxed: false,
++    percentage: 0.4,
++    reducedTo: 1,
++    effects: [],
++    milestones,
++    config: {
++      key: "vacuum",
++      // Non-reactive dynamic source for the resource line of the tooltip.
++      percentageToFill: () => state.fillSource,
++    },
++    drainResource: "Fake Resource",
++    toggle: () => {},
++  };
++  return { state, rift };
++}
++
++// The real CustomizeableTooltip is used, exactly as the component under test imports
++// it: it renders its tooltipContent slot into the DOM, so the tooltip can be asserted
++// without stubbing anything. Keeping it real means a fix that lives in the tooltip
++// component rather than in the bar is observed too.
++function mountBar(rift) {
++  document.documentElement.style.fontSize = `${REM_PX}px`;
++  const Ctor = Vue.extend(PelleRiftBar);
++  const vm = new Ctor({
++    propsData: { rift },
++    methods: { formatPercents, format },
++  });
++  vm.$mount();
++  return vm;
++}
++
++async function gameTick(vm) {
++  vm.update();
++  await vm.$nextTick();
++}
++
++/**
++ * The tooltip element, picked structurally rather than by class name: the shallowest
++ * element that contains the tooltip's description but NOT the bar's own percentage
++ * readout. That is the tooltip container however it happens to be built.
++ */
++function tooltipElement(vm) {
++  return (
++    Array.from(vm.$el.querySelectorAll("*")).find(
++      node =>
++        node.textContent.includes("also affects EP gain") &&
++        !node.textContent.includes("(Idle)")
++    ) || null
++  );
++}
++
++// Rendered markup of the tooltip only.
++function tooltipMarkup(vm) {
++  const el = tooltipElement(vm);
++  return el ? el.outerHTML : "";
++}
++
++// Rendered markup of everything EXCEPT the tooltip — i.e. the bar itself and the
++// markers along it. Comparing this isolates the bar from the tooltip without naming
++// any class, so however the markers express "reached" it shows up here.
++function barMarkupWithoutTooltip(vm) {
++  const tip = tooltipMarkup(vm);
++  const all = vm.$el.innerHTML;
++  return tip ? all.replace(tip, "") : all;
++}
++
++// Hover the bar over the given milestone, through the component's own mousemove
++// handler — the same entry point a real pointer goes through.
++async function hoverMilestone(vm, milestone) {
++  vm.$el.dispatchEvent(
++    new MouseEvent("mousemove", {
++      clientX: milestone.requirement * BAR_REM * REM_PX,
++      bubbles: true,
++    })
++  );
++  await vm.$nextTick();
++}
++
++afterEach(() => {
++  // fresh component per test; nothing shared beyond the globals above
++});
++
++test("PelleRiftBar_renders_percentage_readout", async () => {
++  const { rift } = buildFixtures();
++  const vm = mountBar(rift);
++  await gameTick(vm);
++  expect(vm.$el.textContent).toContain("40.0");
++  vm.$destroy();
++});
++
++test("PelleRiftBar_tooltip_shows_milestone_description_after_tick", async () => {
++  const { rift } = buildFixtures();
++  const vm = mountBar(rift);
++  await gameTick(vm);
++  expect(vm.$el.textContent).toContain("AAAA also affects EP gain");
++  vm.$destroy();
++});
++
++test("PelleRiftBar_tooltip_element_is_not_rebuilt_each_tick", async () => {
++  const { rift } = buildFixtures();
++  const vm = mountBar(rift);
++  await gameTick(vm);
++
++  // Keeping the display current must not mean throwing the tooltip away and building
++  // a new one every tick — that would tear down whatever the pointer is interacting
++  // with. The same element has to survive across ticks.
++  const element = tooltipElement(vm);
++  expect(element).not.toBeNull();
++  await gameTick(vm);
++  await gameTick(vm);
++
++  expect(tooltipElement(vm)).toBe(element);
++  vm.$destroy();
++});
++
++test("PelleRiftBar_tooltip_follows_newly_hovered_milestone_without_tick", async () => {
++  const { rift } = buildFixtures();
++  const vm = mountBar(rift);
++  await gameTick(vm);
++  expect(vm.$el.textContent).toContain("AAAA also affects EP gain");
++
++  // Move straight onto the other milestone. No game tick in between: the tooltip must
++  // describe the milestone actually under the cursor, not the previous one.
++  await hoverMilestone(vm, rift.milestones[1]);
++
++  expect(vm.$el.textContent).toContain("SECOND also affects EP gain");
++  expect(vm.$el.textContent).not.toContain("AAAA also affects EP gain");
++  vm.$destroy();
++});
++
++test("PelleRiftBar_tooltip_description_tracks_cycling_word_across_ticks", async () => {
++  const { state, rift } = buildFixtures();
++  const vm = mountBar(rift);
++  await gameTick(vm);
++  expect(vm.$el.textContent).toContain("AAAA also affects EP gain");
++
++  // The word cycles (time passes in the game); no Vue reactive data changed.
++  state.cycleWord = "BBBB";
++  await gameTick(vm);
++
++  expect(vm.$el.textContent).toContain("BBBB also affects EP gain");
++  expect(vm.$el.textContent).not.toContain("AAAA also affects EP gain");
++  vm.$destroy();
++});
++
++test("PelleRiftBar_tooltip_resource_text_tracks_drain_source_across_ticks", async () => {
++  const { state, rift } = buildFixtures();
++  const vm = mountBar(rift);
++  await gameTick(vm);
++  expect(vm.$el.textContent).toContain("SourceA");
++
++  state.fillSource = "SourceB";
++  await gameTick(vm);
++
++  expect(vm.$el.textContent).toContain("SourceB");
++  expect(vm.$el.textContent).not.toContain("SourceA");
++  vm.$destroy();
++});
++
++test("PelleRiftBar_tooltip_highlight_tracks_milestone_unlock_across_ticks", async () => {
++  const { state, rift } = buildFixtures();
++  const vm = mountBar(rift);
++  await gameTick(vm);
++
++  // Both tooltip lines are held constant here, so the only thing that can change the
++  // tooltip's markup is its own highlight reacting to this milestone being reached.
++  const before = tooltipMarkup(vm);
++  expect(before).not.toBe("");
++
++  // The hovered milestone is reached while the tooltip is open. canBeApplied is a
++  // prototype getter over game state, so no Vue dependency changes.
++  state.reachedFirst = true;
++  await gameTick(vm);
++
++  expect(vm.$el.textContent).toContain("AAAA also affects EP gain");
++  expect(tooltipMarkup(vm)).not.toBe(before);
++  vm.$destroy();
++});
++
++test("PelleRiftBar_bar_markers_track_milestone_unlock_across_ticks", async () => {
++  const { state, rift } = buildFixtures();
++  const vm = mountBar(rift);
++  await gameTick(vm);
++
++  const beforeBar = barMarkupWithoutTooltip(vm);
++  const beforeTooltip = tooltipMarkup(vm);
++
++  // A milestone the pointer is NOT on gets reached. The bar's own marker for it has to
++  // pick that up; the tooltip, which still describes the first milestone, must not
++  // change. This is the same untracked getter as the highlight, read in a different
++  // place — a fix that only refreshes the hovered milestone leaves it stale.
++  state.reachedSecond = true;
++  await gameTick(vm);
++
++  expect(barMarkupWithoutTooltip(vm)).not.toBe(beforeBar);
++  expect(tooltipMarkup(vm)).toBe(beforeTooltip);
++  vm.$destroy();
++});
+diff --git a/src/components/tabs/celestial-pelle/__tests__/vue-script-transformer.js b/src/components/tabs/celestial-pelle/__tests__/vue-script-transformer.js
+new file mode 100644
+index 0000000..29a85a0
+--- /dev/null
++++ b/src/components/tabs/celestial-pelle/__tests__/vue-script-transformer.js
+@@ -0,0 +1,71 @@
++/**
++ * Minimal Vue SFC transformer for jest@27.
++ * - Parses the SFC with vue-template-compiler's parseComponent (handles nested
++ *   <template> blocks correctly, e.g. named slots).
++ * - Transpiles the <script> block via @babel/core (already in devDeps).
++ * - Compiles the <template> block to render/staticRenderFns and attaches them
++ *   to the exported component options, so components can be truly mounted in
++ *   jsdom and their rendered output asserted (behavioral testing).
++ * Avoids the vue-jest@4/jest@27 getCacheKey API incompatibility.
++ */
++"use strict";
++
++const babel = require("@babel/core");
++const crypto = require("crypto");
++const compiler = require("vue-template-compiler");
++
++const CACHE_SALT = "v3-template-newfn";
++
++module.exports = {
++  process(sourceText, sourcePath) {
++    const parsed = compiler.parseComponent(sourceText, { pad: false });
++    const scriptContent =
++      parsed.script && parsed.script.content
++        ? parsed.script.content.trim()
++        : "export default {}";
++
++    const result = babel.transformSync(scriptContent, {
++      filename: sourcePath.replace(/\.vue$/, ".js"),
++      presets: [
++        ["@babel/preset-env", { targets: { node: "current" }, modules: "commonjs" }],
++      ],
++      configFile: false,
++      babelrc: false,
++    });
++
++    let code = result ? result.code : scriptContent;
++
++    if (parsed.template && parsed.template.content) {
++      const compiled = compiler.compile(parsed.template.content, {
++        whitespace: "condense",
++      });
++      if (!compiled.errors || compiled.errors.length === 0) {
++        // Render code uses with(this){...}; forbidden in strict mode (babel
++        // emits "use strict"). new Function bodies are sloppy-mode, so build
++        // the render functions at runtime from the compiled source strings.
++        const staticFns = compiled.staticRenderFns
++          .map(fn => `new Function(${JSON.stringify(fn)})`)
++          .join(",");
++        code +=
++          "\n;(function () {" +
++          "var __opts = module.exports && module.exports.__esModule" +
++          " ? module.exports.default : module.exports;" +
++          "if (__opts) {" +
++          `__opts.render = new Function(${JSON.stringify(compiled.render)});` +
++          `__opts.staticRenderFns = [${staticFns}];` +
++          "__opts._compiled = true;" +
++          "}" +
++          "})();";
++      }
++    }
++
++    return { code };
++  },
++
++  getCacheKey(sourceText, sourcePath) {
++    return crypto
++      .createHash("md5")
++      .update(CACHE_SALT + "|" + sourceText + "|" + sourcePath)
++      .digest("hex");
++  },
++};

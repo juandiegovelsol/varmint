@@ -1,0 +1,44 @@
+version = "1.0"
+
+[metadata]
+task_id = "recharts__recharts-6814-mm"
+title = "Pie chart sectors shift unexpectedly when minAngle is set"
+repository_name = "recharts/recharts"
+repo_url = "https://github.com/recharts/recharts"
+issue_number = 6814
+pr_number = 7097
+base_commit = "92064250666c820551c3e3a52a5b852aca662066"
+fix_commit = "f67fbddc213aa1b268112b4ab214ff606dff0d3f"
+task_type = "data_viz_correctness"
+language = "TypeScript"
+framework = "React / recharts"
+cross_file = false
+visual_essentiality = "helpful"
+difficulty = "medium"
+difficulty_explanation = "The fix is non-trivial because it requires modifying the angle redistribution logic inside computePieSectors to conditionally apply minAngle only when at least one sector's natural angle falls below the threshold. The guard must correctly handle edge cases like exact equality and zero values, and preserve the existing redistribution behavior for all other cases. The screenshot helps confirm the visual misalignment, but the issue can be diagnosed from the textual description alone."
+files_edited = ["src/polar/Pie.tsx"]
+f2p = [
+  "minAngle does not shift segments when all are already above the threshold",
+  "minAngle does not redistribute when a segment equals the threshold exactly",
+  "minAngle does not redistribute in a partial pie when all segments are above threshold"
+]
+p2p = [
+  "Renders 6 sectors circles in simple PieChart",
+  "minAngle still redistributes sectors that fall below the threshold"
+]
+tags = ["multimodal", "data_viz_correctness", "recharts"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "no-network"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "checks": {
+        "behavior_in_task_description": {
+          "explanation": "instruction.md describes the symptom (a Test bonus effect is silently inert), scopes the required fix generally ('whatever fixes it needs to apply automatically wherever this shows up ... not just for this one example') and states the two invariants the tests actually check (don't disturb other config on the same effect; don't interfere with how the system migrates other older content). The precise mechanism (legacy `data.modifiers` key vs. `data.pool`, the whitelist-of-three-fields reasoning) is deliberately withheld from the prose and must be derived from the screenshot plus the current TestData schema in the repo, which is the intended difficulty per task.toml's difficulty_explanation. Since that information is legitimately recoverable from materials the agent has access to (image + checked-out source), rather than being unknowable, the instruction adequately frames what is being tested.",
+          "outcome": "pass"
+        },
+        "behavior_in_tests": {
+          "explanation": "The instruction's requirements are all exercised: 'applies wherever this shows up, not just this example' is covered by unrecognized_legacy_key_on_test_effect_also_migrates_to_pool and the matrix test; 'without disturbing anything else configured on the same effect' is covered by migration_preserves_sibling_changes_and_effect_identity and unrelated_change_key_on_test_effect_is_left_alone; 'without interfering with how the system brings other older content up to date' is covered by older_effect_still_receives_pre_existing_version_migrations. No described behavior is left untested.",
+          "outcome": "pass"
+        },
+        "informative_test_structure": {
+          "explanation": "test_migrator_test_modifier_key.mjs is organized into clearly labeled sections (Paths, foundry.utils helpers, generic auto-stub, FoundryVTT globals, TypeScript loading, Fixtures, Report, Utilities) and every individual test case is preceded by a comment tagged [f2p]/[p2p] explaining exactly what behavior it guards against and why. verifier.py and test.sh are also well-commented, explaining the reward policy and matching strategy.",
+          "outcome": "pass"
+        },
+        "anti_cheating_measures": {
+          "explanation": ".git history is stripped and reinitialized to a single 'base' commit in the Dockerfile so the agent cannot inspect the fix commit or PR; tests/ and solution/ are not copied into the image; the agent runs with network_mode='no-network' so it cannot fetch the (still-reachable-by-SHA) fix commit from GitHub; the test harness never greps candidate source for fix-specific symbol names (e.g. 'Version0_33_1'), instead driving the pre-existing public Migrator.migrate() entry point and asserting on mutated fixture data, so a differently-shaped correct fix still passes.",
+          "outcome": "pass"
+        },
+        "structured_data_schema": {
+          "explanation": "This is a source-code bug-fix task (modifying TypeScript migration logic), not a task that requires the agent to emit structured output like JSON/CSV/API responses, so a documented output schema is not relevant.",
+          "outcome": "not_applicable"
+        },
+        "pinned_dependencies": {
+          "explanation": "The Dockerfile pins a specific base image (node:22-bookworm) and installs npm dependencies via the repo's own package.json/lockfile (npm install), so the TypeScript compiler version used by the verifier is pinned by that lockfile rather than floating. apt packages (git, ca-certificates, curl) are unpinned, which is acceptable per the guidance that apt packages generally need not be pinned. No additional unpinned test-only packages are introduced.",
+          "outcome": "pass"
+        },
+        "typos": {
+          "explanation": "Cross-checked file paths and identifiers across task.toml, tests/config.json, tests/test.patch, tests/test.sh, tests/verifier.py, and the Dockerfile/ASSET_MANIFEST.json — the f2p/p2p test name lists, the test file path (tests/test_migrator_test_modifier_key.mjs), and the asset path (/app/.harbor_assets/bug_screenshot_1.png) are all consistent with no misspellings found.",
+          "outcome": "pass"
+        },
+        "tests_or_solution_in_image": {
+          "explanation": "The Dockerfile only copies environment/assets/ into the image (as /app/.harbor_assets/); it explicitly comments that tests/ and solution/ are intentionally not copied and are supplied by the harness at verify time.",
+          "outcome": "pass"
+        },
+        "test_deps_in_image": {
+          "explanation": "test.sh explicitly states nothing is installed during verification ('the verify run is offline') and only checks that the TypeScript compiler already present in /app/node_modules (installed via the repo's own npm install in the Dockerfile, as a pre-existing repo dependency, not a task-specific test dependency) is available. No test-only package is baked into the image beyond what the repository itself already requires.",
+          "outcome": "pass"
+        },
+        "hardcoded_solution": {
+          "explanation": "solution/solve.sh applies solution/fix.patch via git apply/patch, which is a genuine source diff adding a new Version0_33_1 migration class and registering it in Migrator.ts — it performs the actual code change an engineer would make rather than printing/echoing a final answer value.",
+          "outcome": "pass"
+        },
+        "file_reference_mentioned": {
+          "explanation": "This task requires fixing existing source files within the cloned repository (discovered via investigation, per files_edited in task.toml) rather than producing new named output artifacts (like output.csv) that tests check for, so there is no output filename that instruction.md would need to reference.",
+          "outcome": "not_applicable"
+        }
+      },
+      "cost_usd": 0.397992,
+      "task_name": "Tasks",
+      "error": null
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "schema": "rubrics.schema/v1",
+  "task": "ihhub__fheroes2-4924-mm",
+  "description": "The f2p tests only sample a small number of fixed points. For the click-handling defect, the test proves the deprecated row-level right-click handler stays quiet at one sample point; it never checks that each icon column keeps its OWN tooltip, that the map-name area still surfaces the file-location/map-type popup, or that unrelated sibling tooltips survive. A submission could pass that test by disabling the popup everywhere instead of correctly re-scoping it. For the layout defect, the test checks one draw call at two coordinate pairs; a submission could pass by special-casing those exact inputs instead of fixing the underlying constant.",
+  "criteria": [
+    {
+      "id": "icon_columns_show_own_tooltip",
+      "criterion": "In src/fheroes2/dialog/dialog_selectscenario.cpp, right-clicking any of the five icon columns in a scenario-list row (players count, map size, map type, victory condition, loss condition) shows only that icon's own tooltip, achieved via click-rect scoping, coordinate checks, or handler-priority ordering."
+    },
+    {
+      "id": "map_name_area_shows_location_popup",
+      "criterion": "In src/fheroes2/dialog/dialog_selectscenario.cpp, right-clicking the map-name text portion of a scenario-list row shows the map's file-location/map-type popup, with that area's click-rect scoped to just the name-text region, separate from the five icon columns."
+    },
+    {
+      "id": "sibling_detail_panel_tooltips_unaffected",
+      "criterion": "In src/fheroes2/dialog/dialog_selectscenario.cpp, right-clicking the currently-selected map's difficulty area, description area, victory-condition icon, or loss-condition icon in the details panel below the list continues to show each area's own existing tooltip, unaffected by the icon-column fix applied to the list rows above."
+    },
+    {
+      "id": "difficulty_label_offset_is_a_general_constant",
+      "criterion": "In src/fheroes2/dialog/dialog_selectscenario.cpp, ScenarioListBox::RedrawBackground positions the \"Map difficulty:\" label using a single offset applied uniformly regardless of the panel's origin, with no conditional logic that branches on the specific dst value passed in (i.e. no special-casing of particular coordinates)."
+    }
+  ]
+}

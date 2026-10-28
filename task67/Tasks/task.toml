@@ -1,0 +1,48 @@
+version = "1.0"
+
+[metadata]
+task_id = "ihhub__fheroes2-4924-mm"
+title = "Scenario selection window, icons areas are no longer accessible"
+repository_name = "ihhub/fheroes2"
+repo_url = "https://github.com/ihhub/fheroes2"
+issue_number = 4924
+pr_number = 4929
+base_commit = "8ece9d7007c714b749953ab5cd765a271912b06f"
+fix_commit = "99fa793223b35c0ee6b0d93135b53ddf95d2ea2f"
+task_type = "visual_bug_fix"
+language = "C++"
+framework = "SDL2"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = """The screenshots are essential to confirm which popup appears wrongly and which sub-regions of the scenario list are affected. The fix requires understanding the event-handling architecture of the scenario selection dialog: how right-click events are dispatched across the listbox and its parent dialog, how click regions are defined and ordered for each column, and why the current handler intercepts clicks meant for icon columns. The developer must read the rendering code to determine the pixel geometry of each column, separate the map-name column from the icon columns, and restructure the event priority. Two source files must be modified cross-file. The column geometry must be derived from the layout code. Beyond the click-handling defect, one of the detail-panel layout constants used to position rendered text no longer matches what the screenshots show; it has no matching value or formula anywhere else in the file, so it can only be corrected by measuring the reference layout in the screenshots and is easy to miss while focused on the click-handling fix."""
+files_edited = [
+  "src/fheroes2/dialog/dialog_selectscenario.cpp",
+  "src/fheroes2/dialog/dialog_selectscenario.h"
+]
+f2p = [
+  "ScenarioListBox.IconAreaRightClickDoesNotShowPopup",
+  "ScenarioListBox.DifficultyLabelAlignsWithPanelEdge",
+]
+p2p = []
+tags = ["multimodal", "visual_bug_fix", "SDL2", "C++", "event-handling", "UI", "regression"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"
+
+[verifier.env]
+EVAL_API_KEY = "${OPENAI_API_KEY}"
+EVAL_BASE_URL = "${OPENAI_API_BASE}"
+EVAL_MODEL = "${EVAL_MODEL:-anthropic/claude-opus-4-5-20251101}"

@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="13" time="11.083" timestamp="2026-08-13T20:42:49.091170+00:00" hostname="c2f94dd65a15"><testcase classname="tests.tickets.base.test_event_team_listing" name="test_each_concerned_team_is_listed_once_palette_alpha" time="3.496" /><testcase classname="tests.tickets.base.test_event_team_listing" name="test_each_concerned_team_is_listed_once_palette_bravo" time="0.157" /><testcase classname="tests.tickets.base.test_event_team_listing" name="test_number_of_listed_teams_matches_number_of_concerned_teams" time="0.101" /><testcase classname="tests.tickets.base.test_event_team_listing" name="test_stale_event_limits_on_an_all_events_team_do_not_multiply_it" time="0.270" /><testcase classname="tests.tickets.base.test_event_team_listing" name="test_event_dashboard_panel_names_each_team_once" time="5.729"><failure message="assert {31, 32} &gt;= {31, 32, 33}&#10;  &#10;  Extra items in the right set:&#10;  33">rf = &lt;django.test.client.RequestFactory object at 0x7f81b38b7c80&gt;
+
+    @pytest.mark.django_db
+    def test_event_dashboard_panel_names_each_team_once(rf):
+        """The organizer panel of the event dashboard must not repeat a team name."""
+        from django.contrib.messages.storage.fallback import FallbackStorage
+        from django.contrib.sessions.backends.db import SessionStore
+    
+        from eventyay.eventyay_common.views.dashboards import EventIndexView
+    
+        with scopes_disabled():
+            world = build_world(PALETTE_ALPHA)
+            event = reload_event(world['target'])
+            user = User.objects.create_user(
+                email=PALETTE_ALPHA['member_email'],
+                password='n0t-a-real-password',
+                fullname='Nadia Alpher',
+                locale='en',
+            )
+            world['global_team'].members.add(user)
+    
+            request = rf.get('/')
+            request.session = SessionStore()
+            request.session.create()
+            request._messages = FallbackStorage(request)
+            request.user = user
+            request.organizer = world['organizer']
+            request.event = event
+    
+            view = EventIndexView()
+            view.request = request
+            view.args = ()
+            view.kwargs = {}
+            context = view.get_context_data()
+    
+            panel = list(context['organizer_teams'])
+            names = [name for _pk, name in panel]
+            assert sorted(names) == sorted(set(names)), f'repeated entries in the panel: {names}'
+    
+            expected = teams_that_concern(event)
+&gt;           assert {pk for pk, _name in panel} &gt;= expected
+E           assert {31, 32} &gt;= {31, 32, 33}
+E             
+E             Extra items in the right set:
+E             33
+
+tests/tickets/base/test_event_team_listing.py:319: AssertionError</failure></testcase><testcase classname="tests.tickets.base.test_event_team_listing" name="test_event_dashboard_panel_respects_event_team_scope" time="0.226"><failure message="assert 39 in {37, 38}&#10; +  where 39 = &lt;Team: Alpha Ticket Desk on Alpha Collective&gt;.pk">rf = &lt;django.test.client.RequestFactory object at 0x7f81a7edd490&gt;
+
+    @pytest.mark.django_db
+    def test_event_dashboard_panel_respects_event_team_scope(rf):
+        """The event dashboard must exclude teams scoped only to another event."""
+        from django.contrib.messages.storage.fallback import FallbackStorage
+        from django.contrib.sessions.backends.db import SessionStore
+    
+        from eventyay.eventyay_common.views.dashboards import EventIndexView
+    
+        with scopes_disabled():
+            world = build_world(PALETTE_ALPHA)
+            event = reload_event(world['target'])
+            user = User.objects.create_user(
+                email=PALETTE_ALPHA['member_email'],
+                password='n0t-a-real-password',
+                fullname='Nadia Alpher',
+                locale='en',
+            )
+            world['global_team'].members.add(user)
+    
+            request = rf.get('/')
+            request.session = SessionStore()
+            request.session.create()
+            request._messages = FallbackStorage(request)
+            request.user = user
+            request.organizer = world['organizer']
+            request.event = event
+    
+            view = EventIndexView()
+            view.request = request
+            view.args = ()
+            view.kwargs = {}
+            context = view.get_context_data()
+    
+            panel_pks = {pk for pk, _name in context['organizer_teams']}
+    
+            assert world['global_team'].pk in panel_pks
+&gt;           assert world['local_team'].pk in panel_pks
+E           assert 39 in {37, 38}
+E            +  where 39 = &lt;Team: Alpha Ticket Desk on Alpha Collective&gt;.pk
+
+tests/tickets/base/test_event_team_listing.py:357: AssertionError</failure></testcase><testcase classname="tests.tickets.base.test_event_team_listing" name="test_team_limited_to_another_event_is_not_listed" time="0.100" /><testcase classname="tests.tickets.base.test_event_team_listing" name="test_team_of_a_different_organizer_is_not_listed" time="0.159" /><testcase classname="tests.tickets.base.test_event_team_listing" name="test_event_specific_team_is_still_listed" time="0.097" /><testcase classname="tests.tickets.base.test_event_team_listing" name="test_team_scoped_to_nothing_is_not_listed" time="0.159" /><testcase classname="tests.tickets.base.test_event_team_listing" name="test_no_teams_are_listed_when_the_organizer_has_none" time="0.037" /><testcase classname="tests.tickets.base.test_event_team_listing" name="test_listed_teams_can_still_be_narrowed_by_permission" time="0.096" /><testcase classname="tests.tickets.base.test_event_team_listing" name="test_event_permissions_of_a_team_member_are_unchanged" time="0.225" /></testsuite></testsuites>

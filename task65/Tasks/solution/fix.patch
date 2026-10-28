@@ -1,0 +1,148 @@
+diff --git a/packages/utilities/src/dateTimeFormat/absolute.ts b/packages/utilities/src/dateTimeFormat/absolute.ts
+index 8ba884a..d1bc860 100644
+--- a/packages/utilities/src/dateTimeFormat/absolute.ts
++++ b/packages/utilities/src/dateTimeFormat/absolute.ts
+@@ -14,7 +14,7 @@ export function formatTime(
+   }>
+ ): string {
+   const dtf = new Intl.DateTimeFormat(options?.locale, {
+-    timeStyle: options?.style ?? 'medium',
++    timeStyle: options?.style ?? 'short',
+     timeZone: options?.timeZone,
+   });
+ 
+@@ -30,7 +30,7 @@ export function formatDate(
+   }>
+ ): string {
+   const dtf = new Intl.DateTimeFormat(options?.locale, {
+-    dateStyle: options?.style ?? 'long',
++    dateStyle: options?.style ?? 'medium',
+     timeZone: options?.timeZone,
+   });
+ 
+@@ -50,12 +50,12 @@ export function format(
+   const timeStyle =
+     options?.timeStyle ??
+     (options?.style === 'tooltip' ? 'long' : options?.style) ??
+-    'medium';
++    'short';
+ 
+   const dateStyle =
+     options?.dateStyle ??
+     (options?.style === 'tooltip' ? 'full' : options?.style) ??
+-    'long';
++    'medium';
+ 
+   const dtf = new Intl.DateTimeFormat(options?.locale, {
+     timeStyle,
+@@ -80,14 +80,14 @@ export function formatRange(
+   const timeStyle =
+     options?.timeStyle === null
+       ? undefined
+-      : (options?.timeStyle ?? options?.style ?? 'medium');
++      : (options?.timeStyle ?? options?.style ?? 'short');
+ 
+   const dateStyle =
+     options?.dateStyle === null
+       ? undefined
+-      : (options?.dateStyle ?? options?.style ?? 'long');
++      : (options?.dateStyle ?? options?.style ?? 'medium');
+ 
+-  const dtf = new Intl.DateTimeFormat(undefined, {
++  const dtf = new Intl.DateTimeFormat(options?.locale, {
+     timeStyle,
+     dateStyle,
+     timeZone: options?.timeZone,
+diff --git a/packages/utilities/src/dateTimeFormat/duration.ts b/packages/utilities/src/dateTimeFormat/duration.ts
+new file mode 100644
+index 0000000..6052df3
+--- /dev/null
++++ b/packages/utilities/src/dateTimeFormat/duration.ts
+@@ -0,0 +1,20 @@
++/**
++ * Copyright IBM Corp. 2026
++ *
++ * This source code is licensed under the Apache-2.0 license found in the
++ * LICENSE file in the root directory of this source tree.
++ */
++
++export function format(
++  duration: Partial<Record<Intl.DurationFormatUnit, number>>,
++  options?: Partial<{
++    locale: string;
++    style: Intl.DurationFormatOptions['style'];
++  }>
++) {
++  const df = new Intl.DurationFormat(options?.locale, {
++    style: options?.style ?? 'narrow',
++  });
++
++  return df.format(duration);
++}
+diff --git a/packages/utilities/src/dateTimeFormat/index.ts b/packages/utilities/src/dateTimeFormat/index.ts
+index 400bf54..a3a896f 100644
+--- a/packages/utilities/src/dateTimeFormat/index.ts
++++ b/packages/utilities/src/dateTimeFormat/index.ts
+@@ -7,8 +7,10 @@
+ 
+ import * as relative from './relative';
+ import * as absolute from './absolute';
++import * as duration from './duration';
+ 
+ export const dateTimeFormat = {
+   relative,
+   absolute,
++  duration,
+ };
+diff --git a/packages/utilities/src/dateTimeFormat/relative.ts b/packages/utilities/src/dateTimeFormat/relative.ts
+index a42b975..3c9f53b 100644
+--- a/packages/utilities/src/dateTimeFormat/relative.ts
++++ b/packages/utilities/src/dateTimeFormat/relative.ts
+@@ -13,7 +13,7 @@ export function format(
+   }>
+ ): string {
+   const rtf = new Intl.RelativeTimeFormat(options?.locale, {
+-    style: options?.style ?? 'short',
++    style: options?.style ?? 'long',
+   });
+ 
+   const d = typeof date === 'number' ? new Date(date) : date;
+@@ -27,10 +27,10 @@ export function format(
+   const months = Math.floor(weeks / 4);
+   const years = Math.floor(days / 365);
+ 
+-  if (Math.abs(seconds) < 45) {
+-    return new Intl.RelativeTimeFormat(undefined, {
++  if (Math.abs(seconds) < 60) {
++    return new Intl.RelativeTimeFormat(options?.locale, {
+       numeric: 'auto',
+-      style: options?.style ?? 'short',
++      style: options?.style ?? 'long',
+     }).format(0, 'seconds');
+   }
+ 
+diff --git a/packages/utilities/src/overflowHandler/overflowHandler.ts b/packages/utilities/src/overflowHandler/overflowHandler.ts
+index 08e9839..4ac53d1 100644
+--- a/packages/utilities/src/overflowHandler/overflowHandler.ts
++++ b/packages/utilities/src/overflowHandler/overflowHandler.ts
+@@ -96,7 +96,10 @@ export function updateOverflowHandler({
+ 
+     for (let i = 0; i < items.length; i++) {
+       const size = sizes[i];
+-      if (accumulated + size + totalFixedSize <= available) {
++      if (
++        accumulated + size + totalFixedSize <= available &&
++        (!maxVisibleItems || visibleItems.length < maxVisibleItems)
++      ) {
+         visibleItems.push(items[i]);
+         accumulated += size;
+       } else {
+@@ -116,7 +119,7 @@ export function updateOverflowHandler({
+   hiddenItems.forEach((item) => item.setAttribute('data-hidden', ''));
+ 
+   if (offset) {
+-    offset.toggleAttribute('data-hidden', hiddenItems.length !== 0);
++    offset.toggleAttribute('data-hidden', hiddenItems.length === 0);
+   }
+   onChange(visibleItems, hiddenItems);
+   return hiddenItems;

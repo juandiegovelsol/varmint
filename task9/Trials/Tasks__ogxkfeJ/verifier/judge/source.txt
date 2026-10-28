@@ -1,0 +1,51 @@
+diff --git a/packages/flutter/lib/src/material/date_picker.dart b/packages/flutter/lib/src/material/date_picker.dart
+index f3729b8..337b660 100644
+--- a/packages/flutter/lib/src/material/date_picker.dart
++++ b/packages/flutter/lib/src/material/date_picker.dart
+@@ -2855,7 +2855,7 @@ class _DayItemState extends State<_DayItem> {
+     final TextDirection textDirection = Directionality.of(context);
+     final Color highlightColor = widget.highlightColor;
+ 
+-    BoxDecoration? decoration;
++    ShapeDecoration? decoration;
+     TextStyle? itemStyle = textTheme.bodyMedium;
+ 
+     T? effectiveValue<T>(T? Function(DatePickerThemeData? theme) getProperty) {
+@@ -2893,14 +2893,18 @@ class _DayItemState extends State<_DayItem> {
+             : theme?.dayOverlayColor?.resolve(states),
+       ),
+     );
++    final OutlinedBorder dayShape = resolve<OutlinedBorder?>(
++      (DatePickerThemeData? theme) => theme?.dayShape,
++      states,
++    )!;
+ 
+     _HighlightPainter? highlightPainter;
+ 
+     if (widget.isSelectedDayStart || widget.isSelectedDayEnd) {
+-      // The selected start and end dates gets a circle background
+-      // highlight, and a contrasting text color.
++      // The selected start and end dates gets a background
++      // highlight using the day shape, and a contrasting text color.
+       itemStyle = itemStyle?.apply(color: dayForegroundColor);
+-      decoration = BoxDecoration(color: dayBackgroundColor, shape: BoxShape.circle);
++      decoration = ShapeDecoration(color: dayBackgroundColor, shape: dayShape);
+ 
+       if (widget.isRangeSelected && !widget.isOneDayRange) {
+         final _HighlightPainterStyle style = widget.isSelectedDayStart
+@@ -2925,12 +2929,11 @@ class _DayItemState extends State<_DayItem> {
+     } else if (widget.isDisabled) {
+       itemStyle = itemStyle?.apply(color: colorScheme.onSurface.withOpacity(0.38));
+     } else if (widget.isToday) {
+-      // The current day gets a different text color and a circle stroke
++      // The current day gets a different text color and a day shape stroke
+       // border.
+       itemStyle = itemStyle?.apply(color: colorScheme.primary);
+-      decoration = BoxDecoration(
+-        border: Border.all(color: colorScheme.primary),
+-        shape: BoxShape.circle,
++      decoration = ShapeDecoration(
++        shape: dayShape.copyWith(side: BorderSide(color: colorScheme.primary)),
+       );
+     }
+ 

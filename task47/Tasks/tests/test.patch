@@ -1,0 +1,669 @@
+diff --git a/app/tests/harborreviewscores4158/__init__.py b/app/tests/harborreviewscores4158/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/app/tests/harborreviewscores4158/test_review_score_validation.py b/app/tests/harborreviewscores4158/test_review_score_validation.py
+new file mode 100644
+index 0000000..0000000
+--- /dev/null
++++ b/app/tests/harborreviewscores4158/test_review_score_validation.py
+@@ -0,0 +1,660 @@
++"""Behavioural contract for the review score-category settings page.
++
++Everything is driven through real HTTP requests against the organiser
++back-office page the bug report navigates to.  The submitted payload is not
++hand-written: it is HARVESTED from the page's own rendered controls, mutated,
++and posted back, exactly as a browser would.  No module, class, function,
++attribute, template, CSS class, message text or form-field name introduced by
++any particular repair is referenced anywhere below.
++
++Two independent observation channels are used:
++
++  * what the organiser is TOLD -- a report is attached to the score row that is
++    actually wrong, and to no other row.  "Attached to the row" is measured
++    structurally: the smallest part of the page that holds that row's controls
++    and no other control, compared against the same part of a healthy render.
++  * what the database HOLDS afterwards -- a rejected submission must change
++    nothing, an accepted one must change exactly what was asked for.
++"""
++
++import datetime as dt
++import re
++
++import pytest
++from django.test import Client
++from django.utils.datastructures import MultiValueDict
++from django_scopes import scope, scopes_disabled
++
++import lxml.html
++
++from eventyay.base.models import (
++    Event,
++    Organizer,
++    ReviewScore,
++    ReviewScoreCategory,
++    Team,
++    User,
++)
++
++
++pytestmark = pytest.mark.django_db
++
++
++# ---------------------------------------------------------------------------
++# The name-lock canary.
++#
++# Every symbol, CSS class and message the upstream repair introduces is planted
++# in the FIXTURE, as ordinary user data, so all of them are already present in
++# the page on the UNREPAIRED tree.  A suite keyed on those names rather than on
++# behaviour therefore lights up before any repair exists, and is caught at once.
++# ---------------------------------------------------------------------------
++_CANARIES = (
++    'score-error-tooltip',
++    'has-error',
++    'deletable',
++    'protected_score_ids',
++    'DEFAULT_SCORE_COUNT',
++    'Please provide a numeric score.',
++    'Please provide a label for the score.',
++)
++
++_MAIN_CATEGORY = 'Overall has-error deletable'
++_SIDE_CATEGORY = 'Craft protected_score_ids DEFAULT_SCORE_COUNT'
++
++# (number, label) pairs.  Numbers avoid trailing zeroes above 9 because the page
++# strips them from the rendered initial value.
++_MAIN_SCORES = (
++    (0, 'Nope'),
++    (1, 'Perhaps'),
++    (2, 'Certainly'),
++    (3, 'score-error-tooltip'),
++    (4, 'Please provide a numeric score.'),
++)
++_SIDE_SCORES = (
++    (1, 'Rough'),
++    (2, 'Please provide a label for the score.'),
++    (5, 'Polished'),
++)
++
++
++# ---------------------------------------------------------------------------
++# Reading the page: a browser-shaped harvester, and a structural notion of
++# "what is written next to this score row".
++# ---------------------------------------------------------------------------
++
++_TOTAL = 'scores-TOTAL_FORMS'
++_SCORE_CONTROL = re.compile(r'^scores-(\d+)-(?:value|label)_(.+)$')
++_CATEGORY_NAME = re.compile(r'^scores-(\d+)-name(?:_\d+)?$')
++
++
++def _tree(html):
++    return lxml.html.fromstring(html)
++
++
++def _settings_form(doc):
++    for form in doc.iter('form'):
++        for element in form.iter('input'):
++            if element.get('name') == _TOTAL:
++                return form
++    raise AssertionError('the review settings page offered no score formset')
++
++
++def _controls(form):
++    """Every submittable control of the form, in document order."""
++    for element in form.iter():
++        if element.tag not in ('input', 'select', 'textarea'):
++            continue
++        name = element.get('name')
++        if not name or '__prefix__' in name:
++            continue
++        yield element, name
++
++
++def _collect(root):
++    """What a browser would submit for every control under ``root``."""
++    data = {}
++
++    def add(name, value):
++        data.setdefault(name, []).append(value)
++
++    for element, name in _controls(root):
++        if element.tag == 'input':
++            kind = (element.get('type') or 'text').lower()
++            if kind in ('submit', 'button', 'reset', 'image', 'file'):
++                continue
++            if kind in ('checkbox', 'radio'):
++                if element.get('checked') is not None:
++                    add(name, element.get('value') or 'on')
++            else:
++                add(name, element.get('value') or '')
++        elif element.tag == 'textarea':
++            text = element.text or ''
++            add(name, text[1:] if text.startswith('\n') else text)
++        else:
++            options = list(element.iter('option'))
++            chosen = [o for o in options if o.get('selected') is not None]
++            if not chosen and options and element.get('multiple') is None:
++                chosen = [options[0]]
++            for option in chosen:
++                value = option.get('value')
++                add(name, value if value is not None else (option.text or ''))
++    return data
++
++
++def harvest(html):
++    """The payload a browser would submit if the user pressed Save untouched."""
++    return MultiValueDict(_collect(_settings_form(_tree(html))))
++
++
++def blank_category_template(html):
++    """The markup the page's own 'add another category' button clones."""
++    for script in _tree(html).iter('script'):
++        text = script.text or ''
++        if 'scores-__prefix__-' in text:
++            return text
++    raise AssertionError('the page offers no template for a new score category')
++
++
++def control_names(html):
++    return {name for _, name in _controls(_settings_form(_tree(html)))}
++
++
++def score_control_names(html):
++    """{(category slot, score key): [control names]} for every score row shown."""
++    rows = {}
++    for _, name in _controls(_settings_form(_tree(html))):
++        match = _SCORE_CONTROL.match(name)
++        if match:
++            rows.setdefault((match.group(1), match.group(2)), []).append(name)
++    return rows
++
++
++def _enclosing_paths(path):
++    """Every enclosing part of the page, outermost first, ending with the node itself."""
++    parts = path.split('/')
++    return ['/'.join(parts[: index + 1]) for index in range(1, len(parts))]
++
++
++def row_notes(html):
++    """{(category slot, score key): words written inside that row}.
++
++    The row is found structurally: take the OUTERMOST part of the page that
++    holds this row's controls and no other control at all.  Whatever text that
++    part carries is what the page says about this row -- wherever a repair
++    chooses to put it, and whatever it chooses to call it.
++    """
++    doc = _tree(html)
++    tree = doc.getroottree()
++    every = [(tree.getpath(element), name) for element, name in _controls(_settings_form(doc))]
++
++    rows = {}
++    for path, name in every:
++        match = _SCORE_CONTROL.match(name)
++        if match:
++            rows.setdefault((match.group(1), match.group(2)), []).append(path)
++
++    notes = {}
++    for key, mine in rows.items():
++        owned = set(mine)
++        others = [path for path, _name in every if path not in owned]
++        words = set()
++        for path in mine:
++            container = path
++            for candidate in _enclosing_paths(path):
++                if not any(other.startswith(candidate + '/') for other in others):
++                    container = candidate
++                    break
++            found = tree.xpath(container)
++            if found:
++                words |= {
++                    word for word in ' '.join(found[0].itertext()).lower().split() if word
++                }
++        notes[key] = words
++    return notes
++
++
++def total_row_button_controls(html):
++    """Sum, across every score row in every category, the count of clickable
++    controls (role=button elements or <button> tags) living inside that row's
++    own exclusive container. A row's number/label inputs are never counted --
++    only sibling controls a repair might add for e.g. removing the row."""
++    doc = _tree(html)
++    tree = doc.getroottree()
++    every = [(tree.getpath(element), name) for element, name in _controls(_settings_form(doc))]
++    rows = {}
++    for path, name in every:
++        match = _SCORE_CONTROL.match(name)
++        if match:
++            rows.setdefault((match.group(1), match.group(2)), []).append(path)
++    total = 0
++    for mine in rows.values():
++        owned = set(mine)
++        others = [path for path, _name in every if path not in owned]
++        container = mine[0]
++        for candidate in _enclosing_paths(mine[0]):
++            if not any(other.startswith(candidate + '/') for other in others):
++                container = candidate
++                break
++        found = tree.xpath(container)
++        if found:
++            total += len(found[0].xpath('.//*[@role="button"] | .//button'))
++    return total
++
++
++# ---------------------------------------------------------------------------
++# Fixture
++# ---------------------------------------------------------------------------
++
++
++class Page:
++    def __init__(self, event, client, url):
++        self.event = event
++        self.client = client
++        self.url = url
++
++    # -- reading -----------------------------------------------------------
++    def show(self):
++        response = self.client.get(self.url)
++        assert response.status_code == 200, f'the settings page returned {response.status_code}'
++        return response.content.decode()
++
++    def payload(self):
++        return harvest(self.show())
++
++    def submit(self, payload):
++        return self.client.post(self.url, payload)
++
++    # -- addressing rows without knowing anybody's names -------------------
++    def slots(self, html=None):
++        """Category slot -> [(score key, number control, label control)] as shown."""
++        html = html if html is not None else self.show()
++        found = {}
++        for (slot, key), names in score_control_names(html).items():
++            number = next(n for n in names if f'-value_{key}' in n)
++            label = next(n for n in names if f'-label_{key}' in n)
++            found.setdefault(slot, []).append((key, number, label))
++        return found
++
++    def row_for(self, label_text):
++        """The (slot, key, number control, label control) of the row showing ``label_text``."""
++        payload = self.payload()
++        for slot, rows in self.slots().items():
++            for key, number, label in rows:
++                if payload.get(label) == label_text:
++                    return slot, key, number, label
++        raise AssertionError(f'no score row on the page carries the label {label_text!r}')
++
++    def category_slot(self, name_text):
++        payload = self.payload()
++        for name in payload:
++            match = _CATEGORY_NAME.match(name)
++            if match and payload.get(name) == name_text:
++                return match.group(1)
++        raise AssertionError(f'no score category on the page is named {name_text!r}')
++
++    def added_row_names(self, slot, key):
++        return (f'scores-{slot}-value_{key}', f'scores-{slot}-label_{key}')
++
++    def add_row(self, payload, slot, key, number, label):
++        """Do to the payload exactly what the page's own add button does."""
++        existing = payload.get(f'scores-{slot}-new_scores', '')
++        payload.setlist(f'scores-{slot}-new_scores', [f'{existing},{key}' if existing else key])
++        number_name, label_name = self.added_row_names(slot, key)
++        payload.setlist(number_name, [number])
++        payload.setlist(label_name, [label])
++
++    def add_category(self, payload, html=None):
++        """Do to the payload exactly what the page's own add-category button does."""
++        template = blank_category_template(html if html is not None else self.show())
++        slot = int(payload[_TOTAL])
++        clone = lxml.html.fragment_fromstring(
++            template.replace('__prefix__', str(slot)), create_parent='div'
++        )
++        for name, values in _collect(clone).items():
++            payload.setlist(name, values)
++        payload.setlist(_TOTAL, [str(slot + 1)])
++        return str(slot)
++
++    # -- reading the database ---------------------------------------------
++    def stored(self):
++        """{category name: {label: number}} as actually persisted."""
++        with scopes_disabled():
++            out = {}
++            for category in ReviewScoreCategory.objects.filter(event=self.event):
++                out[str(category.name)] = {
++                    str(score.label): float(score.value) for score in category.scores.all()
++                }
++            return out
++
++    def category_names(self):
++        with scopes_disabled():
++            return [
++                str(category.name)
++                for category in ReviewScoreCategory.objects.filter(event=self.event)
++            ]
++
++
++@pytest.fixture
++def page(db):
++    with scopes_disabled():
++        organizer = Organizer.objects.create(name='Harbor Review Org', slug='harborrev')
++        event = Event.objects.create(
++            organizer=organizer,
++            name='Harbor Review Scores Event',
++            slug='revscores',
++            date_from=dt.date(2033, 9, 1),
++            date_to=dt.date(2033, 9, 3),
++            currency='EUR',
++            locale='en',
++            locale_array='en',
++            is_public=True,
++            live=True,
++            email='orga@example.org',
++        )
++        event.build_initial_data()
++
++        # Give the review phases explicit, non-overlapping bounds so that the
++        # page round-trips them unchanged.
++        with scope(event=event):
++            phases = list(event.review_phases.all().order_by('position'))
++            boundary = dt.datetime(2033, 7, 1, 9, 0, tzinfo=dt.timezone.utc)
++            phases[0].start = dt.datetime(2033, 6, 1, 9, 0, tzinfo=dt.timezone.utc)
++            phases[0].end = boundary
++            phases[0].save()
++            for later in phases[1:]:
++                later.start = boundary
++                later.end = None
++                later.save()
++
++            main = event.score_categories.all().first()
++            main.name = _MAIN_CATEGORY
++            main.save()
++            main.scores.all().delete()
++            for number, label in _MAIN_SCORES:
++                ReviewScore.objects.create(category=main, value=number, label=label)
++
++            side = ReviewScoreCategory.objects.create(event=event, name=_SIDE_CATEGORY)
++            for number, label in _SIDE_SCORES:
++                ReviewScore.objects.create(category=side, value=number, label=label)
++
++        team = Team.objects.create(
++            organizer=organizer,
++            name='Organisers',
++            all_events=True,
++            can_create_events=True,
++            can_change_teams=True,
++            can_change_organizer_settings=True,
++            can_change_event_settings=True,
++            can_change_submissions=True,
++        )
++        user = User.objects.create_user(
++            email='backoffice@example.org',
++            password='orgapassw0rd',
++            fullname='Back Office',
++            locale='en',
++        )
++        team.members.add(user)
++
++    client = Client()
++    client.force_login(user)
++    page = Page(event, client, str(event.orga_urls.review_settings))
++
++    # The harvested payload must be a faithful copy of what the browser holds:
++    # submitting it untouched has to be accepted and change nothing.
++    before = page.stored()
++    assert page.submit(page.payload()).status_code == 302, (
++        'the page did not accept its own unmodified contents'
++    )
++    assert page.stored() == before, 'submitting the page unchanged altered the stored scores'
++    return page
++
++
++# ---------------------------------------------------------------------------
++# Shared expectations
++# ---------------------------------------------------------------------------
++
++
++def _flagged_rows(page, before_notes, html):
++    """Rows whose part of the page gained words it did not carry when healthy."""
++    chrome = set()
++    for words in before_notes.values():
++        chrome |= words
++    after = row_notes(html)
++    flagged = set()
++    for key, words in after.items():
++        baseline = before_notes.get(key)
++        extra = (words - baseline) if baseline is not None else (words - chrome)
++        if extra:
++            flagged.add(key)
++    return flagged
++
++
++def _refusal(page, mutate, expected_key):
++    """Submit a broken change; the page must refuse it and point at the row."""
++    healthy = page.show()
++    before_notes = row_notes(healthy)
++    before_stored = page.stored()
++
++    payload = harvest(healthy)
++    mutate(payload)
++    response = page.submit(payload)
++
++    assert response.status_code == 200, (
++        f'the broken submission was accepted ({response.status_code}) instead of refused'
++    )
++    assert page.stored() == before_stored, 'a refused submission still changed the stored scores'
++
++    html = response.content.decode()
++    flagged = _flagged_rows(page, before_notes, html)
++    assert expected_key in flagged, 'the page said nothing at all beside the offending score row'
++    assert flagged == {expected_key}, (
++        f'the page also complained about untouched rows: {sorted(flagged - {expected_key})}'
++    )
++    return html
++
++
++# ===========================================================================
++# The defect.
++# ===========================================================================
++
++
++def test_clearing_the_number_of_a_saved_row_is_refused_and_flagged(page):
++    slot, key, number, _label = page.row_for('Perhaps')
++
++    _refusal(page, lambda data: data.setlist(number, ['']), (slot, key))
++
++
++def test_clearing_the_label_of_a_saved_row_is_refused_and_flagged(page):
++    slot, key, _number, label = page.row_for('Certainly')
++
++    _refusal(page, lambda data: data.setlist(label, ['']), (slot, key))
++
++
++def test_clearing_the_number_in_a_second_category_is_refused_and_flagged(page):
++    slot, key, number, _label = page.row_for('Polished')
++
++    _refusal(page, lambda data: data.setlist(number, ['']), (slot, key))
++
++
++def test_added_row_without_a_number_survives_and_is_flagged(page):
++    slot = page.category_slot(_MAIN_CATEGORY)
++    key = 'new417'
++    number_name, label_name = page.added_row_names(slot, key)
++
++    html = _refusal(
++        page,
++        lambda data: page.add_row(data, slot, key, '', 'Outstanding'),
++        (slot, key),
++    )
++
++    offered = harvest(html)
++    assert offered.get(label_name) == 'Outstanding', 'the row the user added was thrown away'
++    assert offered.get(number_name) == '', 'the row the user added was thrown away'
++
++
++def test_added_row_without_a_label_survives_and_is_flagged(page):
++    slot = page.category_slot(_SIDE_CATEGORY)
++    key = 'new628'
++    number_name, label_name = page.added_row_names(slot, key)
++
++    html = _refusal(
++        page,
++        lambda data: page.add_row(data, slot, key, '7', ''),
++        (slot, key),
++    )
++
++    offered = harvest(html)
++    assert offered.get(number_name) == '7', 'the row the user added was thrown away'
++    assert offered.get(label_name) == '', 'the row the user added was thrown away'
++
++
++def test_an_empty_added_row_does_not_block_an_unrelated_edit(page):
++    slot = page.category_slot(_MAIN_CATEGORY)
++    renamed = 'Overall rethought'
++    payload = page.payload()
++    page.add_row(payload, slot, 'new930', '', '')
++    for name in list(payload):
++        match = _CATEGORY_NAME.match(name)
++        if match and match.group(1) == slot and payload.get(name) == _MAIN_CATEGORY:
++            payload.setlist(name, [renamed])
++
++    response = page.submit(payload)
++
++    assert response.status_code == 302, (
++        'an added row the user left completely blank blocked an unrelated edit'
++    )
++    assert renamed in page.category_names(), 'the unrelated edit was not stored'
++    stored = page.stored()
++    assert sorted(stored[renamed].items()) == sorted(
++        (label, float(number)) for number, label in _MAIN_SCORES
++    ), 'the blank row was stored as a score'
++
++
++def test_an_empty_added_category_is_not_stored_as_a_nameless_one(page):
++    html = page.show()
++    payload = harvest(html)
++    page.add_category(payload, html)
++
++    response = page.submit(payload)
++
++    assert response.status_code == 302, f'adding an empty category was refused ({response.status_code})'
++    names = page.category_names()
++    assert all(name.strip() for name in names), f'a nameless score category was stored: {names}'
++    assert sorted(names) == sorted([_MAIN_CATEGORY, _SIDE_CATEGORY])
++
++
++def test_a_saved_row_beyond_the_defaults_offers_a_way_to_remove_it(page):
++    assert total_row_button_controls(page.show()) > 2, (
++        'no saved score row beyond the original set offers any way to remove it'
++    )
++
++
++# ===========================================================================
++# Adjacent behaviour that must survive any repair.
++# ===========================================================================
++
++
++def test_every_stored_score_is_offered_on_the_page(page):
++    payload = page.payload()
++    shown = {}
++    for slot, rows in page.slots().items():
++        for _key, number, label in rows:
++            shown.setdefault(slot, {})[payload.get(label)] = float(payload.get(number))
++
++    expected = {label: float(number) for number, label in _MAIN_SCORES}
++    side = {label: float(number) for number, label in _SIDE_SCORES}
++    assert expected in shown.values()
++    assert side in shown.values()
++
++
++def test_editing_a_saved_row_completely_is_stored(page):
++    slot, _key, number, label = page.row_for('Nope')
++    payload = page.payload()
++    payload.setlist(number, ['6'])
++    payload.setlist(label, ['Reconsidered'])
++
++    assert page.submit(payload).status_code == 302
++
++    stored = page.stored()[_MAIN_CATEGORY]
++    assert stored.get('Reconsidered') == 6.0
++    assert 'Nope' not in stored
++
++
++def test_adding_a_complete_row_stores_it(page):
++    slot = page.category_slot(_SIDE_CATEGORY)
++    payload = page.payload()
++    page.add_row(payload, slot, 'new114', '8', 'Immaculate')
++
++    assert page.submit(payload).status_code == 302
++
++    assert page.stored()[_SIDE_CATEGORY].get('Immaculate') == 8.0
++
++
++def test_emptying_both_halves_of_a_saved_row_removes_it(page):
++    _slot, _key, number, label = page.row_for('Perhaps')
++    payload = page.payload()
++    payload.setlist(number, [''])
++    payload.setlist(label, [''])
++
++    assert page.submit(payload).status_code == 302
++
++    stored = page.stored()[_MAIN_CATEGORY]
++    assert 'Perhaps' not in stored
++    assert len(stored) == len(_MAIN_SCORES) - 1
++
++
++def test_deleting_a_category_removes_it_with_its_scores(page):
++    slot = page.category_slot(_SIDE_CATEGORY)
++    payload = page.payload()
++    payload.setlist(f'scores-{slot}-DELETE', ['on'])
++
++    assert page.submit(payload).status_code == 302
++
++    assert page.category_names() == [_MAIN_CATEGORY]
++    with scopes_disabled():
++        assert not ReviewScore.objects.filter(label__in=[label for _n, label in _SIDE_SCORES]).exists()
++
++
++def test_renaming_a_category_is_stored(page):
++    slot = page.category_slot(_SIDE_CATEGORY)
++    payload = page.payload()
++    for name in list(payload):
++        match = _CATEGORY_NAME.match(name)
++        if match and match.group(1) == slot and payload.get(name) == _SIDE_CATEGORY:
++            payload.setlist(name, ['Craftsmanship'])
++
++    assert page.submit(payload).status_code == 302
++
++    assert 'Craftsmanship' in page.category_names()
++
++
++def test_editing_one_row_leaves_the_others_alone(page):
++    _slot, _key, number, label = page.row_for('Rough')
++    payload = page.payload()
++    payload.setlist(number, ['9'])
++    payload.setlist(label, ['Unfinished'])
++
++    assert page.submit(payload).status_code == 302
++
++    stored = page.stored()
++    assert stored[_MAIN_CATEGORY] == {label: float(number) for number, label in _MAIN_SCORES}
++    assert stored[_SIDE_CATEGORY].get('Unfinished') == 9.0
++    assert stored[_SIDE_CATEGORY].get('Polished') == 5.0
++
++
++def test_a_successful_save_flags_no_row(page):
++    before_notes = row_notes(page.show())
++    _slot, _key, number, label = page.row_for('Certainly')
++    payload = page.payload()
++    payload.setlist(number, ['3.5'])
++    payload.setlist(label, ['Definitely'])
++
++    assert page.submit(payload).status_code == 302
++
++    assert _flagged_rows(page, before_notes, page.show()) == set()
++
++
++def test_entering_a_non_numeric_score_is_refused_and_flagged(page):
++    slot, key, number, _label = page.row_for('Nope')
++
++    _refusal(page, lambda data: data.setlist(number, ['\U0001F44D']), (slot, key))

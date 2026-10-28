@@ -1,0 +1,66 @@
+version = "1.0"
+
+[metadata]
+task_id = "tldraw__tldraw-8821-mm"
+title = "Following indicator border is hidden behind menus and panels"
+repository_name = "tldraw/tldraw"
+repo_url = "https://github.com/tldraw/tldraw"
+issue_number = 8821
+pr_number = 9210
+base_commit = "56c3bc3fbec3bdf48e314732a51dd22fcfdd53a5"
+fix_commit = "6421dbe4e25a481f85e70814e96aaa4bf44a4a94"
+task_type = "visual_bug_fix"
+language = "TypeScript"
+framework = "Vitest (jsdom) + @testing-library/react - full <Tldraw /> component render"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = """
+After hardening, instruction.md gives only the user-visible symptom (the colored follow border is
+painted behind the on-screen panels and is clipped at each panel's edges instead of forming one
+continuous frame) plus the screenshot. It names no file, component, CSS class, layer variable, or
+mechanism, and it carries no link back to the source project, so locating the code is now real work.
+The agent has to read the poster to recognise this as an occlusion/layering defect (the frame is
+being painted underneath the panels) and then find the follow-indicator render on its own. The fix
+is conceptually non-trivial even once found: raising the indicator's z-index cannot work, because it
+renders inside a container whose own stacking context is capped below the UI layer's, and a child's
+z-index can never escape its ancestor's stacking context. The only fix that works is relocating the
+indicator's render out of the canvas-overlay component and into the UI-layer component, placed after
+the panel groups so ordinary paint order puts it on top, and kept there in every layout including the
+minimal/focus layout where the usual panels are swapped out. The screenshot is required because, with
+the recipe stripped, it is the only evidence that this is an occlusion bug rather than an unrelated
+border-styling problem, and the only thing that shows the frame breaking precisely at the panel edges.
+"""
+files_edited = [
+  "packages/tldraw/src/lib/ui/TldrawUi.tsx",
+  "packages/tldraw/src/lib/ui.css"
+]
+f2p = [
+  "places the following indicator inside the UI layout, not the canvas-in-front overlay",
+  "renders the following indicator after the toolbar and menu panels in the UI layout",
+  "still places the following indicator inside the UI layout while in focus mode"
+]
+p2p = [
+  "still renders the rich text toolbar inside the canvas-in-front overlay",
+  "still renders the image toolbar inside the canvas-in-front overlay",
+  "still renders the video toolbar inside the canvas-in-front overlay",
+  "still renders the cursor chat bubble inside the canvas-in-front overlay",
+  "renders no following indicator when no override is supplied and nobody is being followed",
+  "renders the following indicator override exactly once"
+]
+tags = ["multimodal", "visual_bug_fix", "tldraw", "typescript", "react", "ui_component", "css", "stacking-context"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+network_mode = "public"
+timeout_sec = 2400.0
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

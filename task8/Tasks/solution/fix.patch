@@ -1,0 +1,30 @@
+diff --git a/src/textual/_arrange.py b/src/textual/_arrange.py
+index 280e57c..1e96255 100644
+--- a/src/textual/_arrange.py
++++ b/src/textual/_arrange.py
+@@ -99,8 +99,24 @@ def arrange(
+             # Perform any alignment of the widgets.
+             if styles.align_horizontal != "left" or styles.align_vertical != "top":
+                 bounding_region = WidgetPlacement.get_bounds(layout_placements)
++                container_width, container_height = dock_region.size
++                if styles.is_auto_width:
++                    min_width = styles.min_width
++                    container_width = (
++                        0
++                        if min_width is None
++                        else int(min_width.resolve(dock_region.size, viewport))
++                    )
++                if styles.is_auto_height:
++                    min_height = styles.min_height
++                    container_height = (
++                        0
++                        if min_height is None
++                        else int(min_height.resolve(dock_region.size, viewport))
++                    )
+                 placement_offset += styles._align_size(
+-                    bounding_region.size, dock_region.size
++                    bounding_region.size,
++                    Size(container_width, container_height),
+                 ).clamped
+ 
+             if placement_offset:

@@ -1,0 +1,18 @@
+diff --git a/packages/ariakit-core/src/composite/composite-store.ts b/packages/ariakit-core/src/composite/composite-store.ts
+index b802360..c170b7f 100644
+--- a/packages/ariakit-core/src/composite/composite-store.ts
++++ b/packages/ariakit-core/src/composite/composite-store.ts
+@@ -288,8 +288,11 @@ export function createCompositeStore<
+         canWrap && !hasNullItem
+           ? items
+           : getItemsInRow(items, activeItem.rowId);
+-      const sortedItems = flipItems(loopItems, activeId, hasNullItem);
+-      const nextItem = findFirstEnabledItem(sortedItems, activeId);
++      // Only loop back when there's no enabled item ahead of the active one,
++      // so most key presses don't need to flip the items.
++      const nextItem =
++        findFirstEnabledItem(nextItemsInRow, activeId) ||
++        flipItems(loopItems, activeId, hasNullItem)[0];
+       return nextItem?.id;
+     }
+ 

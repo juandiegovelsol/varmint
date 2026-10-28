@@ -1,0 +1,66 @@
+version = "1.0"
+
+[metadata]
+task_id = "IvarK__AntimatterDimensionsSourceCode-2843-mm"
+title = "Notations are not applied to some points (Cel 7 spoiler)"
+repository_name = "IvarK/AntimatterDimensionsSourceCode"
+repo_url = "https://github.com/IvarK/AntimatterDimensionsSourceCode"
+issue_number = 2843
+pr_number = 2846
+base_commit = "5b8d4296e697f3ea83a9fea5aa84eb5e4f8d4385"
+fix_commit = "4ec7fca7bbb0d8b36335b058c8751645d5db9c27"
+task_type = "visual_bug_fix"
+language = "JavaScript / Vue"
+framework = "Vue 2 (vue-cli-service)"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = """The instruction carries zero textual pointers: the title is generic ("Two panels are rendering wrong"), the body names no component, no file, no helper and no domain term, and the two screenshots are attached with non-descriptive filenames and alt text (bug_screenshot_1 / bug_screenshot_2). Every fact needed to solve the task lives inside the pixels.
+
+Four independent defects sit on the path between the two panels and the screen, and they are stacked so that fixing any subset still leaves the rendered output wrong:
+
+1. Two call sites bypass the whole-number display entirely — a template-literal interpolation in javascripts/core/celestials/celestials.js and two bare bindings in src/components/tabs/celestial-pelle/PelleTab.vue. This is the original upstream bug, and it is the only layer an agent reaches by pattern-matching "number rendered raw".
+
+2. Both panels have been reworded away from what the screenshots show ("severely lowered" -> "heavily reduced", the gamespeed/tickspeed penalties swapped, "temporarily capped" -> "permanently capped", "rarity is unaffected" -> "rarity is also reduced", the exit condition reworded; and on the Pelle side "You must have 17 rows ... to unlock Doomed." -> "You need at least 15 rows ... before Doomed unlocks.", with the required-row count itself changed from 17 to 15 and the " / " separator collapsed). There is no in-repo evidence of the correct wording or the correct row count — the screenshots are the only source, so an agent that does not read the images character by character cannot recover them. This is what makes the task strictly unsolvable without the assets.
+
+3. The shared digit-grouping regex in javascripts/core/format.js groups by four digits instead of three, so even a perfectly wrapped call site renders "2000" instead of "2,000" — exactly the symptom circled in the first screenshot. Because the defect is global, every other number in the app is equally ungrouped, so there is no in-app contrast to notice: the only way in is to read the helper and know that thousands separators group by three.
+
+4. The Blobs notation lost its "painful" marking in javascripts/core/notations.js, so the whole-number helper short-circuits it to plain arabic digits. The second screenshot was taken by a player using Blobs: the Discharge readout in the top bar renders as blob glyphs while the panel's own counts sit there as plain "16 / 17". So this defect keeps reproducing the reported symptom even after the bindings are fixed — and it only reproduces under that one notation, so an agent that verifies its fix under any other notation sees correct output and moves on. Identifying which notation to reproduce under is possible only by reading the glyphs in the screenshot; no text anywhere names it.
+
+Layers 3 and 4 are invisible to inspection of the two edited files, produce no error, and cannot be found by grepping for anything in the instruction; they only surface if the agent actually executes the display path and compares the result against the images. Layer 2 cannot be found at all except by transcribing the screenshots. The verifier also carries three p2p tests over untouched helpers in the same file, so flailing edits to format.js are penalised."""
+files_edited = [
+  "javascripts/core/celestials/celestials.js",
+  "javascripts/core/format.js",
+  "javascripts/core/notations.js",
+  "src/components/tabs/celestial-pelle/PelleTab.vue"
+]
+f2p = [
+  "Effarig effects() applies formatInt to glyphLevelCap",
+  "Effarig panel reads exactly as the reported panel does",
+  "PelleTab unlock-requirements panel formats the row counts",
+  "PelleTab completedRows binding tracks the real prop, not a hardcoded copy",
+  "Pelle unlock panel reads exactly as the reported panel does",
+  "whole numbers are grouped into thousands",
+  "whole numbers are readable in every notation the player can pick"
+]
+p2p = [
+  "pluralize handles irregular plurals",
+  "makeEnumeration joins items with an Oxford comma",
+  "isSingular only accepts one"
+]
+tags = ["multimodal", "visual_bug_fix", "vue", "vue2", "formatting", "notation", "synthetic_tests", "multi_bug", "cross_layer"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

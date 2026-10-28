@@ -1,0 +1,623 @@
+diff --git a/harbor_test_src/stubs.cpp b/harbor_test_src/stubs.cpp
+new file mode 100644
+index 000000000..8f4c09756
+--- /dev/null
++++ b/harbor_test_src/stubs.cpp
+@@ -0,0 +1,513 @@
++// stubs.cpp — minimal but correct stub implementations for all fheroes2
++// symbols needed by dialog_selectscenario.cpp.
++// Compiled with the same include paths as the fheroes2 source.
++// THE ONLY NON-TRIVIAL STUB is fheroes2::showMessage (the call counter intercept).
++
++#define SDL_MAIN_HANDLED 1
++#include "image.h"
++#include "screen.h"
++#include "timing.h"
++#include "ui_base.h"
++#include "ui_button.h"
++#include "ui_dialog.h"
++#include "ui_scrollbar.h"
++#include "ui_text.h"
++#include "ui_tool.h"
++#include "localevent.h"
++#include "translations.h"
++#include "maps_fileinfo.h"
++#include "text.h"
++#include "cursor.h"
++#include "difficulty.h"
++#include "dialog.h"
++#include "tools.h"
++#include "game.h"
++#include "color.h"
++#include "agg_image.h"
++
++#include <chrono>
++#include <cstring>
++#include <string>
++#include <functional>
++#include <vector>
++#include <memory>
++
++// -----------------------------------------------------------------------
++// Call counter — written by fheroes2::showMessage stub
++// -----------------------------------------------------------------------
++int g_showMessageCallCount = 0;
++
++// -----------------------------------------------------------------------
++// Layout-position recorder — written by the old-style ::Text::Blit stub
++// below. Tests clear this before exercising RedrawBackground, then inspect
++// the recorded (x, y) pairs to verify where the candidate's real code
++// actually draws things.
++// -----------------------------------------------------------------------
++std::vector<std::pair<int32_t, int32_t>> g_textBlitCalls;
++
++// -----------------------------------------------------------------------
++// Scriptable single right-click state, consulted by LocalEvent's stub methods
++// below and cleared by the modal-popup stubs (Dialog::Message, showMessage)
++// exactly as the real ones do -- see the LocalEvent section for why.
++// -----------------------------------------------------------------------
++int32_t g_fakeMouseX = 0;
++int32_t g_fakeMouseY = 0;
++bool g_fakeRightPressed = false;
++int g_fakeEventsRemaining = 0;
++
++// -----------------------------------------------------------------------
++// fheroes2::Image and Sprite
++// -----------------------------------------------------------------------
++namespace fheroes2 {
++
++Image::Image()
++    : _width(0), _height(0), _data(), _singleLayer(false) {}
++
++Image::Image(int32_t w, int32_t h)
++    : _width(w), _height(h), _data(), _singleLayer(false) {}
++
++Image::Image(const Image &)
++    : _width(0), _height(0), _data(), _singleLayer(false) {}
++
++Image::Image(Image &&) noexcept
++    : _width(0), _height(0), _data(), _singleLayer(false) {}
++
++Image & Image::operator=(const Image &) { return *this; }
++Image & Image::operator=(Image &&) noexcept { return *this; }
++void Image::resize(int32_t, int32_t) {}
++uint8_t *       Image::image()       { return nullptr; }
++const uint8_t * Image::image() const { return nullptr; }
++void Image::reset()  {}
++void Image::clear()  {}
++void Image::fill(uint8_t) {}
++void Image::copy(const Image &) {}
++
++Sprite::Sprite() : Image(), _x(0), _y(0) {}
++Sprite::Sprite(int32_t w, int32_t h, int32_t x, int32_t y) : Image(w,h), _x(x), _y(y) {}
++Sprite::Sprite(const Image &, int32_t x, int32_t y) : Image(), _x(x), _y(y) {}
++Sprite::Sprite(const Sprite & s) : Image(), _x(s._x), _y(s._y) {}
++Sprite::Sprite(Sprite && s) noexcept : Image(), _x(s._x), _y(s._y) {}
++Sprite & Sprite::operator=(const Sprite &) { return *this; }
++Sprite & Sprite::operator=(Sprite &&) noexcept { return *this; }
++void Sprite::setPosition(int32_t x_, int32_t y_) { _x = x_; _y = y_; }
++
++// ImageRestorer — _image is a reference member; must be initialised in list
++ImageRestorer::ImageRestorer(Image & img)
++    : _image(img), _copy(), _x(0), _y(0), _width(0), _height(0), _isRestored(false) {}
++
++ImageRestorer::ImageRestorer(Image & img, int32_t x_, int32_t y_, int32_t w, int32_t h)
++    : _image(img), _copy(), _x(x_), _y(y_), _width(w), _height(h), _isRestored(false) {}
++
++ImageRestorer::~ImageRestorer() {}
++void ImageRestorer::update(int32_t, int32_t, int32_t, int32_t) {}
++void ImageRestorer::restore() {}
++void ImageRestorer::reset() {}
++void ImageRestorer::_updateRoi() {}
++
++} // namespace fheroes2
++
++// -----------------------------------------------------------------------
++// fheroes2::Display (singleton; keeps a static Image for the ImageRestorer)
++// -----------------------------------------------------------------------
++namespace fheroes2 {
++
++Display & Display::instance()
++{
++    static Display d;
++    return d;
++}
++
++Display::Display()
++    : Image(640, 480)
++    , _engine()
++    , _cursor()
++    , _preprocessing(nullptr)
++    , _postprocessing(nullptr)
++    , _renderSurface(nullptr)
++    , _prevRoi()
++{}
++
++void Display::render() {}
++void Display::render(const Rect &) {}
++void Display::resize(int32_t, int32_t) {}
++bool Display::isDefaultSize() const { return true; }
++void Display::subscribe(PreRenderProcessing, PostRenderProcessing) {}
++uint8_t *       Display::image()       { return nullptr; }
++const uint8_t * Display::image() const { return nullptr; }
++void Display::release() {}
++void Display::changePalette(const uint8_t *) const {}
++void Display::linkRenderSurface(uint8_t *) {}
++void Display::_renderFrame(const Rect &) const {}
++
++BaseRenderEngine & engine()
++{
++    // Never actually called in our tests
++    static BaseRenderEngine * p = nullptr;
++    (void)p;
++    return *static_cast<BaseRenderEngine*>(nullptr);
++}
++
++Cursor & cursor()
++{
++    return *static_cast<Cursor*>(nullptr);
++}
++
++} // namespace fheroes2
++
++// -----------------------------------------------------------------------
++// fheroes2::ActionObject
++// -----------------------------------------------------------------------
++namespace fheroes2 {
++
++ActionObject::ActionObject() : _receiver(nullptr) {}
++void ActionObject::subscribe(ActionObject * r) { _receiver = r; }
++void ActionObject::unsubscribe() { _receiver = nullptr; }
++void ActionObject::updateSubscription() {}
++
++} // namespace fheroes2
++
++// -----------------------------------------------------------------------
++// fheroes2::Time (needed by LocalEvent's _controllerTimer member)
++// -----------------------------------------------------------------------
++namespace fheroes2 {
++    Time::Time() : _startTime(std::chrono::steady_clock::now()) {}
++    void Time::reset() { _startTime = std::chrono::steady_clock::now(); }
++    double Time::get() const { return 0.0; }
++    uint64_t Time::getMs() const { return 0; }
++} // namespace fheroes2
++
++// -----------------------------------------------------------------------
++// fheroes2::TimeDelay (needed by TimedEventValidator)
++// -----------------------------------------------------------------------
++namespace fheroes2 {
++
++TimeDelay::TimeDelay(uint64_t delayMs)
++    : _prevTime(std::chrono::steady_clock::now()), _delayMs(delayMs) {}
++
++void TimeDelay::setDelay(uint64_t d) { _delayMs = d; }
++bool TimeDelay::isPassed() const { return false; }
++bool TimeDelay::isPassed(uint64_t) const { return false; }
++void TimeDelay::reset() { _prevTime = std::chrono::steady_clock::now(); }
++void TimeDelay::pass() {}
++
++} // namespace fheroes2
++
++// -----------------------------------------------------------------------
++// fheroes2::TimedEventValidator
++// -----------------------------------------------------------------------
++namespace fheroes2 {
++
++TimedEventValidator::TimedEventValidator(std::function<bool()> fn,
++                                          uint64_t before,
++                                          uint64_t between)
++    : ActionObject()
++    , _verification(std::move(fn))
++    , _delayBetweenUpdateMs(between)
++    , _delayBeforeFirstUpdateMs(before)
++{}
++
++bool TimedEventValidator::isDelayPassed() { return false; }
++void TimedEventValidator::senderUpdate(const ActionObject *) {}
++
++} // namespace fheroes2
++
++// -----------------------------------------------------------------------
++// fheroes2::ButtonBase and Button
++// -----------------------------------------------------------------------
++namespace fheroes2 {
++
++ButtonBase::ButtonBase(int32_t x, int32_t y)
++    : ActionObject()
++    , _offsetX(x), _offsetY(y)
++    , _isPressed(false), _isEnabled(true), _isVisible(true)
++    , _releasedSprite(nullptr)
++    , _disabledSprite()
++{}
++
++ButtonBase::ButtonBase(ButtonBase && b) noexcept
++    : ActionObject()
++    , _offsetX(b._offsetX), _offsetY(b._offsetY)
++    , _isPressed(false), _isEnabled(true), _isVisible(true)
++    , _releasedSprite(nullptr)
++    , _disabledSprite()
++{}
++
++ButtonBase & ButtonBase::operator=(ButtonBase &&) noexcept { return *this; }
++
++bool ButtonBase::isEnabled()  const { return _isEnabled; }
++bool ButtonBase::isDisabled() const { return !_isEnabled; }
++bool ButtonBase::isPressed()  const { return _isPressed; }
++bool ButtonBase::isReleased() const { return !_isPressed; }
++bool ButtonBase::isVisible()  const { return _isVisible; }
++bool ButtonBase::isHidden()   const { return !_isVisible; }
++void ButtonBase::press()    { _isPressed = true; }
++void ButtonBase::release()  { _isPressed = false; }
++void ButtonBase::enable()   { _isEnabled = true; }
++void ButtonBase::disable()  { _isEnabled = false; }
++void ButtonBase::show()     { _isVisible = true; }
++void ButtonBase::hide()     { _isVisible = false; }
++void ButtonBase::setPosition(int32_t x, int32_t y) { _offsetX = x; _offsetY = y; }
++void ButtonBase::draw(Image &) const {}
++bool ButtonBase::drawOnPress(Image &)   { return false; }
++bool ButtonBase::drawOnRelease(Image &) { return false; }
++Rect ButtonBase::area() const { return Rect(); }
++void ButtonBase::_swap(ButtonBase &) {}
++const Sprite & ButtonBase::_getDisabled() const { static Sprite s; return s; }
++
++Button::Button(int32_t x, int32_t y)
++    : ButtonBase(x, y), _icnId(0), _releasedIndex(0), _pressedIndex(0) {}
++
++Button::Button(int32_t x, int32_t y, int icn, uint32_t rel, uint32_t pre)
++    : ButtonBase(x, y), _icnId(icn), _releasedIndex(rel), _pressedIndex(pre) {}
++
++void Button::setICNInfo(int icn, uint32_t rel, uint32_t pre)
++{
++    _icnId = icn; _releasedIndex = rel; _pressedIndex = pre;
++}
++
++const Sprite & Button::_getPressed()  const { static Sprite s; return s; }
++const Sprite & Button::_getReleased() const { static Sprite s; return s; }
++
++void OptionButtonGroup::senderUpdate(const ActionObject *) {}
++void OptionButtonGroup::addButton(ButtonBase *) {}
++void OptionButtonGroup::draw(Image &) const {}
++void OptionButtonGroup::subscribeAll()   {}
++void OptionButtonGroup::unsubscribeAll() {}
++
++} // namespace fheroes2
++
++// -----------------------------------------------------------------------
++// fheroes2::MovableSprite and Scrollbar
++// -----------------------------------------------------------------------
++namespace fheroes2 {
++
++MovableSprite::MovableSprite()
++    : Sprite(), _restorer(Display::instance()), _isHidden(false) {}
++
++MovableSprite::MovableSprite(int32_t w, int32_t h, int32_t x, int32_t y)
++    : Sprite(w, h, x, y), _restorer(Display::instance()), _isHidden(false) {}
++
++MovableSprite::MovableSprite(const Sprite & s)
++    : Sprite(s), _restorer(Display::instance()), _isHidden(false) {}
++
++MovableSprite & MovableSprite::operator=(const Sprite &) { return *this; }
++
++void MovableSprite::show()    { _isHidden = false; }
++void MovableSprite::hide()    { _isHidden = true;  }
++void MovableSprite::redraw()  {}
++bool MovableSprite::isHidden() const { return _isHidden; }
++void MovableSprite::setPosition(int32_t x_, int32_t y_) { Sprite::setPosition(x_, y_); }
++
++Scrollbar::Scrollbar()
++    : MovableSprite(), _area(), _minIndex(0), _maxIndex(0), _currentIndex(0) {}
++
++void Scrollbar::setImage(const Image &) {}
++void Scrollbar::setArea(const Rect & r) { _area = r; }
++void Scrollbar::setRange(int min, int max) { _minIndex = min; _maxIndex = max; }
++void Scrollbar::forward()  {}
++void Scrollbar::backward() {}
++bool Scrollbar::moveToIndex(int i) { _currentIndex = i; return true; }
++void Scrollbar::moveToPos(const Point &) {}
++
++} // namespace fheroes2
++
++// -----------------------------------------------------------------------
++// fheroes2::TextBase / Text (new) / MultiFontText
++// -----------------------------------------------------------------------
++namespace fheroes2 {
++
++TextBase::~TextBase() {}
++
++Text::Text(const std::string &, FontType) {}
++Text::~Text() {}
++int32_t Text::width()          const { return 0; }
++int32_t Text::height()         const { return 0; }
++int32_t Text::height(int32_t)  const { return 0; }
++int32_t Text::rows(int32_t)    const { return 0; }
++void    Text::draw(int32_t,int32_t,Image&)         const {}
++void    Text::draw(int32_t,int32_t,int32_t,Image&) const {}
++bool    Text::empty() const { return true; }
++void    Text::set(const std::string&, FontType) {}
++
++MultiFontText::~MultiFontText() {}
++void    MultiFontText::add(const fheroes2::Text &)  {}
++void    MultiFontText::add(const fheroes2::Text &&)  {}
++int32_t MultiFontText::width()          const { return 0; }
++int32_t MultiFontText::height()         const { return 0; }
++int32_t MultiFontText::height(int32_t)  const { return 0; }
++int32_t MultiFontText::rows(int32_t)    const { return 0; }
++void    MultiFontText::draw(int32_t,int32_t,Image&)         const {}
++void    MultiFontText::draw(int32_t,int32_t,int32_t,Image&) const {}
++bool    MultiFontText::empty() const { return true; }
++
++// THE INTERCEPT
++int showMessage(const TextBase &, const TextBase &, int buttons)
++{
++    g_showMessageCallCount++;
++    // Real behavior for a no-button popup: blocks until the right-click is released.
++    if (!buttons) {
++        g_fakeRightPressed = false;
++    }
++    return 0;
++}
++
++void Blit(const Image &, Image &, int, int, bool) {}
++void Fill(Image &, int, int, int, int, uint8_t) {}
++uint8_t GetColorId(uint8_t, uint8_t, uint8_t) { return 0; }
++
++namespace AGG {
++    const Sprite & GetICN(int, unsigned int) { static Sprite s; return s; }
++}
++
++} // namespace fheroes2
++
++// -----------------------------------------------------------------------
++// Old Text / TextBox (from text.h) — TextAscii is incomplete (private impl),
++// so we only stub the public Text/TextBox symbols
++// -----------------------------------------------------------------------
++Text::Text() : message(nullptr), gw(0), gh(0) {}
++Text::Text(const std::string & s, int) : message(nullptr), gw(0), gh(0) { (void)s; }
++Text::~Text() {} // message is nullptr in our stubs, so no delete needed
++void Text::Set(const std::string&) {}
++void Text::Set(const std::string&, int) {}
++void Text::Set(int) {}
++void Text::Clear() {}
++size_t Text::Size() const { return 0; }
++void Text::Blit(int32_t x,int32_t y,fheroes2::Image&) const { g_textBlitCalls.emplace_back(x, y); }
++void Text::Blit(int32_t,int32_t,int,fheroes2::Image&) const {}
++void Text::Blit(const fheroes2::Point&,fheroes2::Image&) const {}
++int32_t Text::getCharacterWidth(uint8_t, int) { return 0; }
++int32_t Text::getFitWidth(const std::string&, int, int32_t) { return 0; }
++
++TextBox::TextBox() {}
++TextBox::TextBox(const std::string&, int, uint32_t) {}
++TextBox::TextBox(const std::string&, int, const fheroes2::Rect&) {}
++void TextBox::Set(const std::string&, int, uint32_t) {}
++void TextBox::SetAlign(int) {}
++void TextBox::Blit(int32_t,int32_t,fheroes2::Image&) {}
++
++// -----------------------------------------------------------------------
++// LocalEvent — scriptable single-click driver.
++//
++// A test that wants to exercise a real, integrated right-click (rather than calling
++// ScenarioListBox::ActionListPressRight directly on a bare, unconfigured instance) sets
++// g_fakeMouseX/Y and g_fakeRightPressed, sets g_fakeEventsRemaining = 1, then calls the
++// real Dialog::SelectScenario(). HandleEvents() reports the fake cursor position and lets
++// the loop body run for exactly that many iterations. This is what makes it fair to ANY
++// correct fix: the real setup code runs (whatever geometry/state it wires up), and the
++// real dispatch chain (QueueEventProcessing -> ActionListPressRight, and the main loop's
++// own right-click checks) decides the outcome -- nothing here is specific to one
++// implementation's internal structure.
++//
++// IMPORTANT: the real Dialog::Message / fheroes2::showMessage, when called with no
++// buttons (as every popup in this dialog is), run their own loop that blocks until the
++// right mouse button is RELEASED -- see dialog_message.cpp / ui_dialog.cpp upstream:
++// `while (... ) { if (!buttons && !le.MousePressRight()) break; ... }`. So by the time any
++// such popup returns, a right-click has necessarily been consumed: a later check in the
++// same frame (e.g. a second, redundant right-click test further down the dispatch chain)
++// will correctly see the button as no longer pressed. The Dialog::Message/showMessage
++// stubs below clear g_fakeRightPressed for exactly this reason -- without it, a fix that
++// relies on this real ordering (show the correct popup first, then let a later redundant
++// check no-op because the click is already consumed) would be unfairly rejected here.
++// -----------------------------------------------------------------------
++LocalEvent::LocalEvent() {}
++LocalEvent & LocalEvent::Get() { static LocalEvent le; return le; }
++
++bool LocalEvent::HandleEvents(bool, bool)
++{
++    mouse_cu = fheroes2::Point(g_fakeMouseX, g_fakeMouseY);
++    if (g_fakeEventsRemaining > 0) {
++        --g_fakeEventsRemaining;
++        return true;
++    }
++    return false;
++}
++
++bool LocalEvent::KeyPress(KeySym) const { return false; }
++bool LocalEvent::MouseClickLeft(const fheroes2::Rect &)  { return false; }
++bool LocalEvent::MousePressLeft(const fheroes2::Rect &)  const { return false; }
++
++bool LocalEvent::MousePressRight(const fheroes2::Rect & rt) const
++{
++    return g_fakeRightPressed && (rt & fheroes2::Point(g_fakeMouseX, g_fakeMouseY));
++}
++
++bool LocalEvent::MouseWheelUp(const fheroes2::Rect &)    const { return false; }
++bool LocalEvent::MouseWheelDn(const fheroes2::Rect &)    const { return false; }
++
++// -----------------------------------------------------------------------
++// CursorRestorer — has const members that must be initialised in the list
++// -----------------------------------------------------------------------
++CursorRestorer::CursorRestorer()        : _theme(0), _visible(false) {}
++CursorRestorer::CursorRestorer(bool v, int t) : _theme(t), _visible(v) {}
++CursorRestorer::~CursorRestorer() {}
++
++// -----------------------------------------------------------------------
++// Color / Difficulty / Game
++// -----------------------------------------------------------------------
++int Color::Count(int) { return 0; }
++std::string Difficulty::String(int) { return ""; }
++bool Game::HotKeyPressEvent(int) { return false; }
++
++// -----------------------------------------------------------------------
++// Maps::FileInfo
++// -----------------------------------------------------------------------
++Maps::FileInfo::FileInfo()
++    : _version(GameVersion::SUCCESSION_WARS)
++    , size_w(0), size_h(0), difficulty(0)
++    , kingdom_colors(0), allow_human_colors(0), allow_comp_colors(0), rnd_races(0)
++    , conditions_wins(0), comp_also_wins(false), allow_normal_victory(false)
++    , wins1(0), wins2(0)
++    , conditions_loss(0), loss1(0), loss2(0)
++    , localtime(0), startWithHeroInEachCastle(false)
++{
++    for (int i = 0; i < KINGDOMMAX; ++i) { races[i] = 0; unions[i] = 0; }
++}
++
++Maps::FileInfo::FileInfo(const FileInfo & f) { *this = f; }
++
++Maps::FileInfo & Maps::FileInfo::operator=(const Maps::FileInfo & f)
++{
++    file = f.file; name = f.name; description = f.description;
++    size_w = f.size_w; size_h = f.size_h; difficulty = f.difficulty;
++    for (int i = 0; i < KINGDOMMAX; ++i) { races[i] = f.races[i]; unions[i] = f.unions[i]; }
++    kingdom_colors = f.kingdom_colors; allow_human_colors = f.allow_human_colors;
++    allow_comp_colors = f.allow_comp_colors; rnd_races = f.rnd_races;
++    conditions_wins = f.conditions_wins; comp_also_wins = f.comp_also_wins;
++    allow_normal_victory = f.allow_normal_victory; wins1 = f.wins1; wins2 = f.wins2;
++    conditions_loss = f.conditions_loss; loss1 = f.loss1; loss2 = f.loss2;
++    localtime = f.localtime; startWithHeroInEachCastle = f.startWithHeroInEachCastle;
++    _version = f._version;
++    return *this;
++}
++
++// -----------------------------------------------------------------------
++// Translation
++// -----------------------------------------------------------------------
++const char * Translation::gettext(const char * s) { return s; }
++const char * Translation::gettext(const std::string & s) { return s.c_str(); }
++const char * Translation::ngettext(const char * s, const char *, size_t) { return s; }
++
++// -----------------------------------------------------------------------
++// StringReplace (from tools.h)
++// -----------------------------------------------------------------------
++void StringReplace(std::string & str, const char * from, const std::string & to)
++{
++    size_t pos = 0;
++    while ((pos = str.find(from, pos)) != std::string::npos) {
++        str.replace(pos, strlen(from), to);
++        pos += to.length();
++    }
++}
++
++// -----------------------------------------------------------------------
++// Dialog::Message
++// -----------------------------------------------------------------------
++int Dialog::Message(const std::string &, const std::string &, int, int buttons)
++{
++    // Real behavior for a no-button popup: blocks until the right-click is released.
++    if (!buttons) {
++        g_fakeRightPressed = false;
++    }
++    return 0;
++}
+diff --git a/harbor_test_src/test_actionlistpressright.cpp b/harbor_test_src/test_actionlistpressright.cpp
+new file mode 100644
+index 000000000..c9dc1631f
+--- /dev/null
++++ b/harbor_test_src/test_actionlistpressright.cpp
+@@ -0,0 +1,98 @@
++#define SDL_MAIN_HANDLED 1
++#include "dialog_selectscenario.h"
++#include "maps.h"
++#include "maps_fileinfo.h"
++#include <gtest/gtest.h>
++#include <cstdint>
++#include <string>
++#include <utility>
++#include <vector>
++
++extern int g_showMessageCallCount;
++extern std::vector<std::pair<int32_t, int32_t>> g_textBlitCalls;
++extern int32_t g_fakeMouseX;
++extern int32_t g_fakeMouseY;
++extern bool g_fakeRightPressed;
++extern int g_fakeEventsRemaining;
++
++namespace
++{
++    Maps::FileInfo makeStandardMap( const std::string & name )
++    {
++        Maps::FileInfo info;
++        info.file = "/some/path/map.mp2";
++        info.name = name;
++        info._version = GameVersion::SUCCESSION_WARS;
++        info.size_w = Maps::SMALL;
++        info.size_h = Maps::SMALL;
++        info.kingdom_colors = 0;
++        info.conditions_wins = 0;
++        info.conditions_loss = 0;
++        return info;
++    }
++}
++
++// BEHAVIORAL, integration-level: drives the real Dialog::SelectScenario() through exactly
++// one frame with a simulated right-click over an icon column, using the same call path
++// (QueueEventProcessing -> ActionListPressRight, plus the dialog's own right-click
++// dispatch) the real game uses. Deliberately NOT a bare, isolated ScenarioListBox: a
++// correct fix may need per-column geometry that only Dialog::SelectScenario's own setup
++// provides (e.g. state populated on the listbox before its event loop starts), and calling
++// ActionListPressRight directly on an unconfigured instance would then unfairly reject
++// that (perfectly valid) design.
++TEST(ScenarioListBox, IconAreaRightClickDoesNotShowPopup)
++{
++    g_showMessageCallCount = 0;
++
++    MapsFileInfoList maps;
++    maps.push_back( makeStandardMap( "TestMap" ) );
++
++    // Display is 640x480 and the panel background sprite is 0x0 in this harness, so
++    // Dialog::SelectScenario's panel rect (rt) is deterministically (320, 240) here. The
++    // size-icon column sits at rt.x+64 .. rt.x+83 per the dialog's own layout; aim for its
++    // center, comfortably clear of the columns on either side.
++    g_fakeMouseX = 390;
++    g_fakeMouseY = 300;
++    g_fakeRightPressed = true;
++    g_fakeEventsRemaining = 1;
++
++    Dialog::SelectScenario( maps, 0 );
++
++    EXPECT_EQ(g_showMessageCallCount, 0)
++        << "Right-clicking in the icon area triggered fheroes2::showMessage "
++        << g_showMessageCallCount << " time(s). It must not show the map-info popup.";
++}
++
++// BEHAVIORAL: calls the real ScenarioListBox::RedrawBackground() -- the renderer for the
++// details panel below the list -- and checks where it draws the "Map difficulty:" label
++// relative to the panel's own origin. The label is always the second text draw once a map
++// is selected (map name, then difficulty label, then difficulty value), regardless of how
++// the fix is implemented internally.
++TEST(ScenarioListBox, DifficultyLabelAlignsWithPanelEdge)
++{
++    ScenarioListBox listbox( fheroes2::Point( 0, 0 ) );
++    listbox.SetAreaMaxItems( 1 );
++
++    MapsFileInfoList maps;
++    maps.push_back( makeStandardMap( "TestMap" ) );
++    listbox.SetListContent( maps );
++    listbox.SetCurrent( 0 );
++
++    for ( const int32_t dstx : { 100, 250 } ) {
++        g_textBlitCalls.clear();
++        listbox.RedrawBackground( fheroes2::Point( dstx, 50 ) );
++
++        ASSERT_GE( g_textBlitCalls.size(), 2u )
++            << "Expected at least the map-name and difficulty-label draws once a map is selected (dst.x=" << dstx << ").";
++
++        const int32_t expectedX = dstx + 210;
++        EXPECT_EQ( g_textBlitCalls[1].first, expectedX )
++            << "The \"Map difficulty:\" label is not aligned with the panel edge (dst.x=" << dstx << ").";
++    }
++}
++
++int main(int argc, char ** argv)
++{
++    ::testing::InitGoogleTest(&argc, argv);
++    return RUN_ALL_TESTS();
++}

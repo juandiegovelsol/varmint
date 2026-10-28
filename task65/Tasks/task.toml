@@ -1,0 +1,228 @@
+version = "1.0"
+
+[metadata]
+task_id = "carbon-design-system__carbon-22307-mm"
+title = "[Feature Request]: Date & Time format: Duration time format"
+repository_name = "carbon-design-system/carbon"
+repo_url = "https://github.com/carbon-design-system/carbon"
+issue_number = 22307
+pr_number = 22313
+base_commit = "217994d634aaffb2754b73e6dc85bcaaa629e8ff"
+fix_commit = "d7d92918bca89904e8fa413d1b3e5f3ef8c640b5"
+task_type = "visual_bug_fix"
+language = "TypeScript"
+framework = "none (framework-agnostic TypeScript utilities, Jest/jsdom harness)"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = """
+Two asks share one bundle, and a correct submission has to resolve both completely.
+
+1. A feature-add: wrap the web platform's Intl.DurationFormat the way the sibling
+   formatters in the same directory wrap Intl.RelativeTimeFormat/Intl.DateTimeFormat,
+   with the styles and default the instruction's expected-output table specifies, and
+   wire it into the same public surface. The upstream PR's own tests import the new
+   module directly and never exercise the public barrel, so a synthetic f2p asserts the
+   wiring explicitly - a fix that creates the module but forgets the barrel export does
+   not score 1.0.
+
+2. Eight injected behavioural regressions across the existing utilities (the date/time
+   formatters and the tag-overflow handler): default-option output that drifted from the
+   documented conventions, locale pass-through dropped on two independent code paths, a
+   narrowed under-a-minute window that renders a nonsense value, an overflow cap that is
+   ignored under overflow, and an overflow indicator whose visibility is inverted. Every
+   one is invisible to the repository's own committed test suite (verified: 204/204 pass
+   bit-identically on clean and injected trees), so no test failure, snapshot, or twin
+   data structure hands over a location or a correct value.
+
+The visual evidence is essential rather than corroborating: the instruction withholds
+how many things are wrong and where, and names no file, function, or mechanism for the
+regressions. The only statement of what is broken is two demo screenshots rendered from
+the actual injected code, read against a design-guidance reference table and the demos'
+own captions. What keeps it fair is that the demos are self-checking: default-option
+calls sit beside explicit-style calls, locales sit side by side, and each overflow row
+captions its own configuration - wrong output is always adjacent to output or a caption
+showing what right looks like.
+
+Difficulty comes from exhaustiveness: the verifier requires all 16 f2p (and 130 p2p
+regression guards), so a solver that implements the duration format perfectly and
+repairs most - but not all - of the visible regressions still scores 0.0.
+"""
+files_edited = [
+  "packages/utilities/src/dateTimeFormat/duration.ts",
+  "packages/utilities/src/dateTimeFormat/index.ts",
+  "packages/utilities/src/dateTimeFormat/relative.ts",
+  "packages/utilities/src/dateTimeFormat/absolute.ts",
+  "packages/utilities/src/overflowHandler/overflowHandler.ts",
+]
+f2p = [
+  "should default to narrow style",
+  "long → 1 hour, 23 minutes, 45 seconds",
+  "short → 1 hr, 23 min, 45 sec",
+  "narrow → 1h 23m 45s",
+  "digital → 1:23:45",
+  "is exposed on the shared dateTimeFormat surface",
+  "moments under a minute old render as the current moment",
+  "default style is long",
+  "sub-minute moments honour the requested locale",
+  "formatTime defaults to the short time style",
+  "formatDate defaults to the medium date style",
+  "format defaults to medium date with short time",
+  "formatRange defaults to medium date with short time",
+  "formatRange honours the requested locale",
+  "maxVisibleItems caps the visible set when the container overflows",
+  "the overflow indicator is revealed while items are hidden",
+]
+p2p = [
+  "-30 seconds → now",
+  "-1 minutes → 1 minute ago",
+  "+1 minutes → in 1 minute",
+  "-59 minutes → 59 minutes ago",
+  "+59 minutes → in 59 minutes",
+  "-1 hours → 1 hour ago",
+  "+1 hours → in 1 hour",
+  "-23 hours → 23 hours ago",
+  "+23 hours → in 23 hours",
+  "-1 days → 1 day ago",
+  "+1 days → in 1 day",
+  "-6 days → 6 days ago",
+  "+6 days → in 6 days",
+  "-1 weeks → 1 week ago",
+  "+1 weeks → in 1 week",
+  "-3 weeks → 3 weeks ago",
+  "+3 weeks → in 3 weeks",
+  "-1 months → 1 month ago",
+  "+1 months → in 1 month",
+  "-12 months → 12 months ago",
+  "+12 months → in 12 months",
+  "-1 years → 1 year ago",
+  "+1 years → in 1 year",
+  "-2 years → 2 years ago",
+  "+2 years → in 2 years",
+  "-1 minutes → 1 min. ago",
+  "+1 minutes → in 1 min.",
+  "-59 minutes → 59 min. ago",
+  "+59 minutes → in 59 min.",
+  "-1 hours → 1 hr. ago",
+  "+1 hours → in 1 hr.",
+  "-23 hours → 23 hr. ago",
+  "+23 hours → in 23 hr.",
+  "-1 weeks → 1 wk. ago",
+  "+1 weeks → in 1 wk.",
+  "-3 weeks → 3 wk. ago",
+  "+3 weeks → in 3 wk.",
+  "-1 months → 1 mo. ago",
+  "+1 months → in 1 mo.",
+  "-12 months → 12 mo. ago",
+  "+12 months → in 12 mo.",
+  "-1 years → 1 yr. ago",
+  "+1 years → in 1 yr.",
+  "-2 years → 2 yr. ago",
+  "+2 years → in 2 yr.",
+  "-1 minutes → 1m ago",
+  "+1 minutes → in 1m",
+  "-59 minutes → 59m ago",
+  "+59 minutes → in 59m",
+  "-1 hours → 1h ago",
+  "+1 hours → in 1h",
+  "-23 hours → 23h ago",
+  "+23 hours → in 23h",
+  "-1 days → 1d ago",
+  "+1 days → in 1d",
+  "-6 days → 6d ago",
+  "+6 days → in 6d",
+  "-1 weeks → 1w ago",
+  "+1 weeks → in 1w",
+  "-3 weeks → 3w ago",
+  "+3 weeks → in 3w",
+  "-1 months → 1mo ago",
+  "+1 months → in 1mo",
+  "-12 months → 12mo ago",
+  "+12 months → in 12mo",
+  "-1 years → 1y ago",
+  "+1 years → in 1y",
+  "-2 years → 2y ago",
+  "+2 years → in 2y",
+  "en-US formatTime full → 7:12:47 PM Coordinated Universal Time",
+  "en-US formatTime long → 7:12:47 PM UTC",
+  "en-US formatTime medium → 7:12:47 PM",
+  "en-US formatTime short → 7:12 PM",
+  "en-US formatTime timeZone UTC → 7:12:47 PM Coordinated Universal Time",
+  "en-US formatTime timeZone Asia/Tokyo → 4:12:47 AM Japan Standard Time",
+  "en-US formatDate full → Thursday, April 28, 2016",
+  "en-US formatDate long → April 28, 2016",
+  "en-US formatDate medium → Apr 28, 2016",
+  "en-US formatDate short → 4/28/16",
+  "en-US formatDate timeZone UTC → Thursday, April 28, 2016",
+  "en-US formatDate timeZone Asia/Tokyo → Friday, April 29, 2016",
+  "en-US format full → Thursday, April 28, 2016 at 7:12:47 PM Coordinated Universal Time",
+  "en-US format manual time: full, date: full → Thursday, April 28, 2016 at 7:12:47 PM Coordinated Universal Time",
+  "en-US format manual time: full, date: long → April 28, 2016 at 7:12:47 PM Coordinated Universal Time",
+  "en-US format manual time: full, date: medium → Apr 28, 2016, 7:12:47 PM Coordinated Universal Time",
+  "en-US format manual time: full, date: short → 4/28/16, 7:12:47 PM Coordinated Universal Time",
+  "en-US format long → April 28, 2016 at 7:12:47 PM UTC",
+  "en-US format manual time: long, date: full → Thursday, April 28, 2016 at 7:12:47 PM UTC",
+  "en-US format manual time: long, date: long → April 28, 2016 at 7:12:47 PM UTC",
+  "en-US format manual time: long, date: medium → Apr 28, 2016, 7:12:47 PM UTC",
+  "en-US format manual time: long, date: short → 4/28/16, 7:12:47 PM UTC",
+  "en-US format medium → Apr 28, 2016, 7:12:47 PM",
+  "en-US format manual time: medium, date: full → Thursday, April 28, 2016 at 7:12:47 PM",
+  "en-US format manual time: medium, date: long → April 28, 2016 at 7:12:47 PM",
+  "en-US format manual time: medium, date: medium → Apr 28, 2016, 7:12:47 PM",
+  "en-US format manual time: medium, date: short → 4/28/16, 7:12:47 PM",
+  "en-US format short → 4/28/16, 7:12 PM",
+  "en-US format manual time: short, date: full → Thursday, April 28, 2016 at 7:12 PM",
+  "en-US format manual time: short, date: long → April 28, 2016 at 7:12 PM",
+  "en-US format manual time: short, date: medium → Apr 28, 2016, 7:12 PM",
+  "en-US format manual time: short, date: short → 4/28/16, 7:12 PM",
+  "en-US format timeZone UTC → Thursday, April 28, 2016 at 7:12:47 PM Coordinated Universal Time",
+  "en-US format timeZone Asia/Tokyo → Friday, April 29, 2016 at 4:12:47 AM Japan Standard Time",
+  "en-US format tooltip → Thursday, April 28, 2016 at 7:12:47 PM UTC",
+  "en-US formatRange full → Thursday, April 28, 2016 at 7:12:47 PM Coordinated Universal Time – Sunday, July 1, 2018 at 9:00:02 AM Coordinated Universal Time",
+  "en-US formatRange manual time: full, date: full → Thursday, April 28, 2016 at 7:12:47 PM Coordinated Universal Time – Sunday, July 1, 2018 at 9:00:02 AM Coordinated Universal Time",
+  "en-US formatRange manual time: long, date: full → Thursday, April 28, 2016 at 7:12:47 PM UTC – Sunday, July 1, 2018 at 9:00:02 AM UTC",
+  "en-US formatRange manual time: medium, date: full → Thursday, April 28, 2016 at 7:12:47 PM – Sunday, July 1, 2018 at 9:00:02 AM",
+  "en-US formatRange manual time: short, date: full → Thursday, April 28, 2016 at 7:12 PM – Sunday, July 1, 2018 at 9:00 AM",
+  "en-US formatRange manual time: null, date: full → Thursday, April 28, 2016 – Sunday, July 1, 2018",
+  "en-US formatRange long → April 28, 2016 at 7:12:47 PM UTC – July 1, 2018 at 9:00:02 AM UTC",
+  "en-US formatRange manual time: full, date: long → April 28, 2016 at 7:12:47 PM Coordinated Universal Time – July 1, 2018 at 9:00:02 AM Coordinated Universal Time",
+  "en-US formatRange manual time: long, date: long → April 28, 2016 at 7:12:47 PM UTC – July 1, 2018 at 9:00:02 AM UTC",
+  "en-US formatRange manual time: medium, date: long → April 28, 2016 at 7:12:47 PM – July 1, 2018 at 9:00:02 AM",
+  "en-US formatRange manual time: short, date: long → April 28, 2016 at 7:12 PM – July 1, 2018 at 9:00 AM",
+  "en-US formatRange manual time: null, date: long → April 28, 2016 – July 1, 2018",
+  "en-US formatRange medium → Apr 28, 2016, 7:12:47 PM – Jul 1, 2018, 9:00:02 AM",
+  "en-US formatRange manual time: full, date: medium → Apr 28, 2016, 7:12:47 PM Coordinated Universal Time – Jul 1, 2018, 9:00:02 AM Coordinated Universal Time",
+  "en-US formatRange manual time: long, date: medium → Apr 28, 2016, 7:12:47 PM UTC – Jul 1, 2018, 9:00:02 AM UTC",
+  "en-US formatRange manual time: medium, date: medium → Apr 28, 2016, 7:12:47 PM – Jul 1, 2018, 9:00:02 AM",
+  "en-US formatRange manual time: short, date: medium → Apr 28, 2016, 7:12 PM – Jul 1, 2018, 9:00 AM",
+  "en-US formatRange manual time: null, date: medium → Apr 28, 2016 – Jul 1, 2018",
+  "en-US formatRange short → 4/28/16, 7:12 PM – 7/1/18, 9:00 AM",
+  "en-US formatRange manual time: full, date: short → 4/28/16, 7:12:47 PM Coordinated Universal Time – 7/1/18, 9:00:02 AM Coordinated Universal Time",
+  "en-US formatRange manual time: long, date: short → 4/28/16, 7:12:47 PM UTC – 7/1/18, 9:00:02 AM UTC",
+  "en-US formatRange manual time: medium, date: short → 4/28/16, 7:12:47 PM – 7/1/18, 9:00:02 AM",
+  "en-US formatRange manual time: short, date: short → 4/28/16, 7:12 PM – 7/1/18, 9:00 AM",
+  "en-US formatRange manual time: null, date: short → 4/28/16 – 7/1/18",
+  "en-US formatRange timeZone UTC → Thursday, April 28, 2016 at 7:12:47 PM Coordinated Universal Time – Sunday, July 1, 2018 at 9:00:02 AM Coordinated Universal Time",
+  "en-US formatRange timeZone Asia/Tokyo → Friday, April 29, 2016 at 4:12:47 AM Japan Standard Time – Sunday, July 1, 2018 at 6:00:02 PM Japan Standard Time",
+]
+tags = ["multimodal", "visual_bug_fix", "typescript", "utilities", "internationalization", "jest"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+# ALWAYS "public" - never allowlist, never no-network. Nothing is fetched at
+# verify time (jest and its presets are the repo's own root devDependencies,
+# already installed into the image by its normal yarn install); "public" is the
+# setting harbor requires so the phase can never turn a correct fix into a
+# false-negative 0.0.
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

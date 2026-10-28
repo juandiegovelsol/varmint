@@ -1,0 +1,46 @@
+{
+  "behavior_in_task_description": {
+    "outcome": "pass",
+    "explanation": "instruction.md states the core requirement tests check: every row must begin in the same column (tooltip-only rows must not be pushed right), and that already-aligned rows plus 'the panel's existing styling and content' must be unaffected. This general regression clause covers the p2p tests (markup rendering, dim styling, system-binding hiding, group-title survival). The instruction deliberately omits file/API names by design (per task.toml's difficulty_explanation), which is appropriate for a visual bug-fix task where locating the code is part of the challenge, not a case of undocumented output schema."
+  },
+  "behavior_in_tests": {
+    "outcome": "pass",
+    "explanation": "Both behaviors named in instruction.md are directly tested: alignment of tooltip-only rows to the shared description column (f2p tests, verified via both cell text and painted screen column), and preservation of everything else (p2p tests covering described-row spacing, markup rendering, dim styling, key column, system-binding hiding, group titles, and painted column stability)."
+  },
+  "informative_test_structure": {
+    "outcome": "pass",
+    "explanation": "tests/test.patch (the synthetic test file) has a clear module docstring explaining the bug and test strategy, is organized into clearly commented sections ('palette A', 'palette B', 'negative half'), and each test has a one-line docstring stating exactly what it checks. Helper functions are also documented."
+  },
+  "anti_cheating_measures": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile clones the repo, checks out the base commit, then strips .git and reinitializes a single-commit repo, so the agent cannot inspect the future fix commit or PR history. tests/ and solution/ are explicitly not copied into the image. verifier.py/test.sh never grep source for the fix, only run tests and parse JUnit XML. The agent phase runs with network_mode=no-network, and the public network access is only granted to the verifier phase (for installing pinned pytest packages) after the agent's turn is over."
+  },
+  "structured_data_schema": {
+    "outcome": "not_applicable",
+    "explanation": "This is a code bug-fix task; the agent is not expected to produce structured output (JSON/CSV/API) that would require a documented schema."
+  },
+  "pinned_dependencies": {
+    "outcome": "pass",
+    "explanation": "Repo dependencies are installed from the pinned base-commit's pyproject/lock in the Dockerfile. Test-only dependencies (pytest, pytest-asyncio) are installed at verify time in test.sh with explicit pins (pytest==8.4.2, pytest-asyncio==1.4.0)."
+  },
+  "typos": {
+    "outcome": "pass",
+    "explanation": "Cross-checked commit hashes (both valid 40-char hex), file paths, and test identifiers across task.toml, tests/config.json, tests/test.patch, and tests/test.sh — all consistent with no typos found."
+  },
+  "tests_or_solution_in_image": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile explicitly comments and confirms that tests/ and solution/ are NOT copied into the image; only environment/assets/ is copied (to /app/.harbor_assets/)."
+  },
+  "test_deps_in_image": {
+    "outcome": "pass",
+    "explanation": "pytest and pytest-asyncio are explicitly excluded from the Dockerfile build (called out in a comment) and instead installed at pinned versions inside tests/test.sh at verify time."
+  },
+  "hardcoded_solution": {
+    "outcome": "pass",
+    "explanation": "solution/solve.sh applies solution/fix.patch, which is a genuine source-code diff (adjusting the separator logic in render_description and incidental whitespace cleanup in DEFAULT_CSS) matching the real upstream fix commit — verified against the actual base-commit source on GitHub. It is not simply printing or echoing an answer."
+  },
+  "file_reference_mentioned": {
+    "outcome": "not_applicable",
+    "explanation": "The task requires a source-code fix to existing repo files rather than the agent producing new output files (e.g., a report or data file) that tests check for by name, so there is no deliverable filename that instruction.md would need to specify."
+  }
+}

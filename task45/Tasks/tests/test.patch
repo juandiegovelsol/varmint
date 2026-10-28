@@ -1,0 +1,322 @@
+diff --git a/src/shapes/Text/TextSVGExportMixin.spec.ts b/src/shapes/Text/TextSVGExportMixin.spec.ts
+index d7afbbfa7..67d885c7b 100644
+--- a/src/shapes/Text/TextSVGExportMixin.spec.ts
++++ b/src/shapes/Text/TextSVGExportMixin.spec.ts
+@@ -3,6 +3,7 @@ import { FabricText } from './Text';
+ 
+ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+ import { Rect } from '../Rect';
++import { Path } from '../Path';
+ 
+ describe('TextSvgExport', () => {
+   it('exports text background color correctly', () => {
+@@ -31,6 +32,296 @@ describe('TextSvgExport', () => {
+     expect(svgStyles.includes('stroke="none"')).toBe(false);
+   });
+ 
++  describe('canvas and svg export parity', () => {
++    type ParsedTspan = {
++      x: number;
++      y: number;
++      dy: number;
++      dx: number;
++      rotate: number;
++      baselineShift: number;
++      style: string;
++      text: string;
++    };
++
++    const numberFrom = (source: string, re: RegExp) => {
++      const match = source.match(re);
++      return match ? parseFloat(match[1]) : 0;
++    };
++
++    /**
++     * Pull every tspan out of an exported SVG string, keeping the geometry
++     * attributes, the raw style attribute and the inner text.
++     */
++    const parseTspans = (svg: string): ParsedTspan[] => {
++      const tspans: ParsedTspan[] = [];
++      const tspanRe = /<tspan\b([^>]*)>([\s\S]*?)<\/tspan>/g;
++      let match: RegExpExecArray | null;
++      while ((match = tspanRe.exec(svg)) !== null) {
++        const attributes = match[1];
++        const styleMatch = attributes.match(/style="([^"]*)"/);
++        const style = styleMatch ? styleMatch[1] : '';
++        const geometry = attributes.replace(/style="[^"]*"/, '');
++        tspans.push({
++          x: numberFrom(geometry, /\bx="(-?[\d.]+)"/),
++          y: numberFrom(geometry, /\by="(-?[\d.]+)"/),
++          dy: numberFrom(geometry, /\bdy="(-?[\d.]+)"/),
++          dx: numberFrom(geometry, /\bdx="(-?[\d.]+)"/),
++          rotate: numberFrom(geometry, /\brotate="(-?[\d.]+)"/),
++          baselineShift: numberFrom(style, /baseline-shift:\s*(-?[\d.]+)/),
++          style,
++          text: match[2],
++        });
++      }
++      return tspans;
++    };
++
++    /**
++     * Net downward displacement of a tspan relative to the line it sits on.
++     * Whichever single mechanism the implementation keeps, the visible result
++     * is the same number, so tests can compare this instead of an attribute.
++     */
++    const effectiveDrop = (tspan: ParsedTspan) =>
++      tspan.y + tspan.dy - tspan.baselineShift;
++
++    const tspanWithText = (tspans: ParsedTspan[], text: string) => {
++      const found = tspans.find((tspan) => tspan.text === text);
++      expect(found).toBeDefined();
++      return found!;
++    };
++
++    const TOLERANCE = 1e-6;
++
++    it('a raised character is displaced by its own offset and not by twice it', () => {
++      const deltaY = -14;
++      const text = new FabricText('abc', { styles: { 0: { 1: { deltaY } } } });
++      const tspans = parseTspans(text.toSVG());
++      const raised = tspanWithText(tspans, 'b');
++      const reference = tspanWithText(tspans, 'a');
++
++      expect(raised.y).toBe(reference.y);
++      expect(
++        Math.abs(effectiveDrop(raised) - effectiveDrop(reference) - deltaY),
++      ).toBeLessThan(TOLERANCE);
++    });
++
++    it('a lowered character is displaced by its own offset and not by twice it', () => {
++      const deltaY = 11;
++      const text = new FabricText('abc', { styles: { 0: { 1: { deltaY } } } });
++      const tspans = parseTspans(text.toSVG());
++      const lowered = tspanWithText(tspans, 'b');
++      const reference = tspanWithText(tspans, 'a');
++
++      expect(lowered.y).toBe(reference.y);
++      expect(
++        Math.abs(effectiveDrop(lowered) - effectiveDrop(reference) - deltaY),
++      ).toBeLessThan(TOLERANCE);
++    });
++
++    it('characters raised and lowered on the same line each keep their own displacement', () => {
++      const raisedBy = -14;
++      const loweredBy = 11;
++      const text = new FabricText('abcde', {
++        styles: { 0: { 1: { deltaY: raisedBy }, 3: { deltaY: loweredBy } } },
++      });
++      const tspans = parseTspans(text.toSVG());
++      const reference = tspanWithText(tspans, 'a');
++      const raised = tspanWithText(tspans, 'b');
++      const lowered = tspanWithText(tspans, 'd');
++
++      expect(raised.y).toBe(reference.y);
++      expect(lowered.y).toBe(reference.y);
++      expect(
++        Math.abs(effectiveDrop(raised) - effectiveDrop(reference) - raisedBy),
++      ).toBeLessThan(TOLERANCE);
++      expect(
++        Math.abs(effectiveDrop(lowered) - effectiveDrop(reference) - loweredBy),
++      ).toBeLessThan(TOLERANCE);
++    });
++
++    it('a displaced character on a later line keeps its displacement', () => {
++      const deltaY = -14;
++      const text = new FabricText('ab\ncde', {
++        styles: { 1: { 1: { deltaY } } },
++      });
++      const tspans = parseTspans(text.toSVG());
++      const raised = tspanWithText(tspans, 'd');
++      const reference = tspanWithText(tspans, 'c');
++      const firstLine = tspanWithText(tspans, 'ab');
++
++      expect(raised.y).toBe(reference.y);
++      expect(raised.y).not.toBe(firstLine.y);
++      expect(
++        Math.abs(effectiveDrop(raised) - effectiveDrop(reference) - deltaY),
++      ).toBeLessThan(TOLERANCE);
++    });
++
++    it('characters with no vertical offset all share the same baseline', () => {
++      const text = new FabricText('abc', {
++        styles: { 0: { 1: { fill: 'rgb(255,0,0)' } } },
++      });
++      const tspans = parseTspans(text.toSVG());
++
++      expect(tspans.length).toBeGreaterThan(1);
++      tspans.forEach((tspan) => {
++        expect(
++          Math.abs(effectiveDrop(tspan) - effectiveDrop(tspans[0])),
++        ).toBeLessThan(TOLERANCE);
++      });
++    });
++
++    it('the tspans of a line keep strictly increasing x values when one character is vertically displaced', () => {
++      const text = new FabricText('abc', {
++        styles: { 0: { 1: { deltaY: -14 } } },
++      });
++      const tspans = parseTspans(text.toSVG());
++
++      expect(tspans.length).toBeGreaterThan(1);
++      tspans.slice(1).forEach((tspan, index) => {
++        expect(tspan.x).toBeGreaterThan(tspans[index].x);
++      });
++    });
++
++    it('a vertically displaced character still carries its own font size', () => {
++      const fontSize = 24;
++      const text = new FabricText('abc', {
++        styles: { 0: { 1: { deltaY: -14, fontSize } } },
++      });
++      const tspans = parseTspans(text.toSVG());
++      const displaced = tspanWithText(tspans, 'b');
++
++      expect(numberFrom(displaced.style, /font-size:\s*(-?[\d.]+)px/)).toBe(
++        fontSize,
++      );
++    });
++
++    /**
++     * The decoration thickness percentage carried by the <text> element itself,
++     * i.e. the object-level declaration.
++     */
++    const textElementThickness = (svg: string) => {
++      const tag = svg.match(/<text\b[^>]*>/);
++      expect(tag).not.toBeNull();
++      return numberFrom(tag![0], /text-decoration-thickness:\s*(-?[\d.]+)%/);
++    };
++
++    const underlinedAtScale = (scaleY: number, extra = {}) =>
++      new FabricText('abc', {
++        underline: true,
++        textDecorationThickness: 20,
++        scaleY,
++        ...extra,
++      }).toSVG();
++
++    it('the exported decoration thickness does not change when the text object is scaled', () => {
++      const unscaled = textElementThickness(underlinedAtScale(1));
++      const scaled = textElementThickness(underlinedAtScale(3));
++
++      expect(unscaled).toBeGreaterThan(0);
++      expect(Math.abs(scaled - unscaled)).toBeLessThan(TOLERANCE);
++    });
++
++    it('a character with its own decoration thickness keeps it when the text object is scaled', () => {
++      const thicknessOfB = (scaleY: number) => {
++        const svg = underlinedAtScale(scaleY, {
++          styles: { 0: { 1: { textDecorationThickness: 40 } } },
++        });
++        const b = tspanWithText(parseTspans(svg), 'b');
++        return numberFrom(b.style, /text-decoration-thickness:\s*(-?[\d.]+)%/);
++      };
++      const unscaled = thicknessOfB(1);
++      const scaled = thicknessOfB(3);
++
++      expect(unscaled).toBeGreaterThan(0);
++      expect(Math.abs(scaled - unscaled)).toBeLessThan(TOLERANCE);
++    });
++
++    it('an unscaled text object still exports a decoration thickness proportional to its declared value', () => {
++      const declared = (textDecorationThickness: number) =>
++        textElementThickness(
++          new FabricText('abc', {
++            underline: true,
++            textDecorationThickness,
++          }).toSVG(),
++        );
++      const single = declared(20);
++      const double = declared(40);
++
++      expect(single).toBeGreaterThan(0);
++      expect(Math.abs(double - single * 2)).toBeLessThan(TOLERANCE);
++    });
++
++    const PATH_TOLERANCE = 1e-3;
++
++    const curvedText = (styles: object) =>
++      new FabricText('abcdef', {
++        path: new Path('M 0 100 C 60 0 180 200 240 60'),
++        fontSize: 28,
++        styles,
++      });
++
++    /** Where a tspan actually lands: its anchor plus any explicit shift. */
++    const totalPosition = (tspan: ParsedTspan) => ({
++      x: tspan.x + tspan.dx,
++      y: tspan.y + tspan.dy,
++    });
++
++    it('a displaced character on a path is offset along its own rotated baseline', () => {
++      const deltaY = -20;
++      const plain = parseTspans(curvedText({}).toSVG());
++      const displaced = parseTspans(curvedText({ 0: { 2: { deltaY } } }).toSVG());
++
++      const before = tspanWithText(plain, 'c');
++      const after = tspanWithText(displaced, 'c');
++      const from = totalPosition(before);
++      const to = totalPosition(after);
++      const moved = { x: to.x - from.x, y: to.y - from.y };
++
++      // The character is turned to face along the curve, so its own offset has to
++      // travel along that turned axis, not straight down the page.
++      const theta = (before.rotate * Math.PI) / 180;
++      const expected = {
++        x: -Math.sin(theta) * deltaY,
++        y: Math.cos(theta) * deltaY,
++      };
++
++      expect(before.rotate).not.toBe(0);
++      expect(
++        Math.abs(Math.hypot(moved.x, moved.y) - Math.abs(deltaY)),
++      ).toBeLessThan(PATH_TOLERANCE);
++      expect(Math.abs(moved.x - expected.x)).toBeLessThan(PATH_TOLERANCE);
++      expect(Math.abs(moved.y - expected.y)).toBeLessThan(PATH_TOLERANCE);
++    });
++
++    it('a character on a path with no displacement is unaffected by the path fix', () => {
++      const plain = parseTspans(curvedText({}).toSVG());
++      const zeroed = parseTspans(curvedText({ 0: { 2: { deltaY: 0 } } }).toSVG());
++      const displaced = parseTspans(
++        curvedText({ 0: { 2: { deltaY: -20 } } }).toSVG(),
++      );
++
++      expect(plain.length).toBeGreaterThan(1);
++      expect(zeroed).toHaveLength(plain.length);
++      expect(displaced).toHaveLength(plain.length);
++
++      const samePlace = (a: ParsedTspan, b: ParsedTspan) => {
++        const from = totalPosition(a);
++        const to = totalPosition(b);
++        expect(Math.abs(to.x - from.x)).toBeLessThan(PATH_TOLERANCE);
++        expect(Math.abs(to.y - from.y)).toBeLessThan(PATH_TOLERANCE);
++      };
++
++      plain.forEach((tspan, index) => {
++        // an offset of zero moves nothing
++        samePlace(tspan, zeroed[index]);
++        // and offsetting one character leaves every other character where it was
++        if (tspan.text !== 'c') {
++          samePlace(tspan, displaced[index]);
++        }
++      });
++    });
++  });
++
+   describe('toSVG', () => {
+     beforeEach(() => {
+       config.configure({ NUM_FRACTION_DIGITS: 2 });
+diff --git a/src/shapes/Text/__snapshots__/TextSVGExportMixin.spec.ts.snap b/src/shapes/Text/__snapshots__/TextSVGExportMixin.spec.ts.snap
+index 3d0890f..79b86d6 100644
+--- a/src/shapes/Text/__snapshots__/TextSVGExportMixin.spec.ts.snap
++++ b/src/shapes/Text/__snapshots__/TextSVGExportMixin.spec.ts.snap
+@@ -23,7 +23,7 @@ exports[`TextSvgExport > toSVG > toSVG justified 1`] = `
+ 
+ exports[`TextSvgExport > toSVG > toSVG with deltaY 1`] = `
+ "<g transform="matrix(1 0 0 1 17 23)" style=""  >
+-		<text xml:space="preserve" font-family="Times New Roman" font-size="40" font-style="normal" font-weight="normal" style="stroke: none; stroke-width: 1; stroke-dasharray: none; stroke-linecap: butt; stroke-dashoffset: 0; stroke-linejoin: miter; stroke-miterlimit: 4; fill: rgb(0,0,0); fill-rule: nonzero; opacity: 1; text-decoration-thickness: 7%; white-space: pre;" ><tspan x="-16" y="13" >x</tspan><tspan x="4" y="13"  dy="-14" style="font-size: 24px; baseline-shift: 14; ">x</tspan></text>
++		<text xml:space="preserve" font-family="Times New Roman" font-size="40" font-style="normal" font-weight="normal" style="stroke: none; stroke-width: 1; stroke-dasharray: none; stroke-linecap: butt; stroke-dashoffset: 0; stroke-linejoin: miter; stroke-miterlimit: 4; fill: rgb(0,0,0); fill-rule: nonzero; opacity: 1; text-decoration-thickness: 7%; white-space: pre;" ><tspan x="-16" y="13" >x</tspan><tspan x="4" y="13"  dy="-14" style="font-size: 24px; ">x</tspan></text>
+ </g>
+ "
+ `;

@@ -1,0 +1,457 @@
+diff --git a/javascripts/__tests__/format-pipeline.test.js b/javascripts/__tests__/format-pipeline.test.js
+new file mode 100644
+index 000000000..5263b2baa
+--- /dev/null
++++ b/javascripts/__tests__/format-pipeline.test.js
+@@ -0,0 +1,121 @@
++import { describe, test, expect, beforeAll } from 'vitest';
++
++// ---------------------------------------------------------------------------
++// These tests run the app's REAL whole-number display path end to end: the
++// actual notation registry and the actual format helpers, with the real
++// notation library behind them. Nothing here is stubbed except the handful of
++// game-state globals those two modules read at import time, so any assertion
++// below describes what a player would actually see on screen.
++//
++// Nothing asserts on source text, function bodies or module internals - only
++// on the strings the app produces for a given number and active notation.
++// ---------------------------------------------------------------------------
++
++let Notation;
++let Notations;
++
++const useNotation = notation => {
++  global.ui.notation = notation;
++};
++
++beforeAll(async () => {
++  // Minimal stand-ins for the game-state globals the two modules touch while
++  // loading. None of them influence how a number is rendered.
++  global.GAME_EVENT = { GAME_TICK_AFTER: 'GAME_TICK_AFTER' };
++  global.EventHub = { logic: { on: () => undefined }, ui: { on: () => undefined } };
++  global.player = { options: {} };
++  global.ui = { notation: null, formatPreBreak: false, notationName: '' };
++  global.GameUI = { initialized: true };
++  global.Pelle = { isDoomed: false };
++  global.GameEnd = { endState: 0 };
++
++  const notations = await import('../core/notations.js');
++  Notation = notations.Notation;
++  Notations = notations.Notations;
++  global.Notations = Notations;
++
++  await import('../core/format.js');
++
++  useNotation(Notation.mixedScientific);
++});
++
++describe('Whole-number display', () => {
++  test('whole numbers are grouped into thousands', () => {
++    // A notation that renders ordinary digits, i.e. the one a new player has.
++    useNotation(Notation.mixedScientific);
++
++    // Digit grouping is what makes a long number readable, and it is what the
++    // rest of the app's whole numbers already look like on screen.
++    expect(formatInt(17), 'formatInt(17)').toBe('17');
++    expect(formatInt(999), 'formatInt(999)').toBe('999');
++    expect(formatInt(1000), 'formatInt(1000)').toBe('1,000');
++    expect(formatInt(2000), 'formatInt(2000)').toBe('2,000');
++    expect(formatInt(12345), 'formatInt(12345)').toBe('12,345');
++    expect(formatInt(123456), 'formatInt(123456)').toBe('123,456');
++    expect(formatInt(1234567), 'formatInt(1234567)').toBe('1,234,567');
++    expect(formatInt(12345678901), 'formatInt(12345678901)').toBe('12,345,678,901');
++
++    // Grouping applies to the whole part only; the decimals stay untouched.
++    expect(formatFloat(1234.5, 1), 'formatFloat(1234.5, 1)').toBe('1,234.5');
++    expect(formatFloat(9876543.21, 2), 'formatFloat(9876543.21, 2)').toBe('9,876,543.21');
++    expect(formatFloat(999.5, 1), 'formatFloat(999.5, 1)').toBe('999.5');
++  });
++
++  test('whole numbers are readable in every notation the player can pick', () => {
++    // For every notation the player can select, whatever that notation makes of
++    // the number 17 is what the app must show for 17. A notation that renders
++    // 17 as something other than the digits "17" must not be bypassed and left
++    // showing plain digits, otherwise that one number reads as a foreign
++    // element among the notation-rendered numbers around it.
++    const rendersPlainDigits = notation => notation.format(17, 2, 0, 3) === '17';
++    const stylised = Notations.all.filter(notation => !rendersPlainDigits(notation));
++
++    // Guards the loop below against silently passing on an empty selection.
++    expect(stylised.length, 'no notation renders 17 as anything but plain digits').toBeGreaterThan(0);
++
++    for (const notation of Notations.all) {
++      useNotation(notation);
++      const shown = formatInt(17);
++
++      if (rendersPlainDigits(notation)) {
++        expect(shown, `${notation.name} renders 17 as plain digits`).toBe('17');
++      } else {
++        expect(shown, `${notation.name} left 17 as plain digits instead of its own rendering`)
++          .not.toBe('17');
++      }
++    }
++
++    useNotation(Notation.mixedScientific);
++  });
++});
++
++// ---------------------------------------------------------------------------
++// Behaviour of the surrounding display helpers, which must keep working
++// exactly as they already do.
++// ---------------------------------------------------------------------------
++
++describe('Display helpers', () => {
++  test('pluralize handles irregular plurals', () => {
++    expect(pluralize('Dimension', 1)).toBe('Dimension');
++    expect(pluralize('Dimension', 2)).toBe('Dimensions');
++    expect(pluralize('Study', 2)).toBe('Studies');
++    expect(pluralize('Box', 3)).toBe('Boxes');
++    expect(pluralize('Antimatter', 5)).toBe('Antimatter');
++    expect(pluralize('Reality', 2, 'Realities')).toBe('Realities');
++  });
++
++  test('makeEnumeration joins items with an Oxford comma', () => {
++    expect(makeEnumeration([])).toBe('');
++    expect(makeEnumeration(['a'])).toBe('a');
++    expect(makeEnumeration(['a', 'b'])).toBe('a and b');
++    expect(makeEnumeration(['a', 'b', 'c'])).toBe('a, b, and c');
++    expect(makeEnumeration(['a', 'b', 'c', 'd'])).toBe('a, b, c, and d');
++  });
++
++  test('isSingular only accepts one', () => {
++    expect(isSingular(1)).toBe(true);
++    expect(isSingular(0)).toBe(false);
++    expect(isSingular(2)).toBe(false);
++    expect(() => isSingular('1')).toThrow();
++  });
++});
+diff --git a/javascripts/__tests__/notation.test.js b/javascripts/__tests__/notation.test.js
+new file mode 100644
+index 000000000..87084dfed
+--- /dev/null
++++ b/javascripts/__tests__/notation.test.js
+@@ -0,0 +1,311 @@
++import { describe, test, expect, vi, beforeAll, beforeEach } from 'vitest';
++import fs from 'fs';
++import path from 'path';
++import { fileURLToPath } from 'url';
++import Vue from 'vue';
++import { compileToFunctions } from 'vue-template-compiler';
++
++const __dirname = path.dirname(fileURLToPath(import.meta.url));
++
++// Collapse the incidental whitespace that template literals and Vue templates
++// introduce, so assertions compare the words a player actually reads.
++const normalize = s => s.replace(/\s+/gu, ' ').trim();
++
++// Mock all direct imports of celestials.js before it runs
++const MockEffarig = { glyphLevelCap: 2000 };
++vi.mock('../core/celestials/effarig', () => ({ Effarig: MockEffarig }));
++vi.mock('../core/celestials/enslaved', () => ({ Enslaved: {} }));
++vi.mock('../core/celestials/laitela/laitela', () => ({ Laitela: {} }));
++vi.mock('../core/celestials/pelle/pelle', () => ({ Pelle: {} }));
++vi.mock('../core/celestials/ra/ra', () => ({ Ra: {} }));
++vi.mock('../core/celestials/teresa', () => ({ Teresa: {} }));
++vi.mock('../core/celestials/V', () => ({ V: {} }));
++
++// The unlock panel is allowed to read the required row count off the game's own
++// achievement data instead of repeating a literal, so stand that data up here:
++// seventeen rows of eight achievements, none of them unlocked. Array.countWhere
++// is one of the repo's own Array extensions, installed globally by the app but
++// not by this unit test.
++if (!Array.prototype.countWhere) {
++  Object.defineProperty(Array.prototype, 'countWhere', {
++    value(predicate) { return this.filter(predicate).length; },
++    writable: true,
++    configurable: true,
++    enumerable: false,
++  });
++}
++
++const PRE_PELLE_ROWS = Array.from(
++  { length: 17 },
++  (_, row) => Array.from({ length: 8 }, (__, column) => ({
++    row: row + 1,
++    column: column + 1,
++    isUnlocked: false,
++  }))
++);
++
++beforeAll(() => {
++  global.Achievements = {
++    prePelleRows: PRE_PELLE_ROWS,
++    prePelle: PRE_PELLE_ROWS.flat(),
++    all: PRE_PELLE_ROWS.flat(),
++  };
++  // Minimal stand-ins for the other globals PelleTab's own update() method
++  // touches, so calling the real update() (see renderPanel below) doesn't
++  // throw. None of these influence the unlock-requirements panel.
++  global.Pelle = { isDoomed: false };
++  global.PelleStrikes = { all: [] };
++  global.PelleRifts = { recursion: { milestones: [{}, {}, { canBeApplied: false }] } };
++  global.GalaxyGenerator = { spentGalaxies: 0 };
++  // Set up the global GameDatabase that celestials.js writes to at module-level
++  global.GameDatabase = {
++    celestials: {
++      descriptions: {},
++      effarig: {},
++      alchemy: {},
++      pelle: {},
++      quotes: {}
++    }
++  };
++  // Stub formatInt as a SPY that produces a recognisable tagged output.
++  // Base (unfixed): raw interpolation gives plain numbers -> formatInt is
++  // never invoked, and no "[FMT:" marker appears.
++  // Fix: value passed through formatInt(...) -> "[FMT:<value>]", and the spy
++  // records the call. Asserting on the spy (not just the rendered text) rules
++  // out a "fix" that hardcodes the tagged string instead of calling formatInt.
++  global.formatInt = vi.fn((v) => `[FMT:${v}]`);
++});
++
++beforeEach(() => {
++  global.formatInt.mockClear();
++});
++
++const loadEffarig = async () => {
++  // Dynamic import so globals are set up (beforeAll runs first)
++  await import('../core/celestials/celestials.js');
++  const descriptions = global.GameDatabase.celestials.descriptions;
++  expect(Array.isArray(descriptions), 'descriptions should be an array').toBe(true);
++  const effarig = descriptions.find(d => d.name === 'Effarig');
++  expect(effarig, 'Effarig description not found').toBeTruthy();
++  return effarig;
++};
++
++describe('Notation formatting in celestial descriptions', () => {
++  test('Effarig effects() applies formatInt to glyphLevelCap', async () => {
++    const effarig = await loadEffarig();
++
++    MockEffarig.glyphLevelCap = 2000;
++    global.formatInt.mockClear();
++    const text = effarig.effects();
++    // This assertion FAILS on base (text has "2000" not "[FMT:2000]")
++    // and PASSES on fix (formatInt wraps the value -> "[FMT:2000]")
++    expect(text, `effects() returned: "${text}"`).toContain('[FMT:2000]');
++    // Proves the call site actually invoked formatInt with the real glyph
++    // level cap value, rather than the text merely happening to match.
++    expect(global.formatInt, 'formatInt was never called').toHaveBeenCalledWith(2000);
++
++    // Re-read effects() after the underlying value changes. A fix that
++    // hardcodes formatInt(2000) (copying the mocked value instead of
++    // referencing Effarig.glyphLevelCap) passes every assertion above but
++    // fails this one, because the text would still say 2000.
++    MockEffarig.glyphLevelCap = 733;
++    global.formatInt.mockClear();
++    const text2 = effarig.effects();
++    expect(text2, `effects() returned after glyphLevelCap changed: "${text2}"`)
++      .toContain('[FMT:733]');
++    expect(text2, 'stale value 2000 should not remain after glyphLevelCap changed')
++      .not.toContain('2000');
++    expect(global.formatInt).toHaveBeenCalledWith(733);
++
++    // Zero is a classic falsy-guard trap: a fix written as
++    // `${Effarig.glyphLevelCap && formatInt(...)}` or `${value ? formatInt(value) : value}`
++    // passes the two checks above (both values are truthy) but silently stops
++    // formatting the moment the cap is 0.
++    MockEffarig.glyphLevelCap = 0;
++    global.formatInt.mockClear();
++    const text3 = effarig.effects();
++    expect(text3, `effects() returned after glyphLevelCap set to 0: "${text3}"`)
++      .toContain('[FMT:0]');
++    expect(global.formatInt, 'formatInt must still be called when the value is 0')
++      .toHaveBeenCalledWith(0);
++
++    MockEffarig.glyphLevelCap = 2000;
++  });
++
++  test('Effarig panel reads exactly as the reported panel does', async () => {
++    const effarig = await loadEffarig();
++
++    MockEffarig.glyphLevelCap = 2000;
++    global.formatInt.mockClear();
++
++    // Every sentence of the reported panel, in the order it shows them. Only
++    // the capped-level number differs from the report, because that number is
++    // the one that has to go through the shared whole-number display.
++    expect(normalize(effarig.effects()), 'Effarig effects() text').toBe(
++      'All Dimension multipliers, gamespeed, and tickspeed are severely lowered, like Dilation. ' +
++      'Infinity Power reduces the production and gamespeed penalties and Time Shards reduce the ' +
++      'tickspeed penalty. Glyph levels are temporarily capped to [FMT:2000], rarity is unaffected.'
++    );
++    expect(normalize(effarig.description()), 'Effarig description() text').toBe(
++      "You will exit Effarig's Reality when you complete a Layer of it for the first time."
++    );
++  });
++});
++
++// ---------------------------------------------------------------------------
++// PelleTab tests mount the component's OWN <script> and <template> exactly as
++// shipped, instead of a hand-written stand-in for its data/computed/methods.
++// That way a fix is free to restructure the component (e.g. move the required
++// row count behind a computed property instead of repeating it) as long as the
++// rendered output is correct - only the observable text and the formatInt spy
++// are asserted on, never the component's internal shape.
++// ---------------------------------------------------------------------------
++
++function extractComponentOptions(source) {
++  const scriptMatch = source.match(/<script>([\s\S]*?)<\/script>/);
++  expect(scriptMatch, 'Could not find <script> block in PelleTab.vue').toBeTruthy();
++  let scriptSrc = scriptMatch[1];
++
++  // The rendered branch under test never touches a child component, so each
++  // import only needs to exist as an identifier, not resolve to anything real.
++  const importNames = [];
++  const importRe = /import\s+(?:\{([^}]+)\}|(\w+))\s+from\s+["'][^"']+["'];?/g;
++  let m;
++  while ((m = importRe.exec(scriptSrc))) {
++    if (m[1]) m[1].split(',').forEach(n => importNames.push(n.trim().split(/\s+as\s+/).pop()));
++    if (m[2]) importNames.push(m[2]);
++  }
++  scriptSrc = scriptSrc.replace(importRe, '')
++    .replace(/export\s+default\s+/, '')
++    .trim()
++    .replace(/;\s*$/, '');
++
++  const decls = importNames.map(n => `const ${n} = {};`).join('\n');
++  // eslint-disable-next-line no-new-func
++  const factory = new Function(`${decls}\nreturn (${scriptSrc});`);
++  return factory();
++}
++
++function deriveData(componentOptions) {
++  // A fix is free to compute the required-row count (or anything else) inside
++  // the component's own update() rather than repeating a literal in the
++  // template - PelleTab's real update() already derives completedRows this
++  // way from Achievements, so a fix mirroring that pattern for a second value
++  // is following the file's own convention, not inventing a new one. Running
++  // update() once here, against a stand-in seeded with the component's own
++  // defaults, lets any such derived property take its real value before the
++  // component ever renders. completedRows itself is overridden per-call by
++  // the caller afterward, so whatever update() computes for it here is
++  // discarded - only its OTHER effects matter.
++  const base = componentOptions.data ? componentOptions.data() : {};
++  if (typeof componentOptions.methods?.update !== 'function') return base;
++  const standIn = { ...base };
++  componentOptions.methods.update.call(standIn);
++  return standIn;
++}
++
++function renderPanel(completedRows) {
++  const filePath = path.resolve(__dirname, '../../src/components/tabs/celestial-pelle/PelleTab.vue');
++  const source = fs.readFileSync(filePath, 'utf-8');
++  const templateMatch = source.match(/<template>([\s\S]*)<\/template>/);
++  expect(templateMatch, 'Could not find <template> block in PelleTab.vue').toBeTruthy();
++
++  const { render, staticRenderFns } = compileToFunctions(templateMatch[1]);
++  const componentOptions = extractComponentOptions(source);
++  const derived = deriveData(componentOptions);
++
++  // Render the "not yet unlocked" branch: isDoomed and canEnterPelle both
++  // false, which is already what the component's own data() defaults to.
++  return new Vue({
++    ...componentOptions,
++    render,
++    staticRenderFns,
++    data() {
++      return { ...derived, completedRows };
++    },
++    methods: {
++      // The real app exposes this via a global Vue.mixin (javascripts/core/app/ui.js);
++      // provide it directly here since that mixin isn't installed in this unit test.
++      ...(componentOptions.methods || {}),
++      formatInt: value => global.formatInt(value),
++    },
++  }).$mount();
++}
++
++describe('Notation formatting in Pelle unlock requirements', () => {
++  test('PelleTab unlock-requirements panel formats the row counts', () => {
++    const vm = renderPanel(5);
++    const text = vm.$el.textContent;
++
++    // The panel shows the required-row threshold twice and the player's
++    // current count once. All three numbers should go through formatInt.
++    // Base (unfixed): raw digits in the text -> no "[FMT:" markers appear.
++    // Fix: every number wrapped in formatInt(...) -> two "[FMT:17]" and one "[FMT:5]".
++    const requiredCount = (text.match(/\[FMT:17\]/g) || []).length;
++    expect(requiredCount, `expected both thresholds formatted, got text: "${text}"`).toBe(2);
++    expect(text, `expected completedRows formatted, got text: "${text}"`).toContain('[FMT:5]');
++
++    // Proves both values are genuine formatInt(...) calls, not hand-tagged
++    // literals sitting in the template with the right shape: a hardcoded
++    // "[FMT:17]"/"[FMT:5]" would match the text above but never call the spy.
++    // (Not asserting an exact call COUNT: a fix may cache the threshold behind
++    // a computed property and legitimately call formatInt with it only once
++    // even though it appears twice in the rendered text.)
++    expect(global.formatInt, 'formatInt was never called with the required row count')
++      .toHaveBeenCalledWith(17);
++    expect(global.formatInt, 'formatInt was never called with 5').toHaveBeenCalledWith(5);
++
++    // Boundary case: completedRows equal to the required row count. A fix that
++    // only formats completedRows while it is still below the requirement (e.g.
++    // a v-if branch that swaps in a raw, unformatted count once the requirement
++    // is met) would pass every check above but fail here.
++    global.formatInt.mockClear();
++    const vmEqual = renderPanel(17);
++    const textEqual = vmEqual.$el.textContent;
++    const equalCount = (textEqual.match(/\[FMT:17\]/g) || []).length;
++    expect(equalCount, `expected all three numbers formatted when completedRows===17, got: "${textEqual}"`)
++      .toBe(3);
++    expect(global.formatInt, 'formatInt was never called at the completedRows===17 boundary')
++      .toHaveBeenCalledWith(17);
++  });
++
++  test('PelleTab completedRows binding tracks the real prop, not a hardcoded copy', () => {
++    // A fix that hardcodes formatInt(5) (copying the value used in the sibling
++    // test) instead of binding {{ formatInt(completedRows) }} would pass the
++    // test above unnoticed. Re-rendering with a different completedRows value
++    // catches exactly that shortcut.
++    global.formatInt.mockClear();
++    const vm = renderPanel(0);
++    const text = vm.$el.textContent;
++
++    expect(text, `expected completedRows=0 formatted, got text: "${text}"`).toContain('[FMT:0]');
++    expect(text, 'stale value 5 should not remain when completedRows is 0')
++      .not.toContain('[FMT:5]');
++    expect(global.formatInt).toHaveBeenCalledWith(0);
++
++    // A fix that special-cases exactly the two values exercised so far (5 and 0)
++    // - e.g. a lookup table instead of a real binding - would still pass both
++    // checks above. A third, arbitrary value that neither test chose rules
++    // that out.
++    global.formatInt.mockClear();
++    const vmArbitrary = renderPanel(42);
++    const textArbitrary = vmArbitrary.$el.textContent;
++    expect(textArbitrary, `expected completedRows=42 formatted, got text: "${textArbitrary}"`)
++      .toContain('[FMT:42]');
++    expect(textArbitrary, 'stale value 0 should not remain when completedRows is 42')
++      .not.toContain('[FMT:0]');
++    expect(global.formatInt).toHaveBeenCalledWith(42);
++  });
++
++  test('Pelle unlock panel reads exactly as the reported panel does', () => {
++    global.formatInt.mockClear();
++
++    // The entire visible line of the reported panel, word for word, with the
++    // player's progress standing at 5 of the required rows. Only the numbers
++    // differ from the report, because those are what has to go through the
++    // shared whole-number display.
++    expect(normalize(renderPanel(5).$el.textContent), 'unlock-requirements panel text').toBe(
++      'You must have [FMT:17] rows of achievements to unlock Doomed. [FMT:5] / [FMT:17]'
++    );
++  });
++});
+diff --git a/vitest.config.mjs b/vitest.config.mjs
+new file mode 100644
+index 000000000..7510c50c4
+--- /dev/null
++++ b/vitest.config.mjs
+@@ -0,0 +1,7 @@
++import { defineConfig } from 'vitest/config';
++export default defineConfig({
++  test: {
++    environment: 'jsdom',
++    include: ['javascripts/__tests__/**/*.test.js'],
++  },
++});

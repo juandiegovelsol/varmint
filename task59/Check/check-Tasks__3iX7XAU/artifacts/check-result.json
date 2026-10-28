@@ -1,0 +1,46 @@
+{
+  "behavior_in_task_description": {
+    "outcome": "pass",
+    "explanation": "instruction.md describes the exact qualitative bug tested by the f2p tests: selecting an inline chip together with adjacent plain text and applying a character format (bold, shown by the highlighted B button in the screenshots) leaves the two parts with different formats, whereas plain text alone formats correctly. This is precisely the alignment behavior the DecoratorTextExtension.test.ts f2p tests check (decorator must align to the TextNode's target format). The task intentionally omits file names, class names, and command names (this is explained and justified in task.toml's difficulty_explanation as the intended challenge of a visual_bug_fix task), but the two attached screenshots are explicitly referenced in the instruction and supply the missing specifics (which control is used, which part is wrong) that a person/agent would need. The p2p (regression-guard) tests cover pre-existing behavior that isn't new functionality and doesn't need explicit instruction coverage."
+  },
+  "behavior_in_tests": {
+    "outcome": "pass",
+    "explanation": "The single behavior instruction.md describes (a selection spanning an inline chip and adjacent text not receiving uniform formatting) is directly covered by the three f2p tests in test.patch, which assert that a DecoratorTextNode aligns to the same bold state as the adjacent TextNode in both directions and with multiple decorators. No behavior described in the instruction is left untested."
+  },
+  "informative_test_structure": {
+    "outcome": "pass",
+    "explanation": "test.patch is organized as a single describe block ('DecoratorTextExtension FORMAT_TEXT_COMMAND') with clearly named test cases, and each test carries an inline comment explaining what regression or edge case it guards against (e.g. distinguishing real alignment from a coincidental no-op, or protecting the no-TextNode NodeSelection path). This makes the intent of each assertion clear to a reader."
+  },
+  "anti_cheating_measures": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile clones the repo at the pinned base commit and strips .git history so the agent cannot inspect the fix PR or future commits, and explicitly does not COPY tests/ or solution/ into the image. The agent's own network_mode is 'no-network' (task.toml [agent] section), which prevents it from fetching the real GitHub issue/PR referenced in evidence_bundle.json/ASSET_MANIFEST.json even though environment/verifier network is public for dependency installation. The verifier also resets any test files the agent may have touched from the harbor_base tag before applying test.patch and scoring, and verifier.py explicitly never inspects source code, only test results, preventing string-matching shortcuts."
+  },
+  "structured_data_schema": {
+    "outcome": "not_applicable",
+    "explanation": "This is a source-code bug-fix task verified by running an existing unit test suite (vitest); it does not require the agent to emit any structured data output (JSON/CSV/API schema), so no schema documentation is required."
+  },
+  "pinned_dependencies": {
+    "outcome": "pass",
+    "explanation": "The base image is pinned (node:22-bookworm), and pnpm is installed at major version 10 with an explanatory comment on why an exact patch pin was avoided (corepack drift issues) while relying on `--frozen-lockfile` against the repo's committed pnpm-lock.yaml to pin exact transitive dependency versions. This is an adequate and deliberate pinning strategy for a monorepo clone."
+  },
+  "typos": {
+    "outcome": "pass",
+    "explanation": "No typos were found in instruction.md, task.toml, the Dockerfile, or the test/solution files after inspection; file paths, command names (pnpm, vitest), and identifiers referenced across files (e.g. DecoratorTextExtension.test.ts, $formatText, InlineFormattableNode) are consistent everywhere they appear."
+  },
+  "tests_or_solution_in_image": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile only COPYs environment/assets/ (the screenshots) into the image and explicitly comments that tests/ and solution/ are not baked in, being supplied by the harness at verify time instead."
+  },
+  "test_deps_in_image": {
+    "outcome": "pass",
+    "explanation": "The `pnpm install --frozen-lockfile` step installs the target repository's own existing devDependencies (including vitest, which the repo already depends on for its test suite) rather than task-specific test tooling smuggled into the image; this is standard pre-fetching of the repo's dependency tree needed for the agent to build/edit/test the code, not a task-specific test dependency hidden from the agent's visible setup."
+  },
+  "hardcoded_solution": {
+    "outcome": "pass",
+    "explanation": "solve.sh applies solution/fix.patch, a real multi-file source diff (refactoring RangeSelection.formatText into a standalone $formatText function, adding the InlineFormattableNode capability interface, updating DecoratorTextExtension, rich-text handler, and flow types) rather than printing or echoing a final answer. It demonstrates the actual code change needed to fix the bug."
+  },
+  "file_reference_mentioned": {
+    "outcome": "not_applicable",
+    "explanation": "The task requires the agent to edit existing source files in the cloned repository to fix a behavioral bug; it does not require producing a new named output file for the verifier to check, so there is no file reference that instruction.md would need to call out."
+  }
+}

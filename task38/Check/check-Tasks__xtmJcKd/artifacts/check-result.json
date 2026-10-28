@@ -1,0 +1,46 @@
+{
+  "behavior_in_task_description": {
+    "outcome": "pass",
+    "explanation": "instruction.md frames this as a visual_bug_fix task and explicitly names the two screenshots as the source of truth (duplicate 'Social Media' entries on the event dashboard vs. the organizer's true 3-team configuration), and explicitly instructs the agent to preserve 'existing team visibility, scoping, and permission behavior' while fixing the defect. The visual evidence itself conveys the exact expected end state (each team named once, matching the organizer's Teams page), which is the deliberate design for this task type. The p2p regression checks (scoping, cross-organizer isolation, permission derivation) are covered by the explicit 'preserve existing behavior' language rather than needing itemization."
+  },
+  "behavior_in_tests": {
+    "outcome": "pass",
+    "explanation": "The added test_event_team_listing.py exercises exactly the behavior instruction.md calls out: no duplicate team entries (f2p), teams still respecting event/organizer scoping and permission narrowing after the fix (p2p), and the dashboard panel itself reflecting the corrected collection. Nothing in the instruction's stated scope (dedupe teams while preserving visibility/scoping/permissions) is left untested."
+  },
+  "informative_test_structure": {
+    "outcome": "pass",
+    "explanation": "test_event_team_listing.py is well organized: a module docstring explains the contract under test, a 'World building' section builds two disjoint data palettes, an independent oracle function (teams_that_concern) is documented as deliberately join-free, and tests are grouped under clear '# f2p -- the defect' and '# p2p -- the neighbouring behaviour' banners with per-test docstrings explaining intent."
+  },
+  "anti_cheating_measures": {
+    "outcome": "pass",
+    "explanation": "The bug-injection patch lives in environment/bugs/ (not environment/assets/), is copied to /tmp, applied, and then deleted in the same Dockerfile RUN layer, and the repo's git history is squashed to one commit before the agent ever sees it — explicitly to prevent the agent from reading the fixing PR or bug-injection diff. Test files and the solution patch are not baked into the image (mounted only at verify time). The regression suite uses two disjoint, freshly-generated data palettes with an independent join-free oracle so no literal from the bug report or screenshot can be pattern-matched into a passing answer. The repo is fetched at a pinned SHA rather than a mutable ref/tag."
+  },
+  "structured_data_schema": {
+    "outcome": "not_applicable",
+    "explanation": "This task requires a code fix inside an existing Django application (no new structured output file, API response schema, or CSV/JSON artifact is produced by the agent), so a documented schema is not relevant."
+  },
+  "pinned_dependencies": {
+    "outcome": "pass",
+    "explanation": "Python/application dependencies are installed via `uv sync --frozen --all-extras --group test`, which resolves against the repo's committed uv.lock (fully pinned), and the uv binary itself is pinned to `ghcr.io/astral-sh/uv:0.9.7`. The base image is pinned to `python:3.12-slim-trixie`, and the repository checkout is pinned to an explicit 40-hex commit SHA. Apt packages are unpinned but that is acceptable per guidance."
+  },
+  "typos": {
+    "outcome": "pass",
+    "explanation": "No typos were found in filenames, paths, commands, or variable/test names; the f2p/p2p identifiers in task.toml and tests/config.json exactly match the test function names defined in tests/test.patch. One minor descriptive inconsistency exists (evidence_bundle.json says the screenshot shows 'Social Media' repeated 'eleven' times while the test file's docstring narrative says 'twelve times'), but this is flavor text in comments/metadata, not a filename, command, or identifier, and does not affect execution or scoring."
+  },
+  "tests_or_solution_in_image": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile only COPYs bugs/ (deleted after use) and assets/ (visual evidence, intentionally agent-visible) into the image. tests/ and solution/ are explicitly commented as NOT baked in and are mounted by the harness only at verify time."
+  },
+  "test_deps_in_image": {
+    "outcome": "pass",
+    "explanation": "The dependencies baked at build time (`uv sync --frozen --all-extras --group test`) are the upstream project's own declared dependency groups (Django, pytest-django, etc.), required because eventyay has no sqlite fallback and the verifier is designed to run fully offline against an in-image PostgreSQL cluster; test.sh explicitly installs nothing at verify time. No dependency specific to the injected regression test file (test_event_team_listing.py) is added at build time beyond what the project's own test group already requires."
+  },
+  "hardcoded_solution": {
+    "outcome": "pass",
+    "explanation": "solution/solve.sh applies solution/fix.patch, which is a real source-code diff modifying Event.teams (adding .distinct() and fixing the Q lookup) and reverting the dashboards.py view to use the corrected queryset — i.e., it performs the actual code fix rather than printing/echoing an expected test output or answer literal."
+  },
+  "file_reference_mentioned": {
+    "outcome": "not_applicable",
+    "explanation": "The task requires editing existing application source files (event.py, dashboards.py) rather than producing a new output file for tests to check, so there is no output filename that instruction.md would need to specify."
+  }
+}

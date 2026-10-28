@@ -1,0 +1,79 @@
+diff --git a/packages/ariakit-core/src/composite/composite-store.ts b/packages/ariakit-core/src/composite/composite-store.ts
+index c170b7f..b802360 100644
+--- a/packages/ariakit-core/src/composite/composite-store.ts
++++ b/packages/ariakit-core/src/composite/composite-store.ts
+@@ -288,11 +288,8 @@ export function createCompositeStore<
+         canWrap && !hasNullItem
+           ? items
+           : getItemsInRow(items, activeItem.rowId);
+-      // Only loop back when there's no enabled item ahead of the active one,
+-      // so most key presses don't need to flip the items.
+-      const nextItem =
+-        findFirstEnabledItem(nextItemsInRow, activeId) ||
+-        flipItems(loopItems, activeId, hasNullItem)[0];
++      const sortedItems = flipItems(loopItems, activeId, hasNullItem);
++      const nextItem = findFirstEnabledItem(sortedItems, activeId);
+       return nextItem?.id;
+     }
+ 
+diff --git a/packages/ariakit-react-core/src/composite/composite-item.tsx b/packages/ariakit-react-core/src/composite/composite-item.tsx
+index 51cb464..b8fc44f 100644
+--- a/packages/ariakit-react-core/src/composite/composite-item.tsx
++++ b/packages/ariakit-react-core/src/composite/composite-item.tsx
+@@ -1,5 +1,4 @@
+ import {
+-  contains,
+   getScrollingElement,
+   getTextboxSelection,
+   getTextboxValue,
+@@ -205,20 +204,8 @@ export const useCompositeItem = createHook<TagName, CompositeItemOptions>(
+       // elements. In this case, we just ignore the focus event on this parent
+       // item.
+       if (targetIsAnotherItem(event, store)) return;
+-      const { virtualFocus, baseElement, renderedItems } = store.getState();
+-      // With roving tabindex, once the items are rendered, focus coming from
+-      // outside the composite widget (for example, when tabbing into it) can
+-      // only land on the tabbable item, which is already the active one. So
+-      // there's nothing to update in this case.
+-      const isTabbingIn =
+-        !virtualFocus &&
+-        !!renderedItems.length &&
+-        !!baseElement &&
+-        !contains(baseElement, event.relatedTarget) &&
+-        event.currentTarget.tabIndex >= 0;
+-      if (!isTabbingIn) {
+-        store.setActiveId(id);
+-      }
++      const { virtualFocus, baseElement } = store.getState();
++      store.setActiveId(id);
+       // If the composite item is a text field, we'll select its content when
+       // focused. This guarantees that pressing arrow keys will move to the
+       // previous/next composite items instead of moving the cursor inside the
+@@ -408,6 +395,15 @@ export const useCompositeItem = createHook<TagName, CompositeItemOptions>(
+       if (!state?.renderedItems.length) return true;
+       if (state.virtualFocus) return false;
+       if (tabbable) return true;
++      if (state.activeId === null) return false;
++      // If activeId refers to an item that's disabled or not connected to the
++      // DOM, we make all items tabbable so users can tab into the composite
++      // widget. Once the activeId is valid, we restore the roving tabindex. See
++      // https://github.com/ariakit/ariakit/issues/3232
++      // https://github.com/ariakit/ariakit/issues/4129
++      const item = store?.item(state.activeId);
++      if (item?.disabled) return true;
++      if (!item?.element?.isConnected) return true;
+       return state.activeId === id;
+     });
+ 
+diff --git a/packages/ariakit-react-core/src/focusable/focusable.tsx b/packages/ariakit-react-core/src/focusable/focusable.tsx
+index 8471df2..009117e 100644
+--- a/packages/ariakit-react-core/src/focusable/focusable.tsx
++++ b/packages/ariakit-react-core/src/focusable/focusable.tsx
+@@ -184,7 +184,6 @@ function onGlobalKeyDown(event: KeyboardEvent) {
+   if (event.metaKey) return;
+   if (event.ctrlKey) return;
+   if (event.altKey) return;
+-  if (event.shiftKey) return;
+   isKeyboardModality = true;
+ }
+ 

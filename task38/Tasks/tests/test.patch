@@ -1,0 +1,462 @@
+diff --git a/app/tests/tickets/base/test_event_team_listing.py b/app/tests/tickets/base/test_event_team_listing.py
+new file mode 100644
+index 0000000..e4a6089
+--- /dev/null
++++ b/app/tests/tickets/base/test_event_team_listing.py
+@@ -0,0 +1,456 @@
++"""Regression suite for eventyay issue #4771.
++
++The "Event organizer" panel of the event dashboard (Home -> Event Dashboard)
++lists the teams of the organizer that concern the event.  For an organizer that
++owns a team which is marked *All events* **and** still carries the per-event
++limits it was created with, one and the same team was announced once per stale
++limit -- the reporter saw a single "Social Media" team printed twelve times.
++
++What is scored here is the CONTRACT of
++``eventyay.base.models.event.Event.teams``:
++
++    ``event.teams`` is the collection of the organizer's teams that concern
++    this event, and every such team belongs to it EXACTLY ONCE, no matter how
++    many event limits happen to be stored alongside an all-events team.
++
++Nothing below inspects how that collection is produced.  A fix that adds
++``.distinct()``, one that rewrites the predicate as a subquery, and one that
++re-selects by primary key are all equally acceptable, and the expectations are
++recomputed at run time from an independent, join-free oracle so that no literal
++from the bug report can be transcribed into a passing answer.
++
++Two fully disjoint data palettes are used (different organizers, different
++event counts, different team names, different numbers of stale limits) so that
++a solution keyed to the constants of one scenario cannot pass the other.
++"""
++
++import datetime as dt
++
++import pytest
++from django.utils.timezone import now
++from django_scopes import scopes_disabled
++
++from eventyay.base.models import Event, Organizer, Team, User
++
++
++# --------------------------------------------------------------------------- #
++# Two disjoint data palettes.  No literal from the bug report appears in either #
++# and the two differ in every dimension the defect could be keyed on.          #
++# --------------------------------------------------------------------------- #
++PALETTE_ALPHA = {
++    'org_slug': 'alphacollective',
++    'org_name': 'Alpha Collective',
++    # the first entry is the event under test
++    'events': ['alphacon', 'alpharetro', 'alphasummit'],
++    'global_team': 'Alpha Core Crew',
++    # marked "all events" but still carrying limits for every event
++    'stale_team': 'Alpha Outreach Desk',
++    'local_team': 'Alpha Ticket Desk',
++    'foreign_team': 'Alpha Retro Squad',
++    'unscoped_team': 'Alpha Dormant Circle',
++    'rival_org_slug': 'alpharivals',
++    'rival_team': 'Alpha Rival Board',
++    'member_email': 'nadia@alphacollective.example',
++}
++
++PALETTE_BRAVO = {
++    'org_slug': 'bravoconsortium',
++    'org_name': 'Bravo Consortium',
++    'events': ['bravofest', 'bravolab', 'bravoforum', 'bravocamp', 'bravoexpo'],
++    'global_team': 'Bravo Steering Board',
++    'stale_team': 'Bravo Broadcast Unit',
++    'local_team': 'Bravo Field Ops',
++    'foreign_team': 'Bravo Lab Wardens',
++    'unscoped_team': 'Bravo Reserve Pool',
++    'rival_org_slug': 'bravorivals',
++    'rival_team': 'Bravo Rival Chapter',
++    'member_email': 'oleg@bravoconsortium.example',
++}
++
++
++# --------------------------------------------------------------------------- #
++# World building                                                               #
++# --------------------------------------------------------------------------- #
++def _make_event(organizer, slug, offset_days):
++    start = now() + dt.timedelta(days=offset_days)
++    return Event.objects.create(
++        organizer=organizer,
++        name=slug.title(),
++        slug=slug,
++        date_from=start,
++        date_to=start + dt.timedelta(days=2),
++        currency='EUR',
++        locale='en',
++        is_public=True,
++        live=True,
++        email=f'{slug}@example.org',
++    )
++
++
++def build_world(palette):
++    """Create one self-contained organizer world and return its pieces.
++
++    The shape mirrors what the reporter had: a team flagged *all events* that
++    ALSO still references several individual events, next to teams that are
++    scoped the ordinary ways.
++    """
++    organizer = Organizer.objects.create(name=palette['org_name'], slug=palette['org_slug'])
++    events = {
++        slug: _make_event(organizer, slug, 30 + 10 * index)
++        for index, slug in enumerate(palette['events'])
++    }
++    target = events[palette['events'][0]]
++    others = [events[slug] for slug in palette['events'][1:]]
++
++    # (a) plain "all events" team, no stored limits at all
++    global_team = Team.objects.create(
++        organizer=organizer,
++        name=palette['global_team'],
++        all_events=True,
++        can_change_teams=True,
++    )
++
++    # (b) "all events" team that still carries a limit row for EVERY event.
++    #     This is the team the reporter saw repeated.
++    stale_team = Team.objects.create(
++        organizer=organizer,
++        name=palette['stale_team'],
++        all_events=True,
++        can_change_event_settings=True,
++    )
++    for event in events.values():
++        stale_team.limit_events.add(event)
++
++    # (c) team restricted to the event under test (plus one neighbour, for
++    #     palettes that have one) -- must still be listed
++    local_team = Team.objects.create(
++        organizer=organizer,
++        name=palette['local_team'],
++        all_events=False,
++        can_view_orders=True,
++    )
++    local_team.limit_events.add(target)
++    if len(others) > 1:
++        local_team.limit_events.add(others[1])
++
++    # (d) team restricted to a DIFFERENT event -- must not be listed
++    foreign_team = Team.objects.create(
++        organizer=organizer,
++        name=palette['foreign_team'],
++        all_events=False,
++        can_view_orders=True,
++    )
++    foreign_team.limit_events.add(others[0])
++
++    # (e) team scoped to nothing at all -- must not be listed
++    unscoped_team = Team.objects.create(
++        organizer=organizer,
++        name=palette['unscoped_team'],
++        all_events=False,
++    )
++
++    # (f) an all-events team belonging to a completely different organizer
++    rival_org = Organizer.objects.create(
++        name=palette['rival_org_slug'].title(), slug=palette['rival_org_slug']
++    )
++    rival_team = Team.objects.create(
++        organizer=rival_org,
++        name=palette['rival_team'],
++        all_events=True,
++        can_change_teams=True,
++    )
++
++    return {
++        'organizer': organizer,
++        'events': events,
++        'target': target,
++        'others': others,
++        'global_team': global_team,
++        'stale_team': stale_team,
++        'local_team': local_team,
++        'foreign_team': foreign_team,
++        'unscoped_team': unscoped_team,
++        'rival_org': rival_org,
++        'rival_team': rival_team,
++    }
++
++
++def teams_that_concern(event):
++    """Independent oracle: which teams concern ``event``?
++
++    Deliberately written without touching ``Event.teams`` and without any
++    ``Q``/join construction, so it cannot agree with the code under test by
++    accident: walk the organizer's teams one by one and read each team's own
++    stored limits.  Returns a set of primary keys.
++    """
++    concerned = set()
++    for team in Team.objects.filter(organizer_id=event.organizer_id):
++        limited_to = set(team.limit_events.values_list('pk', flat=True))
++        if team.all_events or event.pk in limited_to:
++            concerned.add(team.pk)
++    return concerned
++
++
++def reload_event(event):
++    """Return a freshly loaded Event (``Event.teams`` is a cached_property)."""
++    return Event.objects.get(pk=event.pk)
++
++
++def listed_team_pks(event):
++    return list(event.teams.values_list('pk', flat=True))
++
++
++# --------------------------------------------------------------------------- #
++# f2p -- the defect                                                            #
++# --------------------------------------------------------------------------- #
++@pytest.mark.django_db
++def test_each_concerned_team_is_listed_once_palette_alpha():
++    """No team may be announced more than once for the event (palette alpha)."""
++    with scopes_disabled():
++        world = build_world(PALETTE_ALPHA)
++        event = reload_event(world['target'])
++        listed = listed_team_pks(event)
++        expected = teams_that_concern(event)
++
++        # the oracle and the fixture must agree that there IS something to list
++        assert expected, 'fixture built no team that concerns the event'
++
++        repeated = sorted({pk for pk in listed if listed.count(pk) > 1})
++        assert repeated == [], (
++            f'teams announced more than once: '
++            f'{sorted(Team.objects.filter(pk__in=repeated).values_list("name", flat=True))}'
++        )
++        # every team that concerns the event is still there
++        assert expected <= set(listed)
++
++
++@pytest.mark.django_db
++def test_each_concerned_team_is_listed_once_palette_bravo():
++    """Same contract over a completely different world (palette bravo)."""
++    with scopes_disabled():
++        world = build_world(PALETTE_BRAVO)
++        event = reload_event(world['target'])
++        listed = listed_team_pks(event)
++        expected = teams_that_concern(event)
++
++        assert expected, 'fixture built no team that concerns the event'
++
++        repeated = sorted({pk for pk in listed if listed.count(pk) > 1})
++        assert repeated == [], (
++            f'teams announced more than once: '
++            f'{sorted(Team.objects.filter(pk__in=repeated).values_list("name", flat=True))}'
++        )
++        assert expected <= set(listed)
++
++
++@pytest.mark.django_db
++def test_number_of_listed_teams_matches_number_of_concerned_teams():
++    """The size reported for the collection must be the real number of teams."""
++    with scopes_disabled():
++        world = build_world(PALETTE_ALPHA)
++        event = reload_event(world['target'])
++        expected = teams_that_concern(event)
++
++        assert event.teams.count() == len(expected)
++
++
++@pytest.mark.django_db
++def test_stale_event_limits_on_an_all_events_team_do_not_multiply_it():
++    """The repetition must not scale with the number of stored limits.
++
++    Two organizers whose all-events team carries a different number of stale
++    limits must both announce that team exactly once, so a solution that merely
++    trims the list to the length seen in the bug report cannot pass.
++    """
++    with scopes_disabled():
++        alpha = build_world(PALETTE_ALPHA)
++        bravo = build_world(PALETTE_BRAVO)
++
++        for world in (alpha, bravo):
++            event = reload_event(world['target'])
++            listed = listed_team_pks(event)
++            stale_pk = world['stale_team'].pk
++            # sanity: this team really does carry more than one stored limit
++            assert world['stale_team'].limit_events.count() > 1
++            assert listed.count(stale_pk) == 1, (
++                f'{world["stale_team"].name} announced {listed.count(stale_pk)} times '
++                f'for {event.slug}'
++            )
++
++
++@pytest.mark.django_db
++def test_event_dashboard_panel_names_each_team_once(rf):
++    """The organizer panel of the event dashboard must not repeat a team name."""
++    from django.contrib.messages.storage.fallback import FallbackStorage
++    from django.contrib.sessions.backends.db import SessionStore
++
++    from eventyay.eventyay_common.views.dashboards import EventIndexView
++
++    with scopes_disabled():
++        world = build_world(PALETTE_ALPHA)
++        event = reload_event(world['target'])
++        user = User.objects.create_user(
++            email=PALETTE_ALPHA['member_email'],
++            password='n0t-a-real-password',
++            fullname='Nadia Alpher',
++            locale='en',
++        )
++        world['global_team'].members.add(user)
++
++        request = rf.get('/')
++        request.session = SessionStore()
++        request.session.create()
++        request._messages = FallbackStorage(request)
++        request.user = user
++        request.organizer = world['organizer']
++        request.event = event
++
++        view = EventIndexView()
++        view.request = request
++        view.args = ()
++        view.kwargs = {}
++        context = view.get_context_data()
++
++        panel = list(context['organizer_teams'])
++        names = [name for _pk, name in panel]
++        assert sorted(names) == sorted(set(names)), f'repeated entries in the panel: {names}'
++
++        expected = teams_that_concern(event)
++        assert {pk for pk, _name in panel} >= expected
++
++@pytest.mark.django_db
++def test_event_dashboard_panel_respects_event_team_scope(rf):
++    """The event dashboard must exclude teams scoped only to another event."""
++    from django.contrib.messages.storage.fallback import FallbackStorage
++    from django.contrib.sessions.backends.db import SessionStore
++
++    from eventyay.eventyay_common.views.dashboards import EventIndexView
++
++    with scopes_disabled():
++        world = build_world(PALETTE_ALPHA)
++        event = reload_event(world['target'])
++        user = User.objects.create_user(
++            email=PALETTE_ALPHA['member_email'],
++            password='n0t-a-real-password',
++            fullname='Nadia Alpher',
++            locale='en',
++        )
++        world['global_team'].members.add(user)
++
++        request = rf.get('/')
++        request.session = SessionStore()
++        request.session.create()
++        request._messages = FallbackStorage(request)
++        request.user = user
++        request.organizer = world['organizer']
++        request.event = event
++
++        view = EventIndexView()
++        view.request = request
++        view.args = ()
++        view.kwargs = {}
++        context = view.get_context_data()
++
++        panel_pks = {pk for pk, _name in context['organizer_teams']}
++
++        assert world['global_team'].pk in panel_pks
++        assert world['local_team'].pk in panel_pks
++        assert world['foreign_team'].pk not in panel_pks
++
++# --------------------------------------------------------------------------- #
++# p2p -- the neighbouring behaviour the fix must not change                    #
++# --------------------------------------------------------------------------- #
++@pytest.mark.django_db
++def test_team_limited_to_another_event_is_not_listed():
++    """Scoping must survive: a team tied to a sibling event stays out."""
++    with scopes_disabled():
++        world = build_world(PALETTE_ALPHA)
++        event = reload_event(world['target'])
++        listed = set(listed_team_pks(event))
++
++        assert world['foreign_team'].pk not in listed
++        # ... and it IS listed for the event it is actually limited to
++        sibling = reload_event(world['others'][0])
++        assert world['foreign_team'].pk in set(listed_team_pks(sibling))
++
++
++@pytest.mark.django_db
++def test_team_of_a_different_organizer_is_not_listed():
++    """An all-events team of another organizer must never leak in."""
++    with scopes_disabled():
++        world = build_world(PALETTE_BRAVO)
++        event = reload_event(world['target'])
++        listed = set(listed_team_pks(event))
++
++        assert world['rival_team'].pk not in listed
++        assert all(
++            Team.objects.get(pk=pk).organizer_id == world['organizer'].pk for pk in listed
++        )
++
++
++@pytest.mark.django_db
++def test_event_specific_team_is_still_listed():
++    """A team scoped to exactly this event must keep its place in the list."""
++    with scopes_disabled():
++        world = build_world(PALETTE_ALPHA)
++        event = reload_event(world['target'])
++        listed = set(listed_team_pks(event))
++
++        assert world['local_team'].pk in listed
++        assert world['global_team'].pk in listed
++        assert world['stale_team'].pk in listed
++
++
++@pytest.mark.django_db
++def test_team_scoped_to_nothing_is_not_listed():
++    """A team that is neither all-events nor limited to anything stays out."""
++    with scopes_disabled():
++        world = build_world(PALETTE_BRAVO)
++        event = reload_event(world['target'])
++
++        assert world['unscoped_team'].pk not in set(listed_team_pks(event))
++
++
++@pytest.mark.django_db
++def test_no_teams_are_listed_when_the_organizer_has_none():
++    """The degenerate case: an organizer without any team lists nothing."""
++    with scopes_disabled():
++        organizer = Organizer.objects.create(name='Lonely Hosts', slug='lonelyhosts')
++        event = reload_event(_make_event(organizer, 'lonelycon', 45))
++
++        assert list(event.teams) == []
++        assert event.teams.count() == 0
++
++
++@pytest.mark.django_db
++def test_listed_teams_can_still_be_narrowed_by_permission():
++    """Callers narrow the collection further; that must keep working."""
++    with scopes_disabled():
++        world = build_world(PALETTE_ALPHA)
++        event = reload_event(world['target'])
++
++        narrowed = set(event.teams.filter(can_change_teams=True).values_list('pk', flat=True))
++        assert narrowed == {world['global_team'].pk}
++
++        order_teams = set(event.teams.filter(can_view_orders=True).values_list('pk', flat=True))
++        assert order_teams == {world['local_team'].pk}
++
++
++@pytest.mark.django_db
++def test_event_permissions_of_a_team_member_are_unchanged():
++    """Permissions derived from the collection must be exactly as before."""
++    with scopes_disabled():
++        world = build_world(PALETTE_BRAVO)
++        event = reload_event(world['target'])
++        user = User.objects.create_user(
++            email=PALETTE_BRAVO['member_email'],
++            password='n0t-a-real-password',
++            fullname='Oleg Bravich',
++            locale='en',
++        )
++        world['stale_team'].members.add(user)
++
++        permissions = user.get_permissions_for_event(event)
++        assert 'can_change_event_settings' in permissions
++        assert 'can_change_teams' not in permissions
++        assert 'can_view_orders' not in permissions

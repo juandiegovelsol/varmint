@@ -1,0 +1,58 @@
+version = "1.0"
+
+[metadata]
+task_id = "ivark__antimatterdimensionssourcecode-2808-mm"
+title = "Tooltip contents stop refreshing while it stays open"
+repository_name = "IvarK/AntimatterDimensionsSourceCode"
+repo_url = "https://github.com/IvarK/AntimatterDimensionsSourceCode"
+issue_number = 2808
+pr_number = 2815
+base_commit = "b07bff4ec0ded834890fce6cff4af8555b9f68a9"
+fix_commit = "9814b7cdd4388e6a5b14bf5bf2e3c5aa28fc127d"
+task_type = "visual_bug_fix"
+language = "JavaScript/Vue"
+framework = "Vue 2 (vue-cli-service)"
+cross_file = false
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = """The instruction states the symptom and the expected behavior and nothing else, and deliberately does not enumerate the affected surfaces: it says the bar stops keeping up, that the tooltip and the marks along it keep whatever they had, and that everything the bar draws should stay current — leaving the reader to work out for themselves how many distinct places that covers. It gives no account of when or why the staleness happens — no mention that it freezes at first render, that the rest of the panel keeps updating around it, or that re-opening it restores fresh contents — because each of those would point straight at the re-render path. It never names the screen, the component, the mechanism, or the resource involved. None of its vocabulary appears anywhere near the responsible source: the only route to the code is reading the poster. The screenshot carries the localizing evidence — the cycling rift name rendered mid-scramble ('çaAuIm', a shifted state of the Vacuum rift's name list), the '... also affects EP gain' milestone text, the 'Drains IP to fill.' panel copy and the '63.449% (Idle)' bar readout — and those visible strings are what lead to the celestial-pelle rift bar, its milestone markers and its hover tooltip. Text-only search for the instruction's own wording ('stale', 'keeping up', 'marks', 'picked out') resolves to nothing in that directory, so the defect cannot be localized without the pixels.
+
+The fix itself is non-trivial Vue 2 reasoning, and the obvious one-liner is not enough. The tooltip body is a v-slot template handed to CustomizeableTooltip, which Vue 2.6 compiles as a STABLE scoped slot: the slot function runs during the child's render, so the parent re-rendering every tick does not refresh it, and a parent-level $forceUpdate() does not either. The only thing that refreshes it is a reactive value, read inside the slot, actually changing — and on base every milestone-derived thing the component renders comes from a source Vue cannot track. The description is a getter that re-runs a word-cycling function on each read; the resource line calls rift.config.percentageToFill(); the highlight comes from the tooltipContentStyle computed, which reads the milestone's canBeApplied; and the markers along the bar read that same canBeApplied in the parent template. canBeApplied is a PROTOTYPE getter on RiftMilestoneState/GameMechanicState derived from live game state, and Vue's observer only converts own enumerable properties, so it never becomes a dependency and that computed's cache is never invalidated. Nothing ever invalidates the slot or the parent render, so all four surfaces freeze at whatever first rendered.
+
+The last two surfaces are what a shallow fix misses. The upstream PR itself only cached the two text lines, so reproducing it verbatim leaves the highlight and the markers frozen and scores 0.5. Getting to 1.0 means recognising that a computed — and a plain method call in the parent template — reading an untracked prototype getter goes stale for exactly the same reason the tooltip's method calls do, and routing all of it through state written on the update() tick the codebase already uses. The marker check deliberately flips a milestone the pointer is NOT on, so refreshing only the hovered milestone is not enough.
+
+There are two traps in the other direction, both guarded by p2p that pass on base. Caching purely on the tick regresses hovering, because sliding onto a new milestone then shows the previous one's values until the next tick. And forcing a refresh by re-keying the tooltip so Vue rebuilds it every tick makes the contents current while destroying the element the pointer is interacting with; a p2p asserts the tooltip element survives across ticks.
+
+The verifier mounts the real component together with the real CustomizeableTooltip (SFC templates compiled inside the harness), drives the tick by calling update() exactly as GameUI does, drives hovering through the component's own mousemove handler, and asserts only rendered output. The appearance checks compare rendered markup — the tooltip subtree picked structurally rather than by class name, and the bar compared with that subtree removed — so no colour, class or style property is pinned. Any architecture passes: a reactive data cache under any property name, computed properties keyed off a tick counter, a watcher, or a fix living in the tooltip component instead."""
+files_edited = [
+  "src/components/tabs/celestial-pelle/PelleRiftBar.vue"
+]
+f2p = [
+  "PelleRiftBar_tooltip_description_tracks_cycling_word_across_ticks",
+  "PelleRiftBar_tooltip_resource_text_tracks_drain_source_across_ticks",
+  "PelleRiftBar_tooltip_highlight_tracks_milestone_unlock_across_ticks",
+  "PelleRiftBar_bar_markers_track_milestone_unlock_across_ticks"
+]
+p2p = [
+  "PelleRiftBar_tooltip_shows_milestone_description_after_tick",
+  "PelleRiftBar_renders_percentage_readout",
+  "PelleRiftBar_tooltip_follows_newly_hovered_milestone_without_tick",
+  "PelleRiftBar_tooltip_element_is_not_rebuilt_each_tick"
+]
+synthetic_tests = true
+tags = ["multimodal", "visual_bug_fix", "vue2", "reactivity", "animation", "tooltip"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "no-network"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

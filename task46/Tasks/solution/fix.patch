@@ -1,0 +1,94 @@
+diff --git a/include/wx/gtk/dc.h b/include/wx/gtk/dc.h
+index ee79c2d..472c90f 100644
+--- a/include/wx/gtk/dc.h
++++ b/include/wx/gtk/dc.h
+@@ -70,13 +70,8 @@ public:
+ 
+ class wxPaintDCImpl: public wxGTKCairoDCImpl
+ {
+-    typedef wxGTKCairoDCImpl BaseType;
+ public:
+     wxPaintDCImpl(wxPaintDC* owner, wxWindow* window);
+-    virtual void DestroyClippingRegion() override;
+-
+-private:
+-    const wxRegion& m_clip;
+ 
+     wxDECLARE_NO_COPY_CLASS(wxPaintDCImpl);
+ };
+diff --git a/src/common/dcgraph.cpp b/src/common/dcgraph.cpp
+index 1c84cab..cb54c16 100644
+--- a/src/common/dcgraph.cpp
++++ b/src/common/dcgraph.cpp
+@@ -421,14 +421,11 @@ void wxGCDCImpl::DoSetDeviceClippingRegion( const wxRegion &region )
+     // Set clipping region
+     m_graphicContext->Clip(region);
+ 
+-    // Refresh the cached clipping box while the coordinate systems are still
+-    // equivalent, so that we don't have to convert the region we've just been
+-    // given back and forth.
+-    m_clipping = true;
+-    UpdateClipBox();
+-
+     // Restore original transformation settings.
+     m_graphicContext->SetTransform(currTransform);
++
++    m_clipping = true;
++    UpdateClipBox();
+ }
+ 
+ void wxGCDCImpl::DestroyClippingRegion()
+@@ -448,11 +445,7 @@ void wxGCDCImpl::DestroyClippingRegion()
+     m_graphicContext->SetBrush( m_brush );
+ 
+     wxDCImpl::DestroyClippingRegion();
+-
+-    // The cached clipping box only has to be recomputed if a clipping region
+-    // was really in effect, otherwise it already describes the whole DC.
+-    if ( m_clipping )
+-        m_isClipBoxValid = false;
++    m_isClipBoxValid = false;
+ }
+ 
+ void wxGCDCImpl::DoGetSizeMM( int* width, int* height ) const
+@@ -529,6 +522,7 @@ void wxGCDCImpl::ComputeScaleAndOrigin()
+         m_graphicContext->ConcatTransform( m_matrixCurrent );
+         m_matrixCurrentInv = m_matrixCurrent;
+         m_matrixCurrentInv.Invert();
++        m_isClipBoxValid = false;
+     }
+ }
+ 
+diff --git a/src/gtk/dc.cpp b/src/gtk/dc.cpp
+index 753f6a4..2c0e3d7 100644
+--- a/src/gtk/dc.cpp
++++ b/src/gtk/dc.cpp
+@@ -490,7 +490,6 @@ wxClientDCImpl::wxClientDCImpl(wxClientDC* owner, wxWindow* window)
+ 
+ wxPaintDCImpl::wxPaintDCImpl(wxPaintDC* owner, wxWindow* window)
+     : wxGTKCairoDCImpl(owner, window)
+-    , m_clip(window->m_nativeUpdateRegion)
+ {
+     cairo_t* cr = window->GTKPaintContext();
+     wxCHECK_RET(cr, "using wxPaintDC without being in a native paint event");
+@@ -501,20 +500,6 @@ wxPaintDCImpl::wxPaintDCImpl(wxPaintDC* owner, wxWindow* window)
+     // context is already adjusted for RTL
+     m_layoutDir = window->GetLayoutDirection();
+ }
+-
+-void wxPaintDCImpl::DestroyClippingRegion()
+-{
+-    BaseType::DestroyClippingRegion();
+-
+-    // re-establish clip for paint update area
+-    int x, y, w, h;
+-    m_clip.GetBox(x, y, w, h);
+-    cairo_t* cr = static_cast<cairo_t*>(GetCairoContext());
+-    cairo_rectangle(cr,
+-        DeviceToLogicalX(x), DeviceToLogicalY(y),
+-        DeviceToLogicalXRel(w), DeviceToLogicalYRel(h));
+-    cairo_clip(cr);
+-}
+ //-----------------------------------------------------------------------------
+ 
+ wxScreenDCImpl::wxScreenDCImpl(wxScreenDC* owner)

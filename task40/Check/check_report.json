@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "checks": {
+        "behavior_in_task_description": {
+          "explanation": "instruction.md describes the exact reproducible scenario tests check: a crash triggered by unsetting one of the parents ('bio dad', 'bio mom', 'bio dad's mate', 'bio mom's mate') shown in the attached screenshot of a kit with adoptive-parent/grandparent relationships. The f2p tests exercise precisely this scenario (unsetting an adoptive parent of a cat who is a two-route grandparent). This is a code-repository bug-fix task (not a spec-driven output task), so it is appropriate that instruction.md gives the player-facing symptom and visual evidence rather than internal function/attribute names — the agent is expected to explore the codebase to find the crash site, consistent with the stated difficulty rationale.",
+          "outcome": "pass"
+        },
+        "behavior_in_tests": {
+          "explanation": "The crash behavior described in instruction.md (unsetting an adoptive parent in a grandparent-linked family) is directly covered by the f2p tests, and adjacent family-tree behaviors that must not regress (plain adoptions, blood parents, mate bookkeeping, three-generation trees) are covered by p2p tests. No behavior mentioned in the instruction is left untested.",
+          "outcome": "pass"
+        },
+        "informative_test_structure": {
+          "explanation": "tests/test_unset_adoptive_parent.py is organized into clearly named classes (UnsetAdoptiveParentOfAGrandparent, AdoptionChangesOnCatsWithGrandkits, AdoptionNeighbourhood) with docstrings marking f2p vs p2p intent, descriptive test method names, and shared helper methods with explanatory docstrings/comments. This is well above average readability for a generated test suite.",
+          "outcome": "pass"
+        },
+        "anti_cheating_measures": {
+          "explanation": "The Dockerfile clones the real repo, checks out the base commit, then strips .git and re-inits a single-commit repo specifically to prevent the agent from viewing the fix commit or future history. tests/ and solution/ are not copied into the image (only bind-mounted at verify time). The test file explicitly avoids naming the buggy attribute or private helper, only exercising public entry points (unset_adoptive_parent/set_adoptive_parent) and public dict state, so the fix cannot be trivially guessed from the tests. No answer leakage was found in environment files.",
+          "outcome": "pass"
+        },
+        "structured_data_schema": {
+          "explanation": "This is a behavioral code bug-fix task verified via pytest test execution, not a task requiring the agent to produce structured output (JSON/CSV/API schema), so no schema documentation is expected.",
+          "outcome": "not_applicable"
+        },
+        "pinned_dependencies": {
+          "explanation": "All Python packages installed in the Dockerfile use exact or constrained pins (pygame-ce==2.5.3, pygame-gui==0.6.13, pydantic==2.12.0, tomli==2.2.1, hatchling==1.27.0, plus ~= range pins for others). The test-only dependency pytest is likewise pinned in test.sh (pytest~=8.2). apt packages are unpinned, which is acceptable per the criteria.",
+          "outcome": "pass"
+        },
+        "typos": {
+          "explanation": "No typos were found in filenames, paths, commands, or identifiers across instruction.md, task.toml, evidence_bundle.json, the Dockerfile, solve.sh, fix.patch, test.patch, config.json, test.sh, or verifier.py. Commit hashes are valid 40-character hex strings and were independently confirmed against the real PR/commit. The attribute rename in fix.patch (grandparents -> grand_parents) is the intentional bug fix, not an authoring typo — verified against the actual upstream source.",
+          "outcome": "pass"
+        },
+        "tests_or_solution_in_image": {
+          "explanation": "The Dockerfile only COPYs environment/assets/ into the image and explicitly comments that tests/ and solution/ are intentionally not copied, instead supplied at verify time via bind mounts.",
+          "outcome": "pass"
+        },
+        "test_deps_in_image": {
+          "explanation": "pytest (a test-only dependency) is installed in tests/test.sh at verify time, not in the Dockerfile's pip install list, which only includes runtime/game dependencies (pygame-ce, pygame-gui, pydantic, etc.).",
+          "outcome": "pass"
+        },
+        "hardcoded_solution": {
+          "explanation": "solution/solve.sh applies solution/fix.patch, which is the actual upstream one-line code fix (self.all_inheritances[cat_id].grandparents -> grand_parents) verified to match the real merged PR #4871 diff exactly (2 additions/2 deletions to scripts/cat_relations/inheritance.py). This demonstrates the real code change rather than printing/faking a final answer, consistent with the standard oracle-patch pattern for this task type.",
+          "outcome": "pass"
+        },
+        "file_reference_mentioned": {
+          "explanation": "The task does not require the agent to produce any output files for the verifier to check; the verifier runs pytest directly against the modified source tree, so there is no file-output contract to document.",
+          "outcome": "not_applicable"
+        }
+      },
+      "cost_usd": 0.9500841000000001,
+      "task_name": "Tasks",
+      "error": null
+    }
+  ]
+}

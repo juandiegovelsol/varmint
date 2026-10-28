@@ -1,0 +1,1183 @@
+diff --git a/packages/lexical-react/src/__tests__/unit/CollaborationAwareness.test.tsx b/packages/lexical-react/src/__tests__/unit/CollaborationAwareness.test.tsx
+new file mode 100644
+index 0000000..bfd18ce
+--- /dev/null
++++ b/packages/lexical-react/src/__tests__/unit/CollaborationAwareness.test.tsx
+@@ -0,0 +1,1177 @@
++/**
++ * Copyright (c) Meta Platforms, Inc. and affiliates.
++ *
++ * This source code is licensed under the MIT license found in the
++ * LICENSE file in the root directory of this source tree.
++ *
++ */
++
++import {LexicalComposer} from '@lexical/react/LexicalComposer';
++import {useLexicalComposerContext} from '@lexical/react/LexicalComposerContext';
++import {ContentEditable} from '@lexical/react/LexicalContentEditable';
++import {createBinding} from '@lexical/yjs';
++import {
++  $createParagraphNode,
++  $createTextNode,
++  $getRoot,
++  $getSelection,
++  $isElementNode,
++  $isRangeSelection,
++  $isTextNode,
++  LexicalEditor,
++  ParagraphNode,
++  TextNode,
++} from 'lexical';
++import * as React from 'react';
++import {act, useEffect, useMemo, useState} from 'react';
++import {createRoot, type Root} from 'react-dom/client';
++import {afterEach, describe, expect, it} from 'vitest';
++import * as Y from 'yjs';
++
++import {
++  useYjsCollaboration,
++  useYjsFocusTracking,
++} from '../../shared/useYjsCollaboration';
++
++/**
++ * ===========================================================================
++ * What this file tests
++ * ===========================================================================
++ * Two or more people editing the same document at the same time. Besides the
++ * text itself, each participant sees where the others are: their caret and the
++ * range they have selected. This file drives that end to end -- real editors,
++ * real document replication, a real cross-client presence channel -- and asserts
++ * only on what one participant can observe about the others.
++ *
++ * Everything here is deliberately observational. No assertion names a source
++ * file, a function, an event, a hook or a subscription: any implementation that
++ * puts the right participant state on screen at the right time passes, and any
++ * implementation that does not, does not.
++ *
++ * ---------------------------------------------------------------------------
++ * jsdom capability shims
++ * ---------------------------------------------------------------------------
++ * The two shims below exist only because jsdom ships no CSS layout engine. They
++ * are unrelated to the behaviour under test and apply identically to every
++ * candidate:
++ *
++ *  1. `HTMLElement.offsetParent` is hardcoded to `null` for every element in
++ *     jsdom, where a real browser returns the nearest positioned ancestor.
++ *     Collaboration cursor rendering reads a `null` offsetParent as "this editor
++ *     is not on screen", so without this shim NO participant state would be
++ *     resolved in this environment -- on a broken and on a correct build alike.
++ *  2. `Range.prototype.getClientRects` / `getBoundingClientRect` do not exist in
++ *     jsdom at all, and `Element.prototype.scrollIntoView` is missing. They are
++ *     stubbed to report no rectangles / an empty rect / nothing, which is the
++ *     honest answer where there is no layout. The tests therefore assert on
++ *     resolved positions (document offsets and node identity) and never on pixel
++ *     geometry, so nothing below depends on invented coordinates.
++ */
++Object.defineProperty(HTMLElement.prototype, 'offsetParent', {
++  configurable: true,
++  get(this: HTMLElement): Element | null {
++    const {body} = this.ownerDocument;
++    return this === body ? null : body;
++  },
++});
++if (
++  typeof (Range.prototype as {getClientRects?: unknown}).getClientRects !==
++  'function'
++) {
++  (
++    Range.prototype as unknown as {getClientRects: () => DOMRect[]}
++  ).getClientRects = () => [];
++}
++if (
++  typeof (Range.prototype as {getBoundingClientRect?: unknown})
++    .getBoundingClientRect !== 'function'
++) {
++  (
++    Range.prototype as unknown as {getBoundingClientRect: () => DOMRect}
++  ).getBoundingClientRect = () => new DOMRect(0, 0, 0, 0);
++}
++if (typeof Element.prototype.scrollIntoView !== 'function') {
++  Element.prototype.scrollIntoView = () => undefined;
++}
++
++/**
++ * The two collaboration types this file needs, derived from the public factory
++ * rather than imported by name, so the tests do not depend on which type names a
++ * candidate's implementation happens to export.
++ */
++type Binding = ReturnType<typeof createBinding>;
++type ProviderLike = Parameters<typeof createBinding>[1];
++
++/** Whatever the collaboration layer chooses to publish about a participant. */
++type EphemeralState = Record<string, unknown>;
++
++/**
++ * A working cross-client presence channel.
++ *
++ * The presence half of a collaboration session is not part of the replicated
++ * document: it is short-lived per-participant state (who is here and where their
++ * caret is) that every client publishes and every other client is notified
++ * about. This is a faithful, minimal implementation of
++ * exactly that and nothing more: publishing local state synchronously notifies
++ * every OTHER linked client's subscribers, with no payload, so subscribers
++ * always re-read the full participant map -- as the real protocol behaves.
++ *
++ * The suite brings its own rather than reusing the one in `./utils.tsx`, whose
++ * presence object is a deliberate stub (subscribe/unsubscribe are no-ops and it
++ * reports a single hardcoded participant id that the cursor layer treats as "not
++ * a real participant"). That stub is fine for tests that only care about
++ * document text, and it is intentionally NOT edited here: a candidate must not be
++ * able to change the harness by editing shared test infrastructure, so this file
++ * is self-contained apart from the product code under test.
++ */
++class FakeAwareness {
++  peers: FakeAwareness[] = [];
++  private localState: EphemeralState | null = null;
++  private listeners = new Set<() => void>();
++
++  constructor(readonly id: number) {}
++
++  getLocalState = (): EphemeralState | null => this.localState;
++
++  getStates = (): Map<number, EphemeralState> => {
++    const states = new Map<number, EphemeralState>();
++    for (const peer of this.peers) {
++      if (peer !== this && peer.localState !== null) {
++        states.set(peer.id, peer.localState);
++      }
++    }
++    return states;
++  };
++
++  setLocalState = (state: EphemeralState): void => {
++    this.localState = state;
++    this.broadcast();
++  };
++
++  setLocalStateField = (field: string, value: unknown): void => {
++    this.setLocalState({
++      ...(this.localState as EphemeralState),
++      [field]: value,
++    });
++  };
++
++  /**
++   * The participant's presence disappears entirely -- they closed the tab, or
++   * the session dropped them -- with no document mutation of any kind.
++   */
++  clearLocalState(): void {
++    this.localState = null;
++    this.broadcast();
++  }
++
++  on = (type: string, cb: () => void): void => {
++    // Checked at run time, not only through a TypeScript parameter type, so a
++    // candidate that subscribes to some other event name genuinely receives no
++    // callbacks -- exactly as it would against the real protocol.
++    if (type === 'update') {
++      this.listeners.add(cb);
++    }
++  };
++
++  off = (type: string, cb: () => void): void => {
++    if (type === 'update') {
++      this.listeners.delete(cb);
++    }
++  };
++
++  private broadcast(): void {
++    for (const peer of this.peers) {
++      if (peer !== this) {
++        // Snapshot before iterating: a subscriber reacting to this publication
++        // may add or remove another subscriber as a side effect.
++        Array.from(peer.listeners).forEach((cb) => cb());
++      }
++    }
++  }
++}
++
++/**
++ * The transport: a set of clients replicating one document to each other, each
++ * with its own replica, buffering updates for clients that are offline. Same
++ * shape as the connection the other collaboration tests use, inlined so this
++ * file's harness cannot be altered from outside the file.
++ */
++class TestConnection {
++  clients: TestClient[] = [];
++
++  createClient(): TestClient {
++    const client = new TestClient(this);
++    this.clients.push(client);
++    return client;
++  }
++}
++
++class TestClient {
++  readonly doc: Y.Doc = new Y.Doc({gc: false});
++  readonly awareness: FakeAwareness;
++  connected = false;
++  private buffered: Uint8Array[] = [];
++  private listeners = new Map<string, Set<(data: never) => void>>();
++
++  constructor(private connection: TestConnection) {
++    // A real presence protocol identifies a participant by the same id their
++    // document replica uses, so this does too.
++    this.awareness = new FakeAwareness(this.doc.clientID);
++    this.doc.on('update', (update: Uint8Array, origin: unknown) => {
++      if (origin !== this.connection && this.connected) {
++        this.send(update);
++      }
++    });
++  }
++
++  connect(): void {
++    if (this.connected) {
++      return;
++    }
++    this.connected = true;
++    const state = Y.encodeStateAsUpdate(this.doc);
++    if (this.buffered.length > 0) {
++      Y.applyUpdate(this.doc, Y.mergeUpdates(this.buffered), this.connection);
++      this.buffered = [];
++    }
++    this.send(state);
++    this.dispatch('sync', true);
++  }
++
++  disconnect(): void {
++    this.connected = false;
++  }
++
++  on(type: string, cb: (data: never) => void): void {
++    let set = this.listeners.get(type);
++    if (set === undefined) {
++      set = new Set();
++      this.listeners.set(type, set);
++    }
++    set.add(cb);
++  }
++
++  off(type: string, cb: (data: never) => void): void {
++    const set = this.listeners.get(type);
++    if (set !== undefined) {
++      set.delete(cb);
++    }
++  }
++
++  documentJSON(): unknown {
++    return this.doc.toJSON();
++  }
++
++  private send(update: Uint8Array): void {
++    for (const client of this.connection.clients) {
++      if (client === this) {
++        continue;
++      }
++      if (client.connected) {
++        Y.applyUpdate(client.doc, update, this.connection);
++      } else {
++        client.buffered.push(update);
++      }
++    }
++  }
++
++  private dispatch(type: string, data: unknown): void {
++    const set = this.listeners.get(type);
++    if (set !== undefined) {
++      set.forEach((cb) => (cb as (arg: unknown) => void)(data));
++    }
++  }
++}
++
++async function waitForReact(cb: () => void): Promise<void> {
++  await act(async () => {
++    cb();
++    await Promise.resolve().then();
++  });
++}
++
++/** Let every queued reaction to an edit run before anything is asserted. */
++async function settle(): Promise<void> {
++  await act(async () => {
++    await new Promise((resolve) => setTimeout(resolve, 0));
++  });
++}
++
++/**
++ * One participant's editor, assembled from the same public collaboration hooks
++ * the shipped collaboration plugin composes. They are called directly rather
++ * than through the plugin because the plugin never hands out the collaboration
++ * binding it builds internally, and that binding is where the state a
++ * participant can see about the others is resolved.
++ */
++function CollaborativeEditor({
++  id,
++  provider,
++  doc,
++  name,
++  color,
++  onReady,
++}: {
++  id: string;
++  provider: ProviderLike;
++  doc: Y.Doc;
++  name: string;
++  color: string;
++  onReady: (editor: LexicalEditor, binding: Binding) => void;
++}): React.JSX.Element {
++  const [editor] = useLexicalComposerContext();
++  const [, setDoc] = useState<Y.Doc | undefined>(doc);
++  const docMap = useMemo(() => new Map([[id, doc]]), [id, doc]);
++  const binding = useMemo(
++    () => createBinding(editor, provider, id, doc, docMap),
++    [editor, provider, id, doc, docMap],
++  );
++
++  useEffect(() => {
++    onReady(editor, binding);
++    // onReady is a fresh closure each render by design (it captures per-test
++    // state); only re-fire when the editor/binding identity actually changes.
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [editor, binding]);
++
++  const cursors = useYjsCollaboration(
++    editor,
++    id,
++    provider,
++    docMap,
++    name,
++    color,
++    true,
++    binding,
++    setDoc,
++  );
++  useYjsFocusTracking(editor, provider, name, color);
++
++  return (
++    <>
++      <ContentEditable />
++      {cursors}
++    </>
++  );
++}
++
++/**
++ * How one participant currently sees another. `visible: false` means the other
++ * participant is known to be in the session but has nothing to show right now --
++ * for instance because they are not working in their editor.
++ */
++/** A position in the document, independent of how the editor represents it. */
++type Place =
++  | {paragraph: number; characters: number}
++  | {paragraph: number; place: 'invalid'}
++  | {place: 'unknown'};
++
++type ParticipantView =
++  | {inSession: false}
++  | {inSession: true; label: string; visible: false}
++  | {
++      inSession: true;
++      label: string;
++      visible: true;
++      anchorOffset: number;
++      focusOffset: number;
++      anchorOnParagraphText: boolean;
++      focusOnParagraphText: boolean;
++    };
++
++/** One simulated participant: a real editor plus a real replica and presence. */
++class Peer {
++  readonly client: TestClient;
++  readonly name: string;
++  readonly color: string;
++  editor: LexicalEditor | null = null;
++  binding: Binding | null = null;
++  private container: HTMLDivElement;
++  private root: Root;
++
++  constructor(client: TestClient, index: number) {
++    this.client = client;
++    this.name = `user-${index}`;
++    this.color = `#00000${index}`;
++    this.container = document.createElement('div');
++    document.body.appendChild(this.container);
++    this.root = createRoot(this.container);
++  }
++
++  get awareness(): FakeAwareness {
++    return this.client.awareness;
++  }
++
++  async start(): Promise<void> {
++    const provider = this.client as unknown as ProviderLike;
++    await act(async () => {
++      this.root.render(
++        <LexicalComposer
++          initialConfig={{
++            editorState: null,
++            namespace: this.name,
++            onError: (e) => {
++              throw e;
++            },
++          }}>
++          <CollaborativeEditor
++            id="main"
++            provider={provider}
++            doc={this.client.doc}
++            name={this.name}
++            color={this.color}
++            onReady={(editor, binding) => {
++              this.editor = editor;
++              this.binding = binding;
++            }}
++          />
++        </LexicalComposer>,
++      );
++      await Promise.resolve().then();
++    });
++  }
++
++  stop(): void {
++    act(() => {
++      this.root.unmount();
++    });
++    this.container.parentNode?.removeChild(this.container);
++  }
++
++  /** The text of the single shared paragraph this suite works with. */
++  paragraphText(): string | null {
++    return this.editor!.getEditorState().read(() => {
++      const paragraph = $getRoot().getFirstChild<ParagraphNode>();
++      const text = paragraph ? paragraph.getFirstChild<TextNode>() : null;
++      return text ? text.getTextContent() : null;
++    });
++  }
++
++  /** Identity of that paragraph's text node in THIS participant's editor. */
++  paragraphTextKey(): string | null {
++    return this.editor!.getEditorState().read(() => {
++      const paragraph = $getRoot().getFirstChild<ParagraphNode>();
++      const text = paragraph ? paragraph.getFirstChild<TextNode>() : null;
++      return text ? text.getKey() : null;
++    });
++  }
++
++  /** A fingerprint of the replicated document, for "nothing was edited" checks. */
++  documentFingerprint(): string {
++    return JSON.stringify(this.client.documentJSON());
++  }
++
++  /** What this participant can currently see of `other`. */
++  view(other: Peer): ParticipantView {
++    const cursor = this.binding!.cursors.get(other.awareness.id);
++    if (cursor === undefined) {
++      return {inSession: false};
++    }
++    const selection = cursor.selection;
++    if (selection === null) {
++      return {inSession: true, label: cursor.name, visible: false};
++    }
++    const textKey = this.paragraphTextKey();
++    return {
++      anchorOffset: selection.anchor.offset,
++      anchorOnParagraphText: selection.anchor.key === textKey,
++      focusOffset: selection.focus.offset,
++      focusOnParagraphText: selection.focus.key === textKey,
++      inSession: true,
++      label: cursor.name,
++      visible: true,
++    };
++  }
++
++  /** Which other participants this participant is currently tracking. */
++  trackedParticipants(): number[] {
++    return Array.from(this.binding!.cursors.keys()).sort((a, b) => a - b);
++  }
++
++  /** The participant puts their caret somewhere / selects a range. */
++  async select(anchorOffset: number, focusOffset: number): Promise<void> {
++    await waitForReact(() => {
++      this.editor!.update(() => {
++        const paragraph = $getRoot().getFirstChild<ParagraphNode>()!;
++        const text = paragraph.getFirstChild<TextNode>()!;
++        text.select(anchorOffset, focusOffset);
++      });
++    });
++  }
++
++  /** The participant starts working in their editor. */
++  async focusEditor(): Promise<void> {
++    await waitForReact(() => {
++      this.editor!.getRootElement()!.dispatchEvent(new FocusEvent('focus'));
++    });
++  }
++
++  /**
++   * The participant's editor really is the one the browser is in -- their editor
++   * holds the document focus, not just a focus notification. Only one editor per
++   * document can be in this state, which is why the tests that need it give it to
++   * the one participant whose own selection they observe.
++   */
++  async takeDocumentFocus(): Promise<void> {
++    await waitForReact(() => {
++      this.editor!.getRootElement()!.focus();
++    });
++  }
++
++  /** Where this participant's own caret / selection currently is. */
++  ownSelection(): null | {
++    anchorOffset: number;
++    focusOffset: number;
++    onParagraphText: boolean;
++  } {
++    const textKey = this.paragraphTextKey();
++    return this.editor!.getEditorState().read(() => {
++      const selection = $getSelection();
++      if (!$isRangeSelection(selection)) {
++        return null;
++      }
++      return {
++        anchorOffset: selection.anchor.offset,
++        focusOffset: selection.focus.offset,
++        onParagraphText:
++          selection.anchor.key === textKey && selection.focus.key === textKey,
++      };
++    });
++  }
++
++  /**
++   * The participant puts their caret / selects a range, committed immediately --
++   * the same thing a keystroke or a click does before the next event is handled.
++   */
++  async place(anchorOffset: number, focusOffset: number): Promise<void> {
++    await waitForReact(() => {
++      this.editor!.update(
++        () => {
++          const paragraph = $getRoot().getFirstChild<ParagraphNode>()!;
++          const text = paragraph.getFirstChild<TextNode>()!;
++          text.select(anchorOffset, focusOffset);
++        },
++        {discrete: true},
++      );
++    });
++    await settle();
++  }
++
++  /**
++   * Where a position sits in the document, said in a way that does not depend on
++   * how the editor happens to represent it. A caret at the end of "hello" is the
++   * same place whether it is held as "5 characters into that text" or as "after
++   * the first child of that paragraph", so both are reported the same way here.
++   * A position that its paragraph cannot actually hold is reported as `invalid`,
++   * because that is what it is -- not a place in the document.
++   */
++  placeOf(key: string, offset: number): Place {
++    return this.editor!.getEditorState().read(() => {
++      const paragraphs = $getRoot().getChildren();
++      for (let i = 0; i < paragraphs.length; i++) {
++        const paragraph = paragraphs[i];
++        if (paragraph.getKey() === key) {
++          if (!$isElementNode(paragraph)) {
++            return {paragraph: i, place: 'invalid'} as Place;
++          }
++          const children = paragraph.getChildren();
++          if (offset > children.length) {
++            return {paragraph: i, place: 'invalid'} as Place;
++          }
++          let characters = 0;
++          for (let c = 0; c < offset; c++) {
++            characters += children[c].getTextContentSize();
++          }
++          return {characters, paragraph: i} as Place;
++        }
++        if ($isElementNode(paragraph)) {
++          const children = paragraph.getChildren();
++          for (let c = 0; c < children.length; c++) {
++            const child = children[c];
++            if (child.getKey() === key) {
++              if (!$isTextNode(child) || offset > child.getTextContentSize()) {
++                return {paragraph: i, place: 'invalid'} as Place;
++              }
++              let characters = offset;
++              for (let b = 0; b < c; b++) {
++                characters += children[b].getTextContentSize();
++              }
++              return {characters, paragraph: i} as Place;
++            }
++          }
++        }
++      }
++      return {place: 'unknown'} as Place;
++    });
++  }
++
++  /** Where this participant can see the two ends of `other`'s selection. */
++  seenEnds(other: Peer): {anchor: Place; focus: Place} | 'not shown' {
++    const cursor = this.binding!.cursors.get(other.awareness.id);
++    if (cursor === undefined || cursor.selection === null) {
++      return 'not shown';
++    }
++    const {anchor, focus} = cursor.selection;
++    return {
++      anchor: this.placeOf(anchor.key, anchor.offset),
++      focus: this.placeOf(focus.key, focus.offset),
++    };
++  }
++
++  /** Replace the document with one paragraph per entry ('' makes an empty one). */
++  async writeParagraphs(texts: string[]): Promise<void> {
++    await waitForReact(() => {
++      this.editor!.update(
++        () => {
++          const root = $getRoot();
++          root.clear();
++          for (const text of texts) {
++            const paragraph = $createParagraphNode();
++            if (text.length > 0) {
++              paragraph.append($createTextNode(text));
++            }
++            root.append(paragraph);
++          }
++        },
++        {discrete: true},
++      );
++    });
++    await settle();
++  }
++
++  /** The paragraph texts this participant currently sees. */
++  paragraphTexts(): string[] {
++    return this.editor!.getEditorState().read(() =>
++      $getRoot()
++        .getChildren()
++        .map((paragraph) => paragraph.getTextContent()),
++    );
++  }
++
++  /** The participant puts their caret / selection wherever `place` says. */
++  async placeSelection(place: () => void): Promise<void> {
++    await waitForReact(() => {
++      this.editor!.update(place, {discrete: true});
++    });
++    await settle();
++  }
++
++  /** The participant edits the paragraph text (any edit, anywhere in it). */
++  async rewriteText(next: (current: string) => string): Promise<void> {
++    await waitForReact(() => {
++      this.editor!.update(
++        () => {
++          const paragraph = $getRoot().getFirstChild<ParagraphNode>()!;
++          const text = paragraph.getFirstChild<TextNode>()!;
++          text.setTextContent(next(text.getTextContent()));
++        },
++        {discrete: true},
++      );
++    });
++    await settle();
++  }
++
++  /** The participant types at the end of the paragraph. */
++  async appendText(suffix: string): Promise<void> {
++    await waitForReact(() => {
++      this.editor!.update(() => {
++        const paragraph = $getRoot().getFirstChild<ParagraphNode>()!;
++        const text = paragraph.getFirstChild<TextNode>()!;
++        text.setTextContent(text.getTextContent() + suffix);
++      });
++    });
++  }
++}
++
++describe('Collaboration: remote participant caret and selection state', () => {
++  let peers: Peer[] = [];
++
++  afterEach(() => {
++    for (const p of peers) {
++      p.stop();
++    }
++    peers = [];
++  });
++
++  async function makePeers(count: number): Promise<Peer[]> {
++    const connection = new TestConnection();
++    const made: Peer[] = [];
++    for (let i = 0; i < count; i++) {
++      made.push(new Peer(connection.createClient(), i));
++    }
++    const awarenesses = made.map((p) => p.awareness);
++    for (const a of awarenesses) {
++      a.peers = awarenesses;
++    }
++    for (const p of made) {
++      await p.start();
++    }
++    await waitForReact(() => {
++      for (const p of made) {
++        p.client.connect();
++      }
++    });
++    peers = made;
++    return made;
++  }
++
++  /** Seed the shared paragraph from `peer`; everyone must receive it. */
++  async function seedText(peer: Peer, text: string): Promise<void> {
++    await waitForReact(() => {
++      peer.editor!.update(() => {
++        const paragraph = $getRoot().getFirstChild<ParagraphNode>()!;
++        paragraph.append($createTextNode(text));
++      });
++    });
++    for (const p of peers) {
++      expect(p.paragraphText()).toBe(text);
++    }
++  }
++
++  function visible(
++    label: string,
++    anchorOffset: number,
++    focusOffset: number,
++  ): ParticipantView {
++    return {
++      anchorOffset,
++      anchorOnParagraphText: true,
++      focusOffset,
++      focusOnParagraphText: true,
++      inSession: true,
++      label,
++      visible: true,
++    };
++  }
++
++  // ==========================================================================
++  // A participant's caret and selected range must travel on their own. No
++  // scenario below types a single character after the shared text is in place.
++  // ==========================================================================
++
++  it('shows a remote caret that appeared from a selection-only change, with no document edit', async () => {
++    const [local, remote] = await makePeers(2);
++    await seedText(local, 'hello world');
++    await remote.focusEditor();
++
++    const textBefore = local.paragraphText();
++    const documentBefore = local.documentFingerprint();
++
++    // The only thing that happens: the other participant puts their caret
++    // somewhere. Nothing is typed, deleted or otherwise written.
++    await remote.select(4, 4);
++
++    expect(local.view(remote)).toEqual(visible(remote.name, 4, 4));
++    // ... and it really was selection-only: the document did not move.
++    expect(local.paragraphText()).toBe(textBefore);
++    expect(local.documentFingerprint()).toBe(documentBefore);
++  });
++
++  it('moves an already-visible remote caret to the position it moved to', async () => {
++    const [local, remote] = await makePeers(2);
++    await seedText(local, 'hello world');
++    await remote.focusEditor();
++
++    await remote.select(2, 2);
++    expect(local.view(remote)).toEqual(visible(remote.name, 2, 2));
++
++    const documentBefore = local.documentFingerprint();
++    await remote.select(9, 9);
++
++    // The caret is at the new position -- not merely still on screen.
++    expect(local.view(remote)).toEqual(visible(remote.name, 9, 9));
++    expect(local.documentFingerprint()).toBe(documentBefore);
++  });
++
++  it('shows both ends of a remote selection range, in the direction it was made', async () => {
++    const [local, remote] = await makePeers(2);
++    await seedText(local, 'hello world');
++    await remote.focusEditor();
++
++    await remote.select(2, 7);
++    expect(local.view(remote)).toEqual(visible(remote.name, 2, 7));
++  });
++
++  it('replaces a remote selection range with the new range, with no document edit', async () => {
++    const [local, remote] = await makePeers(2);
++    await seedText(local, 'hello world');
++    await remote.focusEditor();
++
++    await remote.select(2, 7);
++    expect(local.view(remote)).toEqual(visible(remote.name, 2, 7));
++
++    const documentBefore = local.documentFingerprint();
++
++    // A different range, this one selected right-to-left.
++    await remote.select(9, 5);
++    expect(local.view(remote)).toEqual(visible(remote.name, 9, 5));
++
++    // ... and then collapsed back down to a plain caret.
++    await remote.select(1, 1);
++    expect(local.view(remote)).toEqual(visible(remote.name, 1, 1));
++
++    expect(local.documentFingerprint()).toBe(documentBefore);
++  });
++
++  it('follows several consecutive remote selection changes with no typing in between', async () => {
++    const [local, remote] = await makePeers(2);
++    await seedText(local, 'hello world');
++    await remote.focusEditor();
++
++    const documentBefore = local.documentFingerprint();
++    const steps: Array<[number, number]> = [
++      [1, 1],
++      [3, 6],
++      [6, 3],
++      [8, 8],
++      [2, 10],
++    ];
++    for (const [anchorOffset, focusOffset] of steps) {
++      await remote.select(anchorOffset, focusOffset);
++      expect(local.view(remote)).toEqual(
++        visible(remote.name, anchorOffset, focusOffset),
++      );
++    }
++    expect(local.documentFingerprint()).toBe(documentBefore);
++  });
++
++  it('keeps two remote participant selections independent of each other', async () => {
++    const [local, remoteB, remoteC] = await makePeers(3);
++    await seedText(local, 'hello world');
++    await remoteB.focusEditor();
++    await remoteC.focusEditor();
++
++    await remoteB.select(0, 2);
++    await remoteC.select(4, 6);
++    expect(local.view(remoteB)).toEqual(visible(remoteB.name, 0, 2));
++    expect(local.view(remoteC)).toEqual(visible(remoteC.name, 4, 6));
++
++    // One of them moving must not disturb the other one's state.
++    await remoteB.select(8, 10);
++    expect(local.view(remoteB)).toEqual(visible(remoteB.name, 8, 10));
++    expect(local.view(remoteC)).toEqual(visible(remoteC.name, 4, 6));
++
++    expect(local.trackedParticipants()).toEqual(
++      [remoteB.awareness.id, remoteC.awareness.id].sort((a, b) => a - b),
++    );
++  });
++
++  it('stops showing a remote participant once they leave the session', async () => {
++    const [local, remote] = await makePeers(2);
++    await seedText(local, 'hello world');
++    await remote.focusEditor();
++    await remote.select(2, 5);
++    expect(local.view(remote)).toEqual(visible(remote.name, 2, 5));
++
++    await waitForReact(() => {
++      remote.awareness.clearLocalState();
++    });
++    expect(local.view(remote)).toEqual({inSession: false});
++    expect(local.trackedParticipants()).toEqual([]);
++  });
++
++  it('keeps following a remote participant selection after that participant typed', async () => {
++    const [local, remote] = await makePeers(2);
++    await seedText(local, 'hello world');
++    await remote.focusEditor();
++    await remote.select(1, 1);
++    expect(local.view(remote)).toEqual(visible(remote.name, 1, 1));
++
++    // Typing is the one thing that has never been in doubt: the text arrives and
++    // the participant's caret is still on screen where they left it.
++    await remote.appendText('!');
++    expect(local.paragraphText()).toBe('hello world!');
++    expect(local.view(remote)).toEqual(visible(remote.name, 1, 1));
++
++    // From here on they only move around. What is on screen has to be where they
++    // are now, not where their last edit left them.
++    const documentBefore = local.documentFingerprint();
++    await remote.select(6, 9);
++    expect(local.view(remote)).toEqual(visible(remote.name, 6, 9));
++    expect(local.paragraphText()).toBe('hello world!');
++    expect(local.documentFingerprint()).toBe(documentBefore);
++  });
++
++  // ==========================================================================
++  // Your OWN caret and selection, while somebody else edits the document around
++  // you. Nothing here is about what you see of other people -- it is about where
++  // you are left standing after their edit lands.
++  // ==========================================================================
++
++  it('keeps the local caret on the same text when a remote edit inserts before it', async () => {
++    const [local, remote] = await makePeers(2);
++    await seedText(local, 'hello brave new world');
++    await local.takeDocumentFocus();
++
++    // The caret sits between "new" and " world".
++    await local.place(15, 15);
++    expect(local.ownSelection()).toEqual({
++      anchorOffset: 15,
++      focusOffset: 15,
++      onParagraphText: true,
++    });
++
++    // Somebody else inserts four characters at the very start of the paragraph.
++    await remote.rewriteText((current) => `wow ${current}`);
++    expect(local.paragraphText()).toBe('wow hello brave new world');
++
++    // The caret has to still be between "new" and " world" -- which is now four
++    // characters further along -- and must not have stayed put in the middle of
++    // different text.
++    expect(local.ownSelection()).toEqual({
++      anchorOffset: 19,
++      focusOffset: 19,
++      onParagraphText: true,
++    });
++  });
++
++  it('keeps the local caret on the same text when a remote edit deletes before it', async () => {
++    const [local, remote] = await makePeers(2);
++    await seedText(local, 'hello brave new world');
++    await local.takeDocumentFocus();
++
++    await local.place(15, 15);
++
++    // Somebody else removes "brave " from earlier in the paragraph.
++    await remote.rewriteText((current) => current.replace('brave ', ''));
++    expect(local.paragraphText()).toBe('hello new world');
++
++    // Six characters went away before the caret, so it has to come back six
++    // characters -- still between "new" and " world", not stranded at 15.
++    expect(local.ownSelection()).toEqual({
++      anchorOffset: 9,
++      focusOffset: 9,
++      onParagraphText: true,
++    });
++  });
++
++  it('keeps both ends of the local selection on the same text through a remote edit', async () => {
++    const [local, remote] = await makePeers(2);
++    await seedText(local, 'hello brave new world');
++    await local.takeDocumentFocus();
++
++    // "brave new" selected right-to-left, so the anchor is after the focus.
++    await local.place(15, 6);
++    expect(local.ownSelection()).toEqual({
++      anchorOffset: 15,
++      focusOffset: 6,
++      onParagraphText: true,
++    });
++
++    await remote.rewriteText((current) => `wow ${current}`);
++    expect(local.paragraphText()).toBe('wow hello brave new world');
++
++    // Both ends move together, the selection stays the same size, and it is
++    // still the same text that is selected -- and still selected backwards.
++    expect(local.ownSelection()).toEqual({
++      anchorOffset: 19,
++      focusOffset: 10,
++      onParagraphText: true,
++    });
++  });
++
++  // ==========================================================================
++  // Positions that are not simply "n characters into a line": an empty line, a
++  // paragraph boundary, a selection that runs from one paragraph into another.
++  // ==========================================================================
++
++  it('shows a remote caret sitting on an empty line, on that line', async () => {
++    const [local, remote] = await makePeers(2);
++    await local.writeParagraphs(['hello', '', 'world']);
++    expect(remote.paragraphTexts()).toEqual(['hello', '', 'world']);
++    await remote.focusEditor();
++
++    // The other participant clicks on the blank line between the two.
++    await remote.placeSelection(() => {
++      const blankLine = $getRoot().getChildAtIndex<ParagraphNode>(1)!;
++      blankLine.select(0, 0);
++    });
++
++    // A blank line holds exactly one position, and that is where they are.
++    expect(local.seenEnds(remote)).toEqual({
++      anchor: {characters: 0, paragraph: 1},
++      focus: {characters: 0, paragraph: 1},
++    });
++  });
++
++  it('shows a remote caret at the end of a paragraph in that paragraph', async () => {
++    const [local, remote] = await makePeers(2);
++    await local.writeParagraphs(['hello', '', 'world']);
++    await remote.focusEditor();
++
++    // The other participant's caret is at the very end of the first paragraph,
++    // held as a position between that paragraph's children rather than as an
++    // offset inside its text.
++    await remote.placeSelection(() => {
++      const first = $getRoot().getChildAtIndex<ParagraphNode>(0)!;
++      first.select(1, 1);
++    });
++
++    // Still the end of the FIRST paragraph -- not the start of the next one.
++    expect(local.seenEnds(remote)).toEqual({
++      anchor: {characters: 5, paragraph: 0},
++      focus: {characters: 5, paragraph: 0},
++    });
++  });
++
++  it('shows both ends of a remote selection that runs into another paragraph', async () => {
++    const [local, remote] = await makePeers(2);
++    await local.writeParagraphs(['hello', '', 'world']);
++    await remote.focusEditor();
++
++    // Selected from inside the first paragraph down onto the blank line.
++    await remote.placeSelection(() => {
++      const first = $getRoot().getChildAtIndex<ParagraphNode>(0)!;
++      const blankLine = $getRoot().getChildAtIndex<ParagraphNode>(1)!;
++      const selection = first.getFirstChild<TextNode>()!.select(2, 2);
++      selection.focus.set(blankLine.getKey(), 0, 'element');
++    });
++
++    // Both ends land where they belong, and the range does not collapse into
++    // one paragraph or slide into a neighbouring one.
++    expect(local.seenEnds(remote)).toEqual({
++      anchor: {characters: 2, paragraph: 0},
++      focus: {characters: 0, paragraph: 1},
++    });
++  });
++
++  // ==========================================================================
++  // Collaboration behaviour that already works and must keep working.
++  // ==========================================================================
++
++  it('syncs plain document text between two participants', async () => {
++    const [a, b] = await makePeers(2);
++    await seedText(a, 'hello world');
++
++    await waitForReact(() => {
++      b.editor!.update(() => {
++        const paragraph = $getRoot().getFirstChild<ParagraphNode>()!;
++        const text = paragraph.getFirstChild<TextNode>()!;
++        text.setTextContent('hello metaverse');
++      });
++    });
++    expect(a.paragraphText()).toBe('hello metaverse');
++  });
++
++  it('syncs a second, independent document edit after the first', async () => {
++    const [a, b] = await makePeers(2);
++    await seedText(a, 'first');
++
++    await a.appendText(' second');
++    expect(b.paragraphText()).toBe('first second');
++
++    await b.appendText(' third');
++    expect(a.paragraphText()).toBe('first second third');
++  });
++
++  it('keeps syncing document text after several selection-only changes', async () => {
++    const [a, b] = await makePeers(2);
++    await seedText(a, 'hello world');
++    await a.focusEditor();
++    await b.focusEditor();
++
++    await b.select(1, 4);
++    await a.select(2, 2);
++    await b.select(6, 9);
++    await a.select(0, 5);
++
++    await b.appendText('!');
++    expect(a.paragraphText()).toBe('hello world!');
++    await a.appendText('?');
++    expect(b.paragraphText()).toBe('hello world!?');
++  });
++
++  it('resumes document sync after a participant disconnects and reconnects', async () => {
++    const [a, b] = await makePeers(2);
++    await seedText(a, 'hello');
++
++    b.client.disconnect();
++    await a.appendText(' again');
++    // b missed the update while it was offline.
++    expect(b.paragraphText()).toBe('hello');
++
++    await waitForReact(() => {
++      b.client.connect();
++    });
++    expect(b.paragraphText()).toBe('hello again');
++  });
++
++  it('shows a remote caret that arrives together with a document update', async () => {
++    const [local, remoteB, remoteC] = await makePeers(3);
++    await seedText(local, 'hello world');
++    await remoteB.focusEditor();
++    await remoteB.select(1, 3);
++
++    // A third participant types, so a document update reaches `local`. However a
++    // participant's state gets to `local`, once it is there it must be shown.
++    await remoteC.appendText('!');
++    expect(local.paragraphText()).toBe('hello world!');
++    const shown = local.view(remoteB);
++    expect(shown.inSession).toBe(true);
++    expect(shown.inSession === true && shown.visible).toBe(true);
++    expect(shown.inSession === true && shown.label).toBe(remoteB.name);
++  });
++
++  it('leaves the local caret alone when a remote edit lands after it', async () => {
++    const [local, remote] = await makePeers(2);
++    await seedText(local, 'hello brave new world');
++    await local.takeDocumentFocus();
++
++    await local.place(5, 5);
++
++    // The edit is entirely after the caret, so there is nothing to shift.
++    await remote.rewriteText((current) => `${current} indeed`);
++    expect(local.paragraphText()).toBe('hello brave new world indeed');
++    expect(local.ownSelection()).toEqual({
++      anchorOffset: 5,
++      focusOffset: 5,
++      onParagraphText: true,
++    });
++  });
++
++  it('shows ordinary text positions correctly across paragraphs', async () => {
++    const [local, remote, other] = await makePeers(3);
++    await local.writeParagraphs(['hello', '', 'world']);
++    // The participant being watched is the one actually working in their editor,
++    // so their own selection survives the edit that arrives from elsewhere.
++    await remote.takeDocumentFocus();
++    await remote.focusEditor();
++
++    // An everyday selection: from inside one paragraph to inside another, both
++    // ends a plain number of characters into their own text.
++    await remote.placeSelection(() => {
++      const first = $getRoot().getChildAtIndex<ParagraphNode>(0)!;
++      const third = $getRoot().getChildAtIndex<ParagraphNode>(2)!;
++      const selection = first.getFirstChild<TextNode>()!.select(1, 1);
++      selection.focus.set(third.getFirstChild<TextNode>()!.getKey(), 3, 'text');
++    });
++
++    // Someone else types after both ends, which is what carries the state over
++    // on a build where nothing else does.
++    await other.placeSelection(() => {
++      const third = $getRoot().getChildAtIndex<ParagraphNode>(2)!;
++      const text = third.getFirstChild<TextNode>()!;
++      text.setTextContent(`${text.getTextContent()}!`);
++    });
++    expect(local.paragraphTexts()).toEqual(['hello', '', 'world!']);
++
++    expect(local.seenEnds(remote)).toEqual({
++      anchor: {characters: 1, paragraph: 0},
++      focus: {characters: 3, paragraph: 2},
++    });
++  });
++
++  it('never shows a participant their own caret, and tracks exactly the others', async () => {
++    const [a, b, c] = await makePeers(3);
++    await seedText(a, 'hello world');
++    await b.focusEditor();
++    await b.select(2, 4);
++    await b.appendText('!');
++
++    expect(a.trackedParticipants()).toEqual(
++      [b.awareness.id, c.awareness.id].sort((x, y) => x - y),
++    );
++    expect(a.binding!.cursors.has(a.awareness.id)).toBe(false);
++    expect(b.binding!.cursors.has(b.awareness.id)).toBe(false);
++  });
++});

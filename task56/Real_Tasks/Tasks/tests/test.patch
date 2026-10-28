@@ -1,0 +1,413 @@
+diff --git a/packages/web-components/src/components/content-switcher/__tests__/content-switcher-test.js b/packages/web-components/src/components/content-switcher/__tests__/content-switcher-test.js
+index dac1155..e03e8c0 100644
+--- a/packages/web-components/src/components/content-switcher/__tests__/content-switcher-test.js
++++ b/packages/web-components/src/components/content-switcher/__tests__/content-switcher-test.js
+@@ -138,6 +138,96 @@ describe('cds-content-switcher', function () {
+     expect(eventLeft.detail.item.getAttribute('value')).to.equal('all');
+   });
+ 
++  it('should emit an event on click when selectionMode is manual', async () => {
++    const el = await fixture(html`
++      <cds-content-switcher selection-mode="manual">
++        <cds-content-switcher-item name="one" value="all">
++          First section
++        </cds-content-switcher-item>
++        <cds-content-switcher-item name="two" value="cloudFoundry">
++          Second section
++        </cds-content-switcher-item>
++        <cds-content-switcher-item name="three" value="staging">
++          Third section
++        </cds-content-switcher-item>
++      </cds-content-switcher>
++    `);
++
++    await el.updateComplete;
++
++    const items = el.querySelectorAll('cds-content-switcher-item');
++    const second = items[1];
++    await second.updateComplete;
++
++    const eventPromise = oneEvent(el, 'cds-content-switcher-selected');
++    const button = second.shadowRoot.querySelector('button');
++    button.click();
++
++    const { detail } = await eventPromise;
++
++    expect(detail.item).to.equal(second);
++    expect(detail.item.getAttribute('name')).to.equal('two');
++    expect(detail.item.getAttribute('value')).to.equal('cloudFoundry');
++    expect(detail.item.textContent.trim()).to.equal('Second section');
++    expect(detail.index).to.equal(1);
++    expect(detail.name).to.equal('two');
++    expect(detail.text).to.equal('Second section');
++  });
++
++  it('should emit an event on Enter or Space when selectionMode is manual', async () => {
++    const el = await fixture(html`
++      <cds-content-switcher selection-mode="manual">
++        <cds-content-switcher-item name="one" value="all">
++          First section
++        </cds-content-switcher-item>
++        <cds-content-switcher-item name="two" value="cloudFoundry">
++          Second section
++        </cds-content-switcher-item>
++        <cds-content-switcher-item name="three" value="staging">
++          Third section
++        </cds-content-switcher-item>
++      </cds-content-switcher>
++    `);
++
++    await el.updateComplete;
++
++    const items = el.querySelectorAll('cds-content-switcher-item');
++    const button = items[0].shadowRoot.querySelector('button');
++    button.focus();
++
++    await sendKeys({ press: 'ArrowRight' });
++    await el.updateComplete;
++    await items[1].updateComplete;
++
++    let eventPromise = oneEvent(el, 'cds-content-switcher-selected');
++    await sendKeys({ press: 'Enter' });
++    let { detail } = await eventPromise;
++
++    expect(detail.item).to.equal(items[1]);
++    expect(detail.item.getAttribute('name')).to.equal('two');
++    expect(detail.item.getAttribute('value')).to.equal('cloudFoundry');
++    expect(detail.item.textContent.trim()).to.equal('Second section');
++    expect(detail.index).to.equal(1);
++    expect(detail.name).to.equal('two');
++    expect(detail.text).to.equal('Second section');
++
++    await sendKeys({ press: 'ArrowRight' });
++    await el.updateComplete;
++    await items[2].updateComplete;
++
++    eventPromise = oneEvent(el, 'cds-content-switcher-selected');
++    await sendKeys({ press: ' ' });
++    ({ detail } = await eventPromise);
++
++    expect(detail.item).to.equal(items[2]);
++    expect(detail.item.getAttribute('name')).to.equal('three');
++    expect(detail.item.getAttribute('value')).to.equal('staging');
++    expect(detail.item.textContent.trim()).to.equal('Third section');
++    expect(detail.index).to.equal(2);
++    expect(detail.name).to.equal('three');
++    expect(detail.text).to.equal('Third section');
++  });
++
+   it('should support size attribute', async () => {
+     const el = await fixture(html`
+       <cds-content-switcher size="lg">
+diff --git a/packages/web-components/src/components/tabs/__tests__/tabs-test.js b/packages/web-components/src/components/tabs/__tests__/tabs-test.js
+new file mode 100644
+index 0000000..e45dcb8
+--- /dev/null
++++ b/packages/web-components/src/components/tabs/__tests__/tabs-test.js
+@@ -0,0 +1,306 @@
++/**
++ * Copyright IBM Corp. 2019, 2026
++ *
++ * This source code is licensed under the Apache-2.0 license found in the
++ * LICENSE file in the root directory of this source tree.
++ */
++
++import { expect, fixture, html, oneEvent } from '@open-wc/testing';
++import { sendKeys } from '@web/test-runner-commands';
++import '@carbon/web-components/es/components/tabs/index.js';
++
++/**
++ * A four-tab `cds-tabs` in manual selection mode, starting on `all`.
++ *
++ * @param [options] Fixture options.
++ * @param [options.disableSecond] `true` to render the second tab disabled.
++ */
++const manualTabs = ({ disableSecond = false } = {}) => html`
++  <cds-tabs value="all" selection-mode="manual">
++    <cds-tab id="tab-all" name="all" target="panel-all" value="all">
++      Dashboard
++    </cds-tab>
++    <cds-tab
++      id="tab-cloudFoundry"
++      name="cloudFoundry"
++      target="panel-cloudFoundry"
++      value="cloudFoundry"
++      ?disabled="${disableSecond}">
++      Monitoring
++    </cds-tab>
++    <cds-tab
++      id="tab-staging"
++      name="staging"
++      target="panel-staging"
++      value="staging">
++      Activity
++    </cds-tab>
++    <cds-tab id="tab-dea" name="dea" target="panel-dea" value="dea">
++      Analyze
++    </cds-tab>
++  </cds-tabs>
++`;
++
++/**
++ * Renders the fixture and waits until every tab has rendered.
++ *
++ * @param [options] Fixture options, forwarded to `manualTabs`.
++ * @returns The `cds-tabs` element and its tabs, in document order.
++ */
++const render = async (options) => {
++  const el = await fixture(manualTabs(options));
++  await el.updateComplete;
++  const tabs = Array.from(el.querySelectorAll('cds-tab'));
++  await Promise.all(tabs.map((tab) => tab.updateComplete));
++  return { el, tabs };
++};
++
++/**
++ * The element a tab exposes with the `tab` role, i.e. what takes the focus and
++ * carries the accessible selected state.
++ */
++const roleTab = (tab) => tab.shadowRoot.querySelector('[role="tab"]');
++
++/** Lets the component settle after an interaction. */
++const settle = async (el, tabs) => {
++  await el.updateComplete;
++  await Promise.all(tabs.map((tab) => tab.updateComplete));
++};
++
++/** Records how many selection events the component fires. */
++const countSelectionEvents = (el) => {
++  const counter = { count: 0 };
++  const onSelected = () => {
++    counter.count += 1;
++  };
++
++  el.addEventListener('cds-tabs-selected', onSelected);
++  counter.stop = () => el.removeEventListener('cds-tabs-selected', onSelected);
++
++  return counter;
++};
++
++/** Names a tab in assertion output without serialising the element itself. */
++const idOf = (node) => (node && node.id) || String(node);
++
++/** Asserts the keyboard focus rests on `tabs[index]`. */
++const expectFocus = (tabs, index) => {
++  expect(idOf(document.activeElement)).to.equal(tabs[index].id);
++  expect(
++    tabs[index].shadowRoot.activeElement === roleTab(tabs[index]),
++    `focus is on the tab role element of ${tabs[index].id}`
++  ).to.be.true;
++};
++
++/** Asserts `tabs[index]` is the one and only selected tab. */
++const expectSelection = (el, tabs, index) => {
++  expect(el.value).to.equal(tabs[index].getAttribute('value'));
++  tabs.forEach((tab, i) => {
++    expect(tab.hasAttribute('selected')).to.equal(i === index);
++  });
++};
++
++describe('cds-tabs manual selection mode', function () {
++  // Moving between tabs is navigation only: the focus moves while the
++  // selection and the selection event stay put -- on every step, not just the
++  // first one.
++  it('should move focus without changing selection or emitting cds-tabs-selected during arrow-key navigation', async () => {
++    const { el, tabs } = await render();
++    roleTab(tabs[0]).focus();
++
++    const selections = countSelectionEvents(el);
++
++    await sendKeys({ press: 'ArrowRight' });
++    await settle(el, tabs);
++
++    expectFocus(tabs, 1);
++    expectSelection(el, tabs, 0);
++    expect(selections.count).to.equal(0);
++
++    // The next step has to continue from the tab that now holds the focus.
++    await sendKeys({ press: 'ArrowRight' });
++    await settle(el, tabs);
++
++    expectFocus(tabs, 2);
++    expectSelection(el, tabs, 0);
++    expect(selections.count).to.equal(0);
++
++    await sendKeys({ press: 'ArrowLeft' });
++    await settle(el, tabs);
++
++    expectFocus(tabs, 1);
++    expectSelection(el, tabs, 0);
++    expect(selections.count).to.equal(0);
++
++    selections.stop();
++  });
++
++  // Activating the focused tab is what selects it, fires the selection event
++  // and reports that tab in the event payload.
++  it('should emit cds-tabs-selected when the focused tab is explicitly selected with the keyboard', async () => {
++    for (const key of ['Enter', ' ']) {
++      const { el, tabs } = await render();
++      roleTab(tabs[0]).focus();
++
++      await sendKeys({ press: 'ArrowRight' });
++      await settle(el, tabs);
++      await sendKeys({ press: 'ArrowRight' });
++      await settle(el, tabs);
++
++      expectFocus(tabs, 2);
++      expectSelection(el, tabs, 0);
++
++      const eventPromise = oneEvent(el, 'cds-tabs-selected');
++      await sendKeys({ press: key });
++      const { detail } = await eventPromise;
++      await settle(el, tabs);
++
++      expect(idOf(detail.item)).to.equal(tabs[2].id);
++      expect(detail.index).to.equal(2);
++      expect(detail.name).to.equal('staging');
++      expect(detail.text).to.equal('Activity');
++
++      expectSelection(el, tabs, 2);
++      expectFocus(tabs, 2);
++    }
++  });
++
++  // Navigation is a loop: it runs off either end of the tab list onto the
++  // opposite one, still without selecting anything.
++  it('should wrap around both ends of the tab list during arrow-key navigation', async () => {
++    const { el, tabs } = await render();
++    roleTab(tabs[0]).focus();
++
++    const selections = countSelectionEvents(el);
++
++    await sendKeys({ press: 'ArrowLeft' });
++    await settle(el, tabs);
++
++    expectFocus(tabs, 3);
++    expectSelection(el, tabs, 0);
++
++    await sendKeys({ press: 'ArrowRight' });
++    await settle(el, tabs);
++
++    expectFocus(tabs, 0);
++    expectSelection(el, tabs, 0);
++
++    expect(selections.count).to.equal(0);
++    selections.stop();
++  });
++
++  // Tabs that cannot be selected are not reachable by keyboard either.
++  it('should skip disabled tabs when moving focus and when selecting', async () => {
++    const { el, tabs } = await render({ disableSecond: true });
++    roleTab(tabs[0]).focus();
++
++    await sendKeys({ press: 'ArrowRight' });
++    await settle(el, tabs);
++
++    expectFocus(tabs, 2);
++    expectSelection(el, tabs, 0);
++
++    const eventPromise = oneEvent(el, 'cds-tabs-selected');
++    await sendKeys({ press: 'Enter' });
++    const { detail } = await eventPromise;
++    await settle(el, tabs);
++
++    expect(idOf(detail.item)).to.equal(tabs[2].id);
++    expect(detail.text).to.equal('Activity');
++    expectSelection(el, tabs, 2);
++  });
++
++  // Jumping to either end of the list is navigation too, and activation then
++  // applies to the tab that jump landed on.
++  it('should move focus to the first and last tab without changing the selection', async () => {
++    const { el, tabs } = await render();
++    roleTab(tabs[0]).focus();
++
++    const selections = countSelectionEvents(el);
++
++    await sendKeys({ press: 'End' });
++    await settle(el, tabs);
++
++    expectFocus(tabs, 3);
++    expectSelection(el, tabs, 0);
++    expect(selections.count).to.equal(0);
++
++    await sendKeys({ press: 'Home' });
++    await settle(el, tabs);
++
++    expectFocus(tabs, 0);
++    expectSelection(el, tabs, 0);
++    expect(selections.count).to.equal(0);
++
++    selections.stop();
++
++    await sendKeys({ press: 'End' });
++    await settle(el, tabs);
++
++    const eventPromise = oneEvent(el, 'cds-tabs-selected');
++    await sendKeys({ press: 'Enter' });
++    const { detail } = await eventPromise;
++    await settle(el, tabs);
++
++    expect(idOf(detail.item)).to.equal(tabs[3].id);
++    expectSelection(el, tabs, 3);
++  });
++
++  // The accessible selected state describes the selection, so it stays behind
++  // on the selected tab while the focus moves elsewhere.
++  it('should expose the selected state on the selected tab rather than on the focused one', async () => {
++    const { el, tabs } = await render();
++    roleTab(tabs[0]).focus();
++
++    await sendKeys({ press: 'ArrowRight' });
++    await settle(el, tabs);
++
++    expectFocus(tabs, 1);
++    tabs.forEach((tab, i) => {
++      expect(roleTab(tab).getAttribute('aria-selected')).to.equal(
++        String(i === 0)
++      );
++    });
++
++    const eventPromise = oneEvent(el, 'cds-tabs-selected');
++    await sendKeys({ press: 'Enter' });
++    await eventPromise;
++    await settle(el, tabs);
++
++    tabs.forEach((tab, i) => {
++      expect(roleTab(tab).getAttribute('aria-selected')).to.equal(
++        String(i === 1)
++      );
++    });
++  });
++
++  // Pointer and keyboard share one position: the keyboard picks up from the
++  // tab the pointer last selected.
++  it('should continue keyboard navigation from the tab most recently selected with the pointer', async () => {
++    const { el, tabs } = await render();
++
++    roleTab(tabs[2]).click();
++    await settle(el, tabs);
++
++    expectSelection(el, tabs, 2);
++
++    const selections = countSelectionEvents(el);
++
++    await sendKeys({ press: 'ArrowRight' });
++    await settle(el, tabs);
++
++    expectFocus(tabs, 3);
++    expectSelection(el, tabs, 2);
++    expect(selections.count).to.equal(0);
++
++    selections.stop();
++
++    const eventPromise = oneEvent(el, 'cds-tabs-selected');
++    await sendKeys({ press: 'Enter' });
++    const { detail } = await eventPromise;
++    await settle(el, tabs);
++
++    expect(idOf(detail.item)).to.equal(tabs[3].id);
++    expectSelection(el, tabs, 3);
++  });
++});

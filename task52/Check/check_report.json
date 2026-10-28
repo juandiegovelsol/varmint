@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "checks": {
+        "behavior_in_task_description": {
+          "explanation": "instruction.md deliberately withholds selector/file/property names (by design for this hard visual_bug_fix task) but explicitly directs the agent to read both attached images, captions included, before making changes. The captions embedded in the two PNGs (confirmed by viewing them) fully specify the expected behavior: six fills present on first draw, five of them lost after the window goes behind and returns while the amber 'flagged' block is unchanged. Every graded assertion in test.patch traces directly back to what is visible/captioned in the images that instruction.md tells the agent to consult, so the tested behavior is documented, just via the images rather than prose.",
+          "outcome": "pass"
+        },
+        "behavior_in_tests": {
+          "explanation": "The tests assert exactly the fills and the single action (window AppBlur/AppFocus) that the images and instruction.md describe -- five isolated regression tests per strip plus a whole-board test, a p2p test for the untouched amber block, a first-draw p2p sanity test, and a non-vacuousness guard. No test checks a property, trigger, or scenario not shown in the captures/instruction.",
+          "outcome": "pass"
+        },
+        "informative_test_structure": {
+          "explanation": "tests/test_style_cache_regressions.py is well organized: a module docstring restating the scope rule, clearly named helper functions (assert_fills, window_goes_behind_and_returns, board_expectation), one App subclass per isolated strip, and explicit banner comments dividing 'f2p' from 'p2p' sections. Test names and docstrings state exactly what each test checks.",
+          "outcome": "pass"
+        },
+        "anti_cheating_measures": {
+          "explanation": "The Dockerfile clones the repo, strips .git, applies environment/bugs/bug_01.patch (the actual bug injection) from /tmp, then deletes /tmp/bugs in the same RUN layer, and re-inits a fresh git history with a single 'base' commit -- so the agent cannot recover the injected-bug patch, the upstream fix commit, or any diff history. tests/ and solution/ are never copied into the image. Test-only deps are installed only at verify time. The verifier computes reward purely from a JUnit XML report (never greps source), and test.sh explicitly restores any test-file paths to the pristine harbor_base state before applying test.patch, preventing an agent from tampering with the test file itself.",
+          "outcome": "pass"
+        },
+        "structured_data_schema": {
+          "explanation": "This is a source-code bug-fix task (editing stylesheet.py/widget.py); it does not require the agent to produce structured output like JSON/CSV/API responses, so no schema documentation is expected.",
+          "outcome": "not_applicable"
+        },
+        "pinned_dependencies": {
+          "explanation": "Test-only dependencies installed at verify time in tests/test.sh are explicitly pinned (pytest==8.3.4, pytest-asyncio==0.24.0, pytest-textual-snapshot==1.0.0), with a comment explaining why (pytest-asyncio 0.25 changed asyncio_mode handling). The repo's own runtime dependencies are installed via its own pyproject.toml (pip install -e '.[dev]'), which is the project's own pinning mechanism and outside this task's scope.",
+          "outcome": "pass"
+        },
+        "typos": {
+          "explanation": "No unintentional typos were found in instruction.md, task.toml, Dockerfile, tests/, or solution/ files. The two misspelled pseudo-class names ('first-of_type', 'last-of_type') in the bug patch are an intentional part of the injected bug (documented in task.toml's difficulty_explanation), not an authoring mistake, and the fix.patch correctly restores the correct spellings.",
+          "outcome": "pass"
+        },
+        "tests_or_solution_in_image": {
+          "explanation": "environment/Dockerfile only COPYs bugs/ (immediately deleted after being applied) and assets/ (the two screenshots) into the image. tests/ and solution/ directories are never referenced in the Dockerfile and are not part of the built image, as also stated explicitly in a Dockerfile comment.",
+          "outcome": "pass"
+        },
+        "test_deps_in_image": {
+          "explanation": "tests/test.sh installs pytest, pytest-asyncio, and pytest-textual-snapshot at verify time via pip; the Dockerfile only installs the repository's own package dependencies, not these test-only packages.",
+          "outcome": "pass"
+        },
+        "hardcoded_solution": {
+          "explanation": "solution/solve.sh applies solution/fix.patch, which is the real multi-file source diff (correcting the two misspelled pseudo-class names, restoring the parent-identity cache key logic, and re-adding is_disabled to the widget's pseudo-class cache key) needed to fix the underlying caching bug -- it does not print or hardcode any test-facing answer, it makes the actual code changes an engineer would make.",
+          "outcome": "pass"
+        },
+        "file_reference_mentioned": {
+          "explanation": "The agent is not required to produce new named output files (like a CSV/JSON report) for tests to check; it modifies existing source files whose exact names are intentionally withheld from instruction.md as part of the task's designed difficulty, and the tests instead assert runtime widget style behavior.",
+          "outcome": "not_applicable"
+        }
+      },
+      "cost_usd": 0.33266819999999997,
+      "task_name": "Tasks",
+      "error": null
+    }
+  ]
+}

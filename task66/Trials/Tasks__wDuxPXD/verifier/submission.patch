@@ -1,0 +1,101 @@
+diff --git a/packages/react/select/src/Select.stories.tsx b/packages/react/select/src/Select.stories.tsx
+index 4c12fd9..e81e4ab 100644
+--- a/packages/react/select/src/Select.stories.tsx
++++ b/packages/react/select/src/Select.stories.tsx
+@@ -448,6 +448,55 @@ export const RightToLeft = () => (
+   </div>
+ );
+ 
++export const LongOptionsNarrowScreen = () => (
++  <div style={{ display: 'flex', flexDirection: 'column', gap: 20, padding: 10, maxWidth: 260 }}>
++    <p>
++      Resize the window to be narrower than the longest option. The pop-up should stay on screen and
++      never scroll sideways.
++    </p>
++    {(['ltr', 'rtl'] as const).map((dir) => (
++      <div key={dir} dir={dir}>
++        <Label>
++          {dir.toUpperCase()}:
++          <Select.Root defaultValue="long" dir={dir}>
++            <Select.Trigger className={triggerClass()}>
++              <Select.Value />
++              <Select.Icon />
++            </Select.Trigger>
++            <Select.Portal>
++              <Select.Content className={contentClass()} sideOffset={5}>
++                <Select.Viewport className={viewportClass()}>
++                  <Select.Item className={itemClass()} value="long">
++                    <Select.ItemText>
++                      Very long item that will get out of the screen if we open the select with a
++                      very small screen because of the offset
++                    </Select.ItemText>
++                    <Select.ItemIndicator className={indicatorClass()}>
++                      <TickIcon />
++                    </Select.ItemIndicator>
++                  </Select.Item>
++                  <Select.Item className={itemClass()} value="banana">
++                    <Select.ItemText>Banana</Select.ItemText>
++                    <Select.ItemIndicator className={indicatorClass()}>
++                      <TickIcon />
++                    </Select.ItemIndicator>
++                  </Select.Item>
++                  <Select.Item className={itemClass()} value="blueberry">
++                    <Select.ItemText>Blueberry</Select.ItemText>
++                    <Select.ItemIndicator className={indicatorClass()}>
++                      <TickIcon />
++                    </Select.ItemIndicator>
++                  </Select.Item>
++                </Select.Viewport>
++              </Select.Content>
++            </Select.Portal>
++          </Select.Root>
++        </Label>
++      </div>
++    ))}
++  </div>
++);
++
+ export const WithinForm = () => {
+   const [data, setData] = React.useState({});
+ 
+diff --git a/packages/react/select/src/Select.tsx b/packages/react/select/src/Select.tsx
+index 407c1f3..dc26a76 100644
+--- a/packages/react/select/src/Select.tsx
++++ b/packages/react/select/src/Select.tsx
+@@ -820,12 +820,17 @@ const SelectItemAlignedPosition = React.forwardRef<
+       const valueNodeRect = context.valueNode.getBoundingClientRect();
+       const itemTextRect = selectedItemText.getBoundingClientRect();
+ 
++      // The content must never grow wider than the space between the two margins, otherwise it
++      // spills off the screen and the viewport gains an unwanted horizontal scroll. We cap the
++      // wrapper's width here so a long option wraps/gets cut off at the far edge instead.
++      const availableWidth = window.innerWidth - CONTENT_MARGIN * 2;
++
+       if (context.dir !== 'rtl') {
+         const itemTextOffset = itemTextRect.left - contentRect.left;
+         const left = valueNodeRect.left - itemTextOffset;
+         const leftDelta = triggerRect.left - left;
+         const minContentWidth = triggerRect.width + leftDelta;
+-        const contentWidth = Math.max(minContentWidth, contentRect.width);
++        const contentWidth = Math.min(availableWidth, Math.max(minContentWidth, contentRect.width));
+         const rightEdge = window.innerWidth - CONTENT_MARGIN;
+         const clampedLeft = clamp(left, [CONTENT_MARGIN, rightEdge - contentWidth]);
+ 
+@@ -836,7 +841,7 @@ const SelectItemAlignedPosition = React.forwardRef<
+         const right = window.innerWidth - valueNodeRect.right - itemTextOffset;
+         const rightDelta = window.innerWidth - triggerRect.right - right;
+         const minContentWidth = triggerRect.width + rightDelta;
+-        const contentWidth = Math.max(minContentWidth, contentRect.width);
++        const contentWidth = Math.min(availableWidth, Math.max(minContentWidth, contentRect.width));
+         const leftEdge = window.innerWidth - CONTENT_MARGIN;
+         const clampedRight = clamp(right, [CONTENT_MARGIN, leftEdge - contentWidth]);
+ 
+@@ -844,6 +849,8 @@ const SelectItemAlignedPosition = React.forwardRef<
+         contentWrapper.style.right = clampedRight + 'px';
+       }
+ 
++      contentWrapper.style.maxWidth = availableWidth + 'px';
++
+       // -----------------------------------------------------------------------------------------
+       // Vertical positioning
+       // -----------------------------------------------------------------------------------------

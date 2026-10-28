@@ -1,0 +1,25 @@
+diff --git a/packages/react/context-menu/src/context-menu.tsx b/packages/react/context-menu/src/context-menu.tsx
+index 8f473d4..c0dcdef 100644
+--- a/packages/react/context-menu/src/context-menu.tsx
++++ b/packages/react/context-menu/src/context-menu.tsx
+@@ -1,4 +1,5 @@
+ import * as React from 'react';
++import { flushSync } from 'react-dom';
+ import { composeEventHandlers } from '@radix-ui/primitive';
+ import { createContextScope } from '@radix-ui/react-context';
+ import { Primitive } from '@radix-ui/react-primitive';
+@@ -145,6 +146,14 @@ const ContextMenuTrigger = React.forwardRef<ContextMenuTriggerElement, ContextMe
+                   // clearing the long press here because some platforms already support
+                   // long press to trigger a `contextmenu` event
+                   clearLongPress();
++                  // if the menu is already open, close it first (flushing synchronously
++                  // so the state change actually commits) before re-opening it below at
++                  // the new coordinates. Otherwise, since `open` is already `true`, the
++                  // reopen would be a no-op and the menu would stay anchored to its
++                  // original position.
++                  if (context.open) {
++                    flushSync(() => context.onOpenChange(false));
++                  }
+                   handleOpen(event);
+                   event.preventDefault();
+                 })

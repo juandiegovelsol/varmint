@@ -1,0 +1,20 @@
+# V2 harness (TASK101+ bundles: Tasks/<task_id>/tests/test.sh). Its step "# 4. Reward from the
+# report." ends with
+#     python3 /tests/verifier.py 2>>"$STDERR_LOG" | tee -a "$STDOUT_LOG"
+# and there is no REPORTS array. Insert the judge block ABOVE that line and hand the verdict to
+# the existing call - keep its redirections, or the verifier's output drops out of the logs.
+# (MM_SWE_QC_FIX's test_sh_judge fix makes exactly this edit.)
+
+# Rubric judge — SUB-AGENT backend: no API key, no network. On the first pass there is no
+# verdict yet, so judge.py writes a judge request under /logs/verifier/judge/ and prints
+# nothing; scoring falls back to tests alone. Once a judge sub-agent has written
+# verdict.json there, `mm_run.sh <task> rescore` folds the verdict into the reward.
+# The `|| echo ""` is load-bearing: the judge must never be able to fail the run.
+RUBRIC=""
+if [ -f /tests/rubrics.json ]; then
+  RUBRIC=$(python3 /tests/judge.py --rubrics /tests/rubrics.json --repo /app \
+             2>/logs/verifier/judge.log || echo "")
+  echo "Rubric verdict: ${RUBRIC:-pending (judge request written; rescore after grading)}"
+fi
+
+python3 /tests/verifier.py --rubric "${RUBRIC:-}" 2>>"$STDERR_LOG" | tee -a "$STDOUT_LOG"

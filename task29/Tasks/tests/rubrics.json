@@ -1,0 +1,15 @@
+{
+  "schema": "rubrics.schema/v1",
+  "task": "textualize__textual-5826-mm",
+  "description": "Binary, unweighted rubric. Every criterion is PASS/FAIL and every one is mandatory: the rubric passes only if all pass, and under the current reward contract a fail drives the reward to 0.0, so only criteria worth rejecting a submission over are included and each one is decidable from the judge's inputs alone: the criterion text, the candidate diff, and the full current text of every file that diff touched. Neither criterion refers to a file the judge is not given, to the task instruction (this judge withholds it), or to a rendered result. A criterion of the 'no test or harness file was modified' kind is deliberately absent because it is undecidable here: test, spec and snapshot hunks are stripped from the diff before the judge sees it, so harness edits are made inert by test.sh instead, which restores the whole tests/ tree from the immutable harbor_base tag before every run. What is left is the pair a behavioural test cannot check: that the ordering rule is general rather than tuned to the reported example, and that it is established where the tags are parsed rather than everywhere styled content is built.",
+  "criteria": [
+    {
+      "id": "ordering_rule_is_general",
+      "criterion": "In src/textual/markup.py, or wherever the candidate relocates the markup-to-content conversion, the logic that decides which styled range ends up on top of which is expressed in terms of general properties of the parsed markup, such as the offset at which a tag opens or closes or a tag's place in the stack of tags still open, so that it reaches the same decision for every tag whatever that tag's name is, whatever value it carries, and however long the text it wraps is."
+    },
+    {
+      "id": "ordering_established_where_tags_are_parsed",
+      "criterion": "The ordering is established in the markup-to-content conversion in src/textual/markup.py, or wherever the candidate relocates that conversion, so that it governs the styled ranges built from parsed tags."
+    }
+  ]
+}

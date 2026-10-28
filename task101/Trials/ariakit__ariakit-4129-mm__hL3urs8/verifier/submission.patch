@@ -1,0 +1,26 @@
+diff --git a/packages/ariakit-react-core/src/composite/composite-item.tsx b/packages/ariakit-react-core/src/composite/composite-item.tsx
+index 0f139c2..5ee49b3 100644
+--- a/packages/ariakit-react-core/src/composite/composite-item.tsx
++++ b/packages/ariakit-react-core/src/composite/composite-item.tsx
+@@ -395,7 +395,20 @@ export const useCompositeItem = createHook<TagName, CompositeItemOptions>(
+       if (!state?.renderedItems.length) return true;
+       if (state.virtualFocus) return false;
+       if (tabbable) return true;
+-      return state.activeId === id;
++      if (state.activeId === id) return true;
++      if (state.activeId === null) return false;
++      // If the active item is not rendered or is disabled (for example, it has
++      // been removed or disabled after being active), no item would be
++      // tabbable, making the composite unreachable with the keyboard. In this
++      // case, we fall back to the first enabled item.
++      const hasEnabledActiveItem = state.renderedItems.some(
++        (item) => item.id === state.activeId && !item.disabled,
++      );
++      if (hasEnabledActiveItem) return false;
++      const firstEnabledItem = state.renderedItems.find(
++        (item) => !item.disabled,
++      );
++      return !!id && firstEnabledItem?.id === id;
+     });
+ 
+     props = {

@@ -1,0 +1,200 @@
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+   The user reported a bug in this repository (Recharts charting library, /app, version 3.9.2) titled "Full-circle polar chart is inconsistent with its own axis." Specifically: a polar chart (RadarChart) whose angular axis spans the whole circle, with one categorical series per spoke and a tooltip enabled, exhibits three-way inconsistency:
+   - Hovering the chart yields different/wrong tooltip series depending on where on the circle you point (illustrated by `bug.png`, showing hover near "East" resolving to "North", with debug text "Tooltip target: North · marker at: 0, 0").
+   - The drawn chart shape (polygon) does not match its own axis tick labels for the same data (illustrated by `mismatch.png`, showing axis labels South/East/North/West but a drawn polygon whose peaks don't correspond to the values under those same labels).
+   The user's explicit statement of expected/correct behavior (to be preserved verbatim as the acceptance criterion):
+   "The chart should be self-consistent everywhere on the circle: for any spoke, the series it is labelled with, the series drawn on it, and the series a hover near it resolves to must all be the same one — and a hover must resolve to the spoke nearest the pointer, reporting that series' own point on the chart. This has to hold for any number of series, and whatever start and end angle the circle is laid out with."
+   The task is to find the root cause and fix it in the Recharts source so this consistency holds universally (any number of series, any start/end angle configuration).
+
+2. Key Technical Concepts:
+   - Recharts internal architecture: Redux-based state selectors (reselect `createSelector`), organized under `/app/src/state/selectors/*.ts`.
+   - Polar/Radar chart rendering pipeline: `PolarChart.tsx` → `RadarChart.tsx` (sets default `startAngle=90`, `endAngle=-270`) → `Radar.tsx` (draws polygon via `computeRadarPoints`) → `PolarAngleAxis.tsx` (renders axis line + tick labels).
+   - d3 `scaleBand` (via `victory-vendor/d3-scale`) used for categorical angle axis; its `.bandwidth()` is always non-negative regardless of range direction.
+   - `RechartsScale` wrapper (`/app/src/util/scale/RechartsScale.ts`) around d3 scales, exposing `.map()`, `.domain()`, `.range()`, `.bandwidth()`.
+   - The "four horsemen of tick generation" — a comment embedded in the codebase itself (in axisSelectors.ts, tooltipSelectors.ts, ChartUtils.ts) flagging four nearly-duplicated tick-generation implementations: `selectTooltipAxisTicks`/`combineTicksOfTooltipAxis` (tooltipSelectors.ts), `combineAxisTicks` (axisSelectors.ts, used for rendered axis labels), `getTicksOfAxis` (ChartUtils.ts), and `combineGraphicalItemTicks` (axisSelectors.ts).
+   - `mathSign()` utility (`/app/src/util/DataUtils.ts`): returns -1, 0, or 1 based on sign of input.
+   - Angle-axis-specific "offset" logic: `offset = axisType === 'angleAxis' && axisRange != null ... ? mathSign(axisRange[0] - axisRange[1]) * 2 * offset : offset` — appears (with slight variations) in `combineAxisTicks`, `combineTicksOfTooltipAxis`, `getTicksOfAxis`, but NOT effectively in `combineGraphicalItemTicks` (which initializes `offset = 0` before that multiplication, so it stays 0).
+   - `getBandSizeOfAxis` (`/app/src/util/ChartUtils.ts`): returns `scale.bandwidth()` directly when available — always positive, ignoring range direction/sign.
+   - `computeRadarPoints` (`/app/src/polar/Radar.tsx`): computes each data point's angle as `angleAxis.scale.map(name) + angleBandSize`, where `angleBandSize = angleAxis.type !== 'number' ? (bandSize ?? 0) : 0`, and `bandSize` comes from `selectBandSizeOfAxis` → `getBandSizeOfAxis` (always positive).
+   - Tooltip hit-testing pipeline: `selectActivePropsFromChartPointer`/`combineActivePolarProps` (in `/app/src/state/selectors/selectors.ts`) → `inRangeOfSector` (PolarUtils.ts) → `calculatePolarTooltipPos` → `calculateActiveTickIndex` (`/app/src/util/getActiveCoordinate.ts`, uses `selectOrderedTooltipTicks`/`selectTooltipAxisTicks`, which is the SAME offset-affected tick set as axis labels) → `getActivePolarCoordinate`.
+   - `polarToCartesian(cx, cy, radius, angle)` (`/app/src/util/PolarUtils.ts`): `x = cx + cos(-RADIAN*angle)*radius`, `y = cy + sin(-RADIAN*angle)*radius`.
+   - `inRangeOfSector` (`/app/src/util/PolarUtils.ts`): computes pointer's polar angle and determines which sector/tick it falls into, handling angle wraparound for full circles.
+   - Vitest test infrastructure: `createSelectorTestCase` (test/helper/createSelectorTestCase.tsx) for spying on selector values inside rendered components; `mockGetBoundingClientRect` and `showTooltipOnCoordinate`/`getTooltip` (test/component/Tooltip/tooltipTestHelpers.tsx) for simulating mouse hover and reading tooltip content in jsdom.
+
+3. Files and Code Sections:
+   - `/app/src/util/PolarUtils.ts`
+     - Read in full. Contains `RADIAN`, `degreeToRadian`, `radianToDegree`, `polarToCartesian`, `getMaxRadius`, `getAngleOfPoint` (computes angle/radius of a pointer relative to center), `formatAngleOfSector`/`reverseFormatAngleOfSector` (normalize start/end angle mod 360), and `inRangeOfSector` (determines which sector, i.e., viewBox slice, a pointer angle falls within, handling wraparound). Central to hover hit-testing geometry.
+   - `/app/src/util/getActiveCoordinate.ts`
+     - Read in full. Contains `getActiveCartesianCoordinate`, `getActivePolarCoordinate` (maps an active tick's `coordinate` value—for centric layout, an angle—back into x/y using `polarToCartesian`), `isInCartesianRange`, and `calculateActiveTickIndex` (the core algorithm mapping a pointer's angle/coordinate to the nearest tick's `.index`, with special full-circle handling when `Math.abs(Math.abs(range[1]-range[0])-360) <= 1e-6`).
+   - `/app/src/state/selectors/polarScaleSelectors.ts`
+     - Read in full. Defines `selectPolarAxis`, `selectPolarAxisRangeWithReversed`, `selectPolarConfiguredScale`, `selectPolarAxisScale`, `selectPolarCategoricalDomain`, `selectPolarAxisTicks` (uses `combineAxisTicks`), `selectPolarAngleAxisTicks` (wraps `selectPolarAxisTicks`, dedupes ticks at 0/360 degree overlap via `uniqueTicksMap`), and `selectPolarGraphicalItemAxisTicks` (uses `combineGraphicalItemTicks`). This is the selector layer feeding `PolarAngleAxis`'s rendered tick labels.
+   - `/app/src/polar/defaultPolarAngleAxisProps.tsx`
+     - Read in full. Shows default props for `PolarAngleAxis` including `allowDuplicatedCategory: true` (with an inline comment: "if I set this to false then Tooltip synchronisation stops working in Radar, wtf" — a pre-existing known-fragile area), `axisLineType: 'polygon'`, `orientation: 'outer'`, etc.
+   - `/app/src/state/selectors/axisSelectors.ts`
+     - Read multiple sections (lines ~1-30, ~1246-1310, ~1590-1650, ~1960-2200).
+     - Key function `combineCategoricalDomain` (line ~1615): computes categorical domain for polar axes.
+     - Key function `combineAxisTicks` (line ~1990-2044): computes tick items (`{index, coordinate, value, offset}`) used for RENDERED AXIS LABELS. Contains the angle-axis-specific offset logic:
+       ```js
+       const offsetForBand =
+         realScaleType === 'scaleBand' && typeof scale.bandwidth === 'function' ? scale.bandwidth() / 2 : 2;
+       let offset = type === 'category' && scale.bandwidth ? scale.bandwidth() / offsetForBand : 0;
+       offset =
+         axisType === 'angleAxis' && axisRange != null && axisRange.length >= 2
+           ? mathSign(axisRange[0] - axisRange[1]) * 2 * offset
+           : offset;
+       ```
+       This `offset` (verified empirically to equal the full bandwidth, e.g. 90 for 4 equal categories, with sign depending on `mathSign(axisRange[0]-axisRange[1])`) is added to every tick's `coordinate = scaled + offset`.
+     - Key function `combineGraphicalItemTicks` (line ~2120-2180): near-duplicate of `combineAxisTicks`, but its `offset` variable starts at literal `0` (not derived from bandwidth) before the same `mathSign(...) * 2 * offset` multiplication is applied — since the base is 0, this always evaluates to 0 regardless of sign, meaning ticks from this selector have `coordinate = scaled + 0`, i.e., unshifted/raw values. Confirmed via test dump: `GRAPHICAL ITEM TICKS [{"coordinate":0,...,"offset":0}, {"coordinate":-90,...}, {"coordinate":-180,...}, {"coordinate":-270,...}]` (matching raw `scale.map()` output, NOT matching axis label ticks).
+     - Both functions carry the identical doc comment referencing the "four horsemen of tick generation" as a known duplication smell.
+   - `/app/src/state/selectors/tooltipSelectors.ts`
+     - Read section ~340-454. `combineTicksOfTooltipAxis` (line ~342-406): third near-duplicate of the offset logic, used to build `selectTooltipAxisTicks`, which feeds `selectOrderedTooltipTicks` (sorted by coordinate) and ultimately tooltip hover-index resolution via `calculateActiveTickIndex`. This means TOOLTIP HOVER RESOLUTION uses the SAME shifted coordinates as the rendered axis LABELS (both are internally consistent with each other), but NOT consistent with the DRAWN POLYGON (which uses raw/unshifted `scale.map()` plus `angleBandSize` from `getBandSizeOfAxis`, a different and sign-insensitive computation).
+   - `/app/src/util/ChartUtils.ts`
+     - Read `getTicksOfAxis` (line ~188-235ish): fourth near-duplicate implementation with the same offset formula pattern (`offsetForBand`, then conditionally applying `mathSign(range[0]-range[1]) * 2 * offset` for angleAxis).
+     - Read `getBandSizeOfAxis` (line ~649-677): 
+       ```js
+       export const getBandSizeOfAxis = (
+         axis?: BaseAxisWithScale,
+         ticks?: ReadonlyArray<TickItem>,
+         isBar?: boolean,
+       ): number | undefined => {
+         if (axis && axis.scale && axis.scale.bandwidth) {
+           const bandWidth = axis.scale.bandwidth();
+           if (!isBar || bandWidth > 0) {
+             return bandWidth;
+           }
+         }
+         if (axis && ticks && ticks.length >= 2) {
+           const orderedTicks: ReadonlyArray<TickItem> = sortBy(ticks, (o: TickItem) => o.coordinate);
+           let bandSize = Infinity;
+           for (let i = 1, len = orderedTicks.length; i < len; i++) {
+             const cur = orderedTicks[i];
+             const prev = orderedTicks[i - 1];
+             bandSize = Math.min((cur?.coordinate || 0) - (prev?.coordinate || 0), bandSize);
+           }
+           return bandSize === Infinity ? 0 : bandSize;
+         }
+         return isBar ? undefined : 0;
+       };
+       ```
+       This is STRONGLY SUSPECTED to be the root cause contributor: it returns `scale.bandwidth()` directly (always non-negative for d3 `scaleBand`), with NO awareness of the axis range's direction/sign — unlike the tick-offset formulas elsewhere which explicitly flip sign via `mathSign(axisRange[0]-axisRange[1])`.
+   - `/app/src/polar/Radar.tsx`
+     - Read relevant sections (imports, `computeRadarPoints` function, `RadarPoint` interface, around lines 1-330, 440-470, 589).
+     - `computeRadarPoints` (line ~286-330ish): 
+       ```js
+       export function computeRadarPoints({ radiusAxis, angleAxis, displayedData, dataKey, bandSize }): RadarComposedData {
+         const { cx, cy } = angleAxis;
+         let isRange = false;
+         const points: RadarPoint[] = [];
+         const angleBandSize = angleAxis.type !== 'number' ? (bandSize ?? 0) : 0;
+         displayedData.forEach((entry, i) => {
+           const name = getValueByDataKey(entry, angleAxis.dataKey, i);
+           const value = getValueByDataKey(entry, dataKey);
+           const angle: number = (angleAxis.scale.map(name) ?? 0) + angleBandSize;
+           const pointValue = Array.isArray(value) ? last(value) : value;
+           const radius: number = isNullish(pointValue) ? 0 : (radiusAxis.scale.map(pointValue) ?? 0);
+           ...
+           points.push({ ...polarToCartesian(cx, cy, radius, angle), name, value, cx, cy, radius, angle, payload: entry });
+         });
+         ...
+       }
+       ```
+       This is where drawn polygon vertex angles are computed — using RAW `scale.map(name)` PLUS `angleBandSize` (always-positive bandwidth from `getBandSizeOfAxis`), which can diverge in sign from the tick-label offset for certain start/end angle directions.
+   - `/app/src/state/selectors/radarSelectors.ts`
+     - Read in full. Contains `selectRadiusAxisForRadar`, `selectRadiusAxisForBandSize`, `selectRadiusAxisTicks`, `selectAngleAxisForRadar`, `selectPolarAxisScaleForRadar`, `selectAngleAxisForBandSize`, `selectAngleAxisTicks`, `selectAngleAxisWithScaleAndViewport`, `selectBandSizeOfAxis` (line ~124-150, calls `getBandSizeOfAxis` with either radius or angle axis depending on `isCategoricalAxis(layout, 'radiusAxis')`), `selectSynchronisedRadarDataKey`, and `selectRadarPoints` (line ~168-201, wires `selectRadiusAxisForRadar`, `selectAngleAxisWithScaleAndViewport`, `selectChartDataAndAlwaysIgnoreIndexes`, `selectSynchronisedRadarDataKey`, `selectBandSizeOfAxis` into `computeRadarPoints`).
+   - `/app/src/polar/PolarAngleAxis.tsx`
+     - Read in full. Defines `PolarAngleAxisProps`, default props merge, `SetAngleAxisSettings` (dispatches axis settings to redux), tick-line/tick-text-anchor helper functions (`getTickLineCoord`, `getTickTextAnchor`, `getTickTextVerticalAnchor`), `AxisLine` component (draws polygon/circle axis line from `ticks`), `Ticks` component (renders each tick's line + text label using `entry.coordinate`), and `PolarAngleAxisWrapper` (pulls `ticks` from `selectPolarAngleAxisTicks`, i.e., THE SHIFTED/OFFSET tick set) plus the outer `PolarAngleAxis` component wrapping `SetAngleAxisSettings`.
+   - `/app/src/chart/RadarChart.tsx`
+     - Read in full. Shows `defaultRadarChartProps` with `layout: 'centric'`, `startAngle: 90`, `endAngle: -270` as defaults, and the `RadarChartProps` type allowing user-overridable `startAngle`/`endAngle`.
+   - `/app/src/state/selectors/polarAxisSelectors.ts`
+     - Read relevant section (~136-186): `selectAngleAxisRangeWithReversed` (combines `selectAngleAxis` + `selectAngleAxisRange` via `combineAxisRangeWithReverse`), `selectRadiusAxisRange`, `selectRadiusAxisRangeWithReversed`, and `selectPolarViewBox` (builds `{cx, cy, innerRadius, outerRadius, startAngle, endAngle, clockWise:false}` from chart layout/options).
+   - `/app/src/util/scale/RechartsScale.ts`
+     - Read in full. Defines the `RechartsScale` interface (`domain()`, `range()`, `rangeMin()`, `rangeMax()`, `isInRange()`, optional `bandwidth()`/`ticks()`, `map()`) and `rechartsScaleFactory` which wraps a raw d3 scale (e.g. from `combineConfiguredScale`) into this interface. Notably `range: () => range` where `range = [Math.min(...d3Range), Math.max(...d3Range)]` — i.e., the WRAPPED scale's `.range()` is always sorted ascending regardless of the original d3 scale's actual (possibly descending) range direction. This could be another relevant detail for the eventual fix (direction information is being normalized away at this layer, while `.map()` still correctly reflects the original directional mapping).
+   - `/app/src/state/selectors/combiners/combineConfiguredScale.ts`
+     - Read in full. Shows `combineConfiguredScaleInternal` (builds a d3 scale instance with `.domain(axisDomain).range(axisRange)`) and `combineConfiguredScale` (top-level combiner feeding `selectPolarConfiguredScale`/`selectConfiguredScale`).
+   - `/app/src/state/selectors/combiners/combineRealScaleType.ts`
+     - Read in full. `combineRealScaleType` determines `'band'`/`'point'`/`'linear'`/etc. scale type string from axis config; for category-type axis in RadarChart (non Line/Area/ComposedChart-without-bar), returns `'band'`.
+   - `/app/src/state/selectors/selectors.ts`
+     - Read sections (~1-100, ~150-290). Key pieces:
+       - `selectOrderedTooltipTicks` (line ~72-75): `sortBy(selectTooltipAxisTicks output, o => o.coordinate)` — used for tooltip nearest-tick lookup; inherits the SAME offset as axis labels via `selectTooltipAxisTicks`.
+       - `combineActiveCartesianProps` / `combineActivePolarProps` (line ~228-257): `combineActivePolarProps` calls `inRangeOfSector(chartEvent, polarViewBox)` → `calculatePolarTooltipPos` → `calculateActiveTickIndex(pos, orderedTooltipTicks, tooltipTicks, tooltipAxisType, tooltipAxisRange)` → `getActivePolarCoordinate(layout, tooltipTicks, activeIndex, rangeObj)`. This is the tooltip hover pipeline confirmed to use the OFFSET/SHIFTED tick coordinates (same family as axis labels), NOT the raw/point coordinates.
+   - `/app/test/chart/repro.spec.tsx` (SCRATCH FILE, not part of original repo, repeatedly overwritten during investigation)
+     - Used to render `RadarChart`/`Radar`/`PolarAngleAxis`/`PolarRadiusAxis`/`Tooltip` with the exact reproduction dataset:
+       ```js
+       const data = [
+         { name: 'North', score: 100 },
+         { name: 'East', score: 25 },
+         { name: 'South', score: 75 },
+         { name: 'West', score: 50 },
+       ];
+       ```
+       and to dump/compare: raw `scale.map()` values, `selectPolarAngleAxisTicks` label coordinates, `selectRadarPoints` drawn-point angles, `selectPolarGraphicalItemAxisTicks`, `selectAngleAxisRangeWithReversed`, and to simulate mouse hover via `showTooltipOnCoordinate`/`getTooltip` at various screen angles/positions for many `startAngle`/`endAngle` combinations (90/-270 default, -270/90, 0/360, 360/0, 45/405, -90/270, 270/-90, plus `reversed` prop true). This file should be cleaned up (deleted) before/when finalizing the fix, or replaced with a proper permanent regression test.
+   - `/app/test/component/Tooltip/tooltipTestHelpers.tsx`
+     - Read in full. Provides `getTooltip(container)`, `showTooltipWithEvent`/`showTooltipOnCoordinate`/`showTooltipOnCoordinateTouch`/`showTooltip`/`hideTooltip`/`showTooltipClick` — used extensively in my scratch repro tests to simulate hover and read tooltip text.
+   - `/app/test/helper/mockGetBoundingClientRect.ts`
+     - Referenced/used (`mockGetBoundingClientRect({ width, height, x, y, top, left })`) to make jsdom mouse-position math work for hover simulation.
+   - `/app/test/helper/createSelectorTestCase.tsx`
+     - Read in full. Provides `createSelectorTestCase` used to spy on selector return values inside a rendered chart component tree.
+   - `/app/.harbor_assets/bug.png` and `/app/.harbor_assets/mismatch.png`
+     - Both read (viewed) to understand the reported bug visually. `bug.png` (1280x912) shows hover-tooltip mismatch with debug overlay "Tooltip target: North · marker at: 0, 0". `mismatch.png` (1280x856) shows drawn-shape vs. axis-label mismatch, with axis labeled South(top)/East(right)/North(bottom)/West(left) but a polygon whose peak positions don't correspond to the values(100,25,75,50) under those labels in the data table shown alongside.
+   - `/app/.harbor_assets/ASSET_MANIFEST.json`
+     - Read; simple manifest listing the two screenshot files as `bug_screenshot` role.
+
+4. Errors and fixes:
+   - No source-code fix has been made yet, so there are no "fixes" per se — this section covers investigation errors encountered and corrected:
+     - Initial attempt to read `.mock.results[...].value` from a vitest spy (`scaleSpy.mock.results[...].value`) failed with `Cannot read properties of undefined (reading 'map')` because `mock.results` entries are `{type, value}` for return values, not call arguments — the spy in question captures the SELECTOR'S ARGUMENT (via `spy(selectorResult)`), so I should have used `spy.mock.calls.at(-1)?.[0]` instead. Fixed by switching from `scaleSpy.mock.results[...].value` to `scaleSpy.mock.calls.at(-1)?.[0]` (i.e., reading from `.mock.calls` not `.mock.results`), which resolved subsequent dumps correctly.
+     - Attempted `polygon = container.querySelector('.recharts-radar-polygon')` and read `.getAttribute('points')` — got `null`/`undefined` because the actual drawn shape is an SVG `<path>` (Recharts' `Polygon` component renders a `<path>` with `d`, not raw `<polygon points=...>`). Fixed by querying `.recharts-radar-polygon path` (or more precisely `.recharts-radar-polygon path.recharts-polygon` per `expectRadarPolygons.ts` helper) and reading the `d` attribute instead.
+     - First polygon dump returned a degenerate/collapsed path `M300,300L300,300L300,300L300,300L300,300Z` — this was because no `PolarRadiusAxis` with an explicit `domain={[0,100]}` was provided, so the radius scale had a mismatched/degenerate domain (likely defaulting based on auto domain not matching test data range properly, or animation-related). Fixed by adding `<PolarRadiusAxis domain={[0, 100]} />` and `isAnimationActive={false}` on `<Radar>` in the repro render, after which the polygon path showed real varying coordinates.
+     - `pip install pillow` failed (`pip: command not found`) when I attempted to inspect PNG dimensions programmatically; worked around by reading PNG headers manually via a small Python script using `struct`/`zlib` on raw bytes (`struct.unpack('>II', data[16:24])`) instead of relying on Pillow, and separately used the Read tool directly on the PNG files (which renders/interprets images) to visually inspect them.
+     - A `node -e` attempt to `require('victory-vendor/d3-scale')` via a `/tmp/t.mjs` ESM file failed with `ERR_MODULE_NOT_FOUND` (module resolution only works from within the /app project root due to node_modules location) — fixed by running the equivalent CommonJS `require(...)` directly via `node -e "..."` (inline `-e` script) from the `/app` working directory instead of a standalone `/tmp/*.mjs` file, which succeeded (since Bash cwd was /app and CJS `require` resolves relative to cwd/module search paths correctly).
+     - No explicit user feedback/corrections were received during this session beyond the very first bug report — there have been no further user chat turns; all subsequent activity has been my own autonomous investigation via tool calls.
+
+5. Problem Solving:
+   - Solved (root cause substantially identified, pending final confirmation and fix): The bug stems from an inconsistency between how the angle-axis "offset" (needed to center category labels/tooltip sectors correctly within their band, for a categorical `scaleBand`-based angle axis) is computed for (a) rendered axis tick labels (`combineAxisTicks` in axisSelectors.ts) and tooltip-tick lookup (`combineTicksOfTooltipAxis` in tooltipSelectors.ts) — both of which explicitly flip the offset's sign based on `mathSign(axisRange[0] - axisRange[1])`, i.e., based on whether the angle axis range increases or decreases — versus (b) the drawn Radar polygon vertices (`computeRadarPoints` in Radar.tsx), which add `angleBandSize` sourced from `getBandSizeOfAxis` (ChartUtils.ts), a function that returns `scale.bandwidth()` directly and is ALWAYS NON-NEGATIVE, with no sign/direction awareness at all.
+   - Empirically confirmed via `node -e` scriptlets against `victory-vendor/d3-scale`'s `scaleBand` that raw `scale.map(category)` values differ from rendered axis tick-label coordinates by exactly one full bandwidth step (offset), and that this offset's sign flips with axis-range direction in the label/tooltip code paths but not in the polygon-drawing code path.
+   - Confirmed via multiple full-DOM-render experiments (varying `startAngle`/`endAngle`: default 90/-270, reversed -270/90, 0/360, 360/0, 45/405, -90/270, 270/-90, and the `reversed` prop) that:
+     - For the DEFAULT decreasing-direction configuration (90→-270, the built-in RadarChart default), the drawn polygon and axis tick labels HAPPEN TO AGREE (sign combination cancels out favorably), and hover-sweep tests (at 15° or 30° increments) resolved tooltips consistently to the correct/expected nearest label in that config.
+     - For INCREASING-direction configurations (e.g., 0→360, or reversed prop, or other reversed start/end orderings), the drawn polygon's vertex-to-label correspondence becomes WRONG (e.g., for 0→360, the polygon's "North" vertex renders at the TOP of the chart while the "North" axis tick label renders at the BOTTOM), directly reproducing the visual bug in `mismatch.png`. Hover-sweep tests in these configurations also showed inconsistent tooltip resolution relative to the rendered labels, reproducing `bug.png`.
+   - This directly explains the user's reported symptom fully: the axis labels and tooltip-hit-testing are mutually self-consistent (since they share the same offset formula/tick set), but the DRAWN SHAPE is the odd one out, using a sign-insensitive `angleBandSize`. (Note: this is somewhat in tension with the user's framing that hover ALSO disagrees with labels in bug.png; this is explained by the fact that the specific chart in bug.png may be using a non-default start/end angle configuration or `reversed`, OR — since the drawn shape is wrong, a user visually associates the WRONG shape with a label, and then hovering "near what looks like it should be a given series' point" naturally resolves to a different series than expected purely because the shape itself was mis-plotted; all three symptoms trace back to the single point-computation defect once you also account for label/tooltip already being correct/self-consistent in isolation).
+   - STILL OPEN / NOT YET DONE: I have not yet written or applied the actual code fix. The most promising fix direction (not yet implemented) is to make `computeRadarPoints`'s `angleBandSize` (or `getBandSizeOfAxis`/`selectBandSizeOfAxis` upstream) direction-aware — i.e., apply the same `mathSign(axisRange[0] - axisRange[1])` sign flip to `bandSize` before adding it to `scale.map(name)` in Radar.tsx, so that it matches the sign convention already used by `combineAxisTicks`/`combineTicksOfTooltipAxis`. Alternatively, the fix could standardize all four "tick generation" implementations (the "four horsemen") to share a single, correctly-signed offset computation, and have `computeRadarPoints` consume that same correct value rather than reimplementing its own (via `getBandSizeOfAxis`, which is sign-unaware). This exact code change has NOT yet been written/tested; further work is needed to: (a) decide the precise fix location(s) — likely `getBandSizeOfAxis`/`selectBandSizeOfAxis` (to make bandSize signed) OR directly in `computeRadarPoints`/`Radar.tsx` (to apply the correct sign when adding `angleBandSize`) — while being careful not to break other consumers of `getBandSizeOfAxis` (e.g., Cartesian bar/line charts, `RadialBar.tsx`, `barSelectors.ts`, `lineSelectors.ts`, `areaSelectors.ts`, `radialBarSelectors.ts` all use it and must not regress); (b) verify the fix holds for arbitrary category counts (not just 4) and arbitrary start/end angle pairs (not just the handful tested); (c) verify RadialBar (which also uses polar angle axis with categorical bands, per `radialBarSelectors.ts`'s own `selectPolarGraphicalItemAxisTicks(state, 'radiusAxis', ...)` usage — note RadialBar's categorical axis is typically the RADIUS axis, not angle axis, so it may be a different/lower-risk code path, but should still be checked) is unaffected or also fixed if it has an analogous issue; (d) clean up or replace the scratch `/app/test/chart/repro.spec.tsx` file with a proper permanent regression test (e.g., in `test/polar/Radar.spec.tsx` or `test/chart/RadarChart.spec.tsx`) verifying polygon-vertex-angle vs. tick-label-coordinate vs. tooltip-hover-resolution consistency across several start/end angle configurations and category counts; (e) run the full test suite to confirm no regressions.
+
+6. All user messages:
+   - The user's ONLY message in this conversation (the initial bug report) is reproduced here in full, verbatim, as it defines the entire task and its acceptance criteria:
+     "# Full-circle polar chart is inconsistent with its own axis
+
+I have a polar chart whose angular axis spans the whole circle, one categorical series per spoke,
+with a tooltip enabled.
+
+Hovering it gives me this, and the result depends on which part of the circle I point at:
+
+![image](/app/.harbor_assets/bug.png)
+
+And this is what it draws for the data I passed in, with no pointer involved at all:
+
+![image](/app/.harbor_assets/mismatch.png)
+
+## What is the expected behavior?
+
+The chart should be self-consistent everywhere on the circle: for any spoke, the series it is
+labelled with, the series drawn on it, and the series a hover near it resolves to must all be the
+same one — and a hover must resolve to the spoke nearest the pointer, reporting that series' own
+point on the chart.
+
+This has to hold for any number of series, and whatever start and end angle the circle is laid out
+with."
+   - No other user messages have been sent in this conversation; all subsequent content is my own tool-driven investigation.
+
+7. Pending Tasks:
+   - Identify and implement the precise code fix so that drawn shape (Radar polygon vertices / and by extension any polar graphical item like RadialBar), rendered axis tick labels, and tooltip hover resolution are ALL mutually consistent for any start/end angle configuration and any number of categorical series (per the user's stated expected behavior).
+   - Likely fix location(s) under consideration: `getBandSizeOfAxis` / `selectBandSizeOfAxis` (ChartUtils.ts / radarSelectors.ts) to make the band-size sign-aware relative to axis range direction, and/or `computeRadarPoints` in Radar.tsx to apply the correct signed offset; possibly also need to reconcile/deduplicate the "four horsemen of tick generation" (`combineAxisTicks`, `combineTicksOfTooltipAxis`, `getTicksOfAxis`, `combineGraphicalItemTicks`) so they don't diverge in the future.
+   - Verify the fix across multiple start/end angle directions (increasing and decreasing), the `reversed` prop, and varying category counts (not just 4).
+   - Check whether `RadialBar` (which also renders polar graphical items, potentially on a categorical angle axis in some configurations) has an analogous defect and needs the same fix.
+   - Write/keep a proper regression test (rather than the throwaway `/app/test/chart/repro.spec.tsx`) verifying the three-way consistency (label position, drawn point position, tooltip hover resolution) for at least one non-default start/end angle configuration, to prevent regression.
+   - Delete or repurpose the scratch `/app/test/chart/repro.spec.tsx` file (and confirm no other scratch artifacts like `repro2.spec.tsx` remain — already deleted) before considering the task complete.
+   - Run the full existing test suite (`vitest run` broadly, not just the scratch file) to confirm the fix introduces no regressions elsewhere (Cartesian bar/line/area charts, RadialBar, PolarGrid, etc., all of which depend on shared tick-generation/band-size utilities).
+
+8. Current Work:
+   Immediately before this summary was requested, I had just re-read `/app/.harbor_assets/mismatch.png` (via the Read tool) a second time, apparently to re-cross-reference the visual bug against my latest numeric findings (the discovery that `computeRadarPoints`'s point angles for the DEFAULT direction actually match tick labels via `angleBandSize` from `getBandSizeOfAxis`, but diverge for other start/end angle directions because `getBandSizeOfAxis` returns an always-positive bandwidth while the tick-label/tooltip offset formula explicitly flips sign via `mathSign(axisRange[0] - axisRange[1])`). No textual analysis or code edit had yet been produced following that re-read — the conversation was interrupted for this summary request right after issuing that Read call, before I had written up the confirmed root-cause conclusion or begun implementing the actual fix in source code.
+

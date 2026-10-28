@@ -1,0 +1,216 @@
+diff --git a/packages/react/select/src/select.test.tsx b/packages/react/select/src/select.test.tsx
+new file mode 100644
+--- /dev/null
++++ b/packages/react/select/src/select.test.tsx
+@@ -0,0 +1,211 @@
++import { render, act } from '@testing-library/react';
++import * as Select from './Select';
++
++// jsdom does not implement scrollIntoView; prevent crash in Select's scroll-to-selected effect
++(Element.prototype as any).scrollIntoView = jest.fn();
++
++jest.mock('@radix-ui/primitive', () => {
++  function composeEventHandlers<E>(
++    originalEventHandler?: (event: E) => void,
++    ourEventHandler?: (event: E) => void,
++    { checkForDefaultPrevented = true } = {}
++  ) {
++    return function handleEvent(event: E) {
++      originalEventHandler?.(event);
++      if (
++        !checkForDefaultPrevented ||
++        !(event as unknown as Event).defaultPrevented
++      ) {
++        ourEventHandler?.(event);
++      }
++    };
++  }
++  return { composeEventHandlers };
++});
++
++jest.mock('@radix-ui/rect', () => ({
++  observeElementRect: (_el: unknown, cb: (r: DOMRect) => void) => {
++    cb({ left: 0, right: 300, width: 300, top: 0, bottom: 40, height: 40, x: 0, y: 0, toJSON: () => ({}) } as DOMRect);
++    return () => {};
++  },
++}));
++
++/* ------------------------------------------------------------------------------------------------
++ * Helpers
++ *
++ * Everything below reads back observable DOM state (inline/computed style of the rendered
++ * nodes). Nothing here looks at the source, at a constant name, or at how the offsets are
++ * computed, so any implementation that produces the same rendered geometry passes.
++ * ----------------------------------------------------------------------------------------------*/
++
++type MockRect = { left: number; right: number; width: number };
++
++/** Give every element the same box, so the scenario is fully described by these 3 numbers. */
++function mockElementRects({ left, right, width }: MockRect) {
++  jest.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function () {
++    return {
++      left, right, width,
++      top: 0, bottom: 40, height: 40,
++      x: left, y: 0,
++      toJSON: () => ({}),
++    } as DOMRect;
++  });
++}
++
++function setScreenWidth(px: number) {
++  Object.defineProperty(window, 'innerWidth', { value: px, configurable: true, writable: true });
++}
++
++/** The positioned wrapper is the fixed-position box that carries the resolved edge offset. */
++function findPositionedWrapper(edge: 'left' | 'right'): HTMLElement {
++  const wrapper = Array.from(document.querySelectorAll('div')).find(
++    (div) => div.style.position === 'fixed' && div.style.getPropertyValue(edge) !== ''
++  );
++  expect(wrapper).toBeTruthy();
++  return wrapper as HTMLElement;
++}
++
++/**
++ * Distance the pop-up keeps from the screen edges: read off the rendered pop-up when it
++ * declares one as a margin, otherwise the value the component already uses for its other
++ * edge spacing, which is the value a solution is expected to reuse here.
++ */
++function edgeGutter(wrapper: HTMLElement): number {
++  const declared = parseFloat(wrapper.style.marginTop || wrapper.style.margin);
++  return Number.isFinite(declared) ? declared : 10;
++}
++
++/**
++ * Effective overflow of an element per axis. Accepts the two-value shorthand, the separate
++ * horizontal/vertical longhands, and a rule coming from a stylesheet — all equivalent ways of
++ * expressing the same rendered behaviour.
++ */
++function resolveOverflowAxes(el: HTMLElement): { x: string; y: string } {
++  const inline = el.style;
++  const shorthand = (inline.overflow || '').trim().split(/\s+/).filter(Boolean);
++  const computed = window.getComputedStyle(el);
++  const x = (
++    inline.overflowX || shorthand[0] || computed.getPropertyValue('overflow-x') || ''
++  ).toLowerCase();
++  const y = (
++    inline.overflowY || shorthand[1] || shorthand[0] || computed.getPropertyValue('overflow-y') || ''
++  ).toLowerCase();
++  return { x, y };
++}
++
++function openedSelect(dir?: 'ltr' | 'rtl') {
++  return (
++    <Select.Root dir={dir} defaultOpen defaultValue="a">
++      <Select.Trigger><Select.Value placeholder="pick" /></Select.Trigger>
++      <Select.Content>
++        <Select.Viewport>
++          <Select.Item value="a">
++            <Select.ItemText>A very long option, much wider than this screen</Select.ItemText>
++          </Select.Item>
++          <Select.Item value="b"><Select.ItemText>Option B</Select.ItemText></Select.Item>
++        </Select.Viewport>
++      </Select.Content>
++    </Select.Root>
++  );
++}
++
++async function renderOpen(dir?: 'ltr' | 'rtl') {
++  await act(async () => {
++    render(openedSelect(dir));
++  });
++}
++
++describe('Select content overflow positioning', () => {
++  afterEach(() => {
++    jest.restoreAllMocks();
++    document.body.innerHTML = '';
++  });
++
++  it('renders trigger element with placeholder visible', () => {
++    render(
++      <Select.Root>
++        <Select.Trigger><Select.Value placeholder="pick" /></Select.Trigger>
++      </Select.Root>
++    );
++    expect(document.body.textContent).toContain('pick');
++  });
++
++  it('renders dropdown with item text when open', async () => {
++    await act(async () => {
++      render(
++        <Select.Root defaultOpen>
++          <Select.Trigger><Select.Value placeholder="pick" /></Select.Trigger>
++          <Select.Content>
++            <Select.Viewport>
++              <Select.Item value="a"><Select.ItemText>Option A</Select.ItemText></Select.Item>
++            </Select.Viewport>
++          </Select.Content>
++        </Select.Root>
++      );
++    });
++    expect(document.body.textContent).toContain('Option A');
++  });
++
++  it('keeps the trigger-aligned offset when the content fits on screen', async () => {
++    // Wide screen, content narrower than it: the pop-up must stay where the trigger puts it
++    // (offset 100), i.e. it must NOT be pinned to the screen edge unconditionally.
++    setScreenWidth(1000);
++    mockElementRects({ left: 100, right: 400, width: 300 });
++    await renderOpen();
++
++    const wrapper = findPositionedWrapper('left');
++    const left = parseFloat(wrapper.style.left);
++    expect(left).toBeCloseTo(100, 0);
++    expect(left).toBeGreaterThan(edgeGutter(wrapper));
++  });
++
++  it('keeps the content at least as wide as the trigger when an option overflows', async () => {
++    // Whatever is done about the offset, the pop-up must not be shrunk below the trigger width.
++    setScreenWidth(300);
++    mockElementRects({ left: 60, right: 560, width: 500 });
++    await renderOpen();
++
++    const wrapper = findPositionedWrapper('left');
++    expect(parseFloat(wrapper.style.minWidth)).toBeGreaterThanOrEqual(500);
++  });
++
++  it('positions content within viewport in LTR mode when content exceeds available width', async () => {
++    // Screen 300 wide, one option 500 wide: the start (left) edge of the pop-up must stay on
++    // screen and sit at the gutter, not be pushed off to a negative offset.
++    setScreenWidth(300);
++    mockElementRects({ left: 60, right: 560, width: 500 });
++    await renderOpen();
++
++    const wrapper = findPositionedWrapper('left');
++    const left = parseFloat(wrapper.style.left);
++    expect(left).toBeGreaterThanOrEqual(0);
++    expect(left).toBeLessThanOrEqual(edgeGutter(wrapper) + 1);
++  });
++
++  it('positions content within viewport in RTL mode when content exceeds available width', async () => {
++    // Mirror of the case above: in RTL the start edge is the right one.
++    setScreenWidth(300);
++    mockElementRects({ left: 60, right: 560, width: 500 });
++    await renderOpen('rtl');
++
++    const wrapper = findPositionedWrapper('right');
++    const right = parseFloat(wrapper.style.right);
++    expect(right).toBeGreaterThanOrEqual(0);
++    expect(right).toBeLessThanOrEqual(edgeGutter(wrapper) + 1);
++  });
++
++  it('scrolls the option list vertically only when an option overflows', async () => {
++    // The overflowing option must be cut off horizontally instead of turning the list into a
++    // sideways scroller, while vertical scrolling of a long list keeps working.
++    setScreenWidth(300);
++    mockElementRects({ left: 60, right: 560, width: 500 });
++    await renderOpen();
++
++    const viewport = document.querySelector('[data-radix-select-viewport]') as HTMLElement;
++    expect(viewport).toBeTruthy();
++
++    const { x, y } = resolveOverflowAxes(viewport);
++    expect(['hidden', 'clip']).toContain(x);
++    expect(['auto', 'scroll', 'overlay']).toContain(y);
++  });
++});

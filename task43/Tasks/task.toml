@@ -1,0 +1,81 @@
+version = "1.0"
+
+[metadata]
+task_id = "recharts__recharts-6937-mm"
+title = "Tooltips don't close with keyboard navigation"
+repository_name = "recharts/recharts"
+repo_url = "https://github.com/recharts/recharts"
+issue_number = 6937
+pr_number = 6958
+base_commit = "bf0460641dd33939e5b4b22feecdc629cc1407b6"
+fix_commit = "2ff088ae4f580a30208c47ce0dbed70664cd638b"
+task_type = "visual_bug_fix"
+language = "TypeScript"
+framework = "React / recharts"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = """
+The prompt carries no reproduction steps, no version string, and no name for any mechanism: it states
+the general rule being violated (a readout belongs only to the chart with current focus) without
+saying which chart currently breaks it or how. The screenshot is what shows three charts each still
+holding a readout after keyboard focus has moved elsewhere - only the picture supplies a concrete,
+current violation of the stated rule.
+
+Closing on the way out is the obvious half, and it is what the upstream project shipped. It is not
+enough here. Focus returning must pick the reader up where they were, which means the state left
+behind on the way out has to be read back on the way in - and because an interaction that ended
+because focus moved and one the reader ended themselves look identical in the existing state, the
+fix has to make them distinguishable without inventing a new field.
+
+A second latent defect sits in the same journey and is easy to read past: the tooltip container
+clears its dismissed flag by assigning to this.state instead of calling setState, so no render is
+scheduled and a reader who puts the readout away has to move twice before it returns. Nothing in the
+existing suite catches it, because the container keeps its text content correct the whole time it is
+wrongly hidden - only its visibility is wrong. The two requirements also pull against each other:
+what the reader put away must stay away, yet must return the moment they move on.
+"""
+files_edited = [
+  "src/chart/RechartsWrapper.tsx",
+  "src/component/TooltipBoundingBox.tsx",
+  "src/state/keyboardEventsMiddleware.ts",
+]
+f2p = [
+  "test/chart/AccessibilityLayer.spec.tsx::AccessibilityLayer with accessibilityLayer=true > AreaChart horizontal > Tooltip closes when chart loses focus",
+  "test/chart/AccessibilityLayer.spec.tsx::AccessibilityLayer with accessibilityLayer=undefined > AreaChart horizontal > Tooltip closes when chart loses focus",
+  "test/chart/AccessibilityLayer.spec.tsx::AccessibilityLayer with accessibilityLayer=true > AreaChart horizontal > Tooltip returns to the same data point when focus comes back",
+  "test/chart/AccessibilityLayer.spec.tsx::AccessibilityLayer with accessibilityLayer=undefined > AreaChart horizontal > Tooltip returns to the same data point when focus comes back",
+  "test/chart/AccessibilityLayer.spec.tsx::Multiple charts navigation > Tooltip closes when tabbing away from one chart to another",
+  "test/chart/AccessibilityLayer.spec.tsx::AccessibilityLayer with accessibilityLayer=true > AreaChart horizontal > A readout put away by the reader comes back as soon as they move on",
+  "test/chart/AccessibilityLayer.spec.tsx::AccessibilityLayer with accessibilityLayer=undefined > AreaChart horizontal > A readout put away by the reader comes back as soon as they move on",
+]
+p2p = [
+  "test/chart/AccessibilityLayer.spec.tsx::AccessibilityLayer with accessibilityLayer=true > AreaChart horizontal > A readout the reader dismissed stays dismissed across a focus round trip",
+  "test/chart/AccessibilityLayer.spec.tsx::AccessibilityLayer with accessibilityLayer=undefined > AreaChart horizontal > A readout the reader dismissed stays dismissed across a focus round trip",
+  "test/chart/AccessibilityLayer.spec.tsx::AccessibilityLayer with accessibilityLayer=true > AreaChart horizontal > Arrow keys continue from the restored point after focus returns",
+  "test/chart/AccessibilityLayer.spec.tsx::AccessibilityLayer with accessibilityLayer=undefined > AreaChart horizontal > Arrow keys continue from the restored point after focus returns",
+  "test/chart/AccessibilityLayer.spec.tsx::AccessibilityLayer with accessibilityLayer=false > AreaChart > does not add tabindex and role to the svg element",
+  "test/chart/AccessibilityLayer.spec.tsx::AccessibilityLayer with accessibilityLayer=false > AreaChart > does not show tooltip using keyboard",
+  "test/chart/AccessibilityLayer.spec.tsx::AccessibilityLayer with accessibilityLayer=false > FunnelChart > does not add tabindex and role to the svg element",
+  "test/chart/AccessibilityLayer.spec.tsx::AccessibilityLayer with accessibilityLayer=false > FunnelChart > does not show tooltip using keyboard",
+  "test/chart/AccessibilityLayer.spec.tsx::AccessibilityLayer with accessibilityLayer=false > PieChart > does not show tooltip using keyboard",
+  "test/chart/AccessibilityLayer.spec.tsx::AccessibilityLayer with accessibilityLayer=false > PieChart > does not tabindex and role to the svg element",
+  "test/chart/AccessibilityLayer.spec.tsx::AccessibilityLayer with accessibilityLayer=true > AreaChart horizontal > AccessibilityLayer respects dynamic changes to the XAxis orientation",
+  "test/chart/AccessibilityLayer.spec.tsx::AccessibilityLayer with accessibilityLayer=true > AreaChart horizontal > Add tabindex and role to the svg element",
+]
+tags = ["multimodal", "visual_bug_fix", "react", "typescript", "accessibility"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

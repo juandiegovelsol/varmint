@@ -1,0 +1,838 @@
+diff --git a/opencti-platform/opencti-front/harbor_tests/draftValidationWorkLabel.test.jsx b/opencti-platform/opencti-front/harbor_tests/draftValidationWorkLabel.test.jsx
+new file mode 100644
+index 0000000..44b4046
+--- /dev/null
++++ b/opencti-platform/opencti-front/harbor_tests/draftValidationWorkLabel.test.jsx
+@@ -0,0 +1,283 @@
++/*
++ * Harbor synthetic spec for OpenCTI-Platform__opencti-16540-mm.
++ *
++ * WHAT IT DRIVES
++ *   - the REAL DraftRoot page (private/components/drafts/DraftRoot.tsx), fed a draft fixture
++ *     through the relay boundary, which renders
++ *   - the REAL ConnectorWorkLine (private/components/data/connectors/ConnectorWorkLine.tsx) for
++ *     the draft's validation work, through the REAL Label / TaskStatus / Tag components, and
++ *   - the REAL ConnectorWorks list (the OTHER, generic call site of the very same work line, the
++ *     one used by the connectors screen) as the reference context.
++ *
++ * HOW IT ASSERTS
++ *   Never by looking for a string copied out of the fix. A work line is read back as a set of
++ *   {label, value} pairs; the status field is located by its VALUE (the work state that the line
++ *   is displaying) and the assertion is then made on that field's LABEL. The contract checked is
++ *   the observable mapping "which context am I in -> which wording labels the state field":
++ *   the draft page must label it with its own validation wording, the generic connectors page
++ *   must keep the platform's generic wording, and the two must not collapse onto one text.
++ *   The set of work states is read live out of the GraphQL schema's `enum State`, so the spec
++ *   follows the platform if a state is ever added or removed.
++ */
++import fs from 'node:fs';
++import path from 'node:path';
++import { fileURLToPath } from 'node:url';
++import React from 'react';
++import { describe, it, expect, afterEach } from 'vitest';
++import { render, cleanup } from '@testing-library/react';
++import DraftRoot from '../src/private/components/drafts/DraftRoot';
++import ConnectorWorks from '../src/private/components/data/connectors/ConnectorWorks';
++
++const here = path.dirname(fileURLToPath(import.meta.url));
++
++/* ------------------------------------------------------------------ work states, read live */
++
++const readWorkStates = () => {
++  const schemaPath = path.resolve(here, '../../opencti-graphql/config/schema/opencti.graphql');
++  const schema = fs.readFileSync(schemaPath, 'utf-8');
++  const block = schema.match(/\benum\s+State\s*\{([^}]*)\}/);
++  if (!block) throw new Error(`could not read "enum State" from ${schemaPath}`);
++  return block[1].split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
++};
++
++const WORK_STATES = readWorkStates();
++
++/* ----------------------------------------------------------------------------- DOM reading */
++
++// Every field of a work line is a Label (an <h6>) followed by the field value. Walk up from the
++// heading to the smallest ancestor that carries more text than the label itself: that node is
++// the field. Returns [{ label, value }] in document order.
++const fieldsIn = (root) => Array.from(root.querySelectorAll('h6')).map((heading) => {
++  const label = (heading.textContent || '').trim();
++  let node = heading;
++  for (let hop = 0; hop < 3; hop += 1) {
++    const parent = node.parentElement;
++    if (!parent || parent === root) break;
++    // Stop as soon as the parent carries more text than the label: that parent is the field.
++    if ((parent.textContent || '').trim() !== label) break;
++    node = parent;
++  }
++  const container = node.parentElement || node;
++  const text = (container.textContent || '').trim();
++  return { label, value: text.startsWith(label) ? text.slice(label.length).trim() : text };
++});
++
++const labelsIn = (root) => fieldsIn(root).map((f) => f.label);
++
++// The state field is the one whose displayed VALUE is the work state; its label is what the
++// spec is about.
++const stateFieldIn = (root, state) => {
++  const field = fieldsIn(root).find((f) => f.value === state);
++  if (!field) {
++    throw new Error(`no field displays the work state "${state}"; fields were ${JSON.stringify(fieldsIn(root))}`);
++  }
++  return field;
++};
++
++/* -------------------------------------------------------------------------------- fixtures */
++
++const makeWork = (state, overrides = {}) => ({
++  id: 'work-1',
++  name: 'Draft validation bundle',
++  received_time: '2026-02-03T10:11:12.000Z',
++  processed_time: '2026-02-03T10:12:00.000Z',
++  completed_time: '2026-02-03T10:13:30.000Z',
++  status: state,
++  tracking: { import_expected_number: 40, import_processed_number: 12 },
++  errors: [],
++  ...overrides,
++});
++
++const makeDraft = (work, overrides = {}) => ({
++  id: 'draft-1',
++  name: 'Q1 threat report draft',
++  entity_type: 'DraftWorkspace',
++  description: 'A draft under validation',
++  created_at: '2026-02-03T09:00:00.000Z',
++  objectAssignee: [],
++  objectParticipant: [],
++  createdBy: null,
++  objectsCount: {
++    containersCount: 1,
++    entitiesCount: 2,
++    observablesCount: 3,
++    relationshipsCount: 4,
++    sightingsCount: 5,
++    reviewsCount: 6,
++    totalCount: 21,
++  },
++  draft_status: 'validated', // anything but 'open' => the read-only, post-approval overview
++  currentUserAccessRight: 'admin',
++  authorizedMembers: [],
++  validationWork: work,
++  ...overrides,
++});
++
++/* --------------------------------------------------------------------------- render helpers */
++
++// Renders the REAL draft overview page and hands the caller its DOM.
++const inDraftPage = (work, draftOverrides, fn) => {
++  const draft = makeDraft(work, draftOverrides);
++  globalThis.__HARBOR_PARAMS__ = { draftId: draft.id };
++  globalThis.__HARBOR_PATHNAME__ = `/dashboard/data/import/draft/${draft.id}/entities`;
++  globalThis.__HARBOR_PRELOADED__ = { draftWorkspace: draft };
++  globalThis.__HARBOR_DRAFT_CONTEXT__ = null;
++  globalThis.__HARBOR_FEATURES__ = ['DRAFT_WORKFLOW'];
++  const { container, unmount } = render(<DraftRoot />);
++  try {
++    return fn(container);
++  } finally {
++    unmount();
++  }
++};
++
++// Renders the REAL connectors-screen list of works, i.e. the generic use of the same work line.
++const inConnectorsPage = (works, fn) => {
++  const data = { works: { edges: works.map((node) => ({ node })) } };
++  const { container, unmount } = render(
++    <ConnectorWorks data={data} options={[]} relay={{ refetch: () => {} }} inProgress />,
++  );
++  try {
++    return fn(container);
++  } finally {
++    unmount();
++  }
++};
++
++const draftStateLabel = (state, workOverrides = {}, draftOverrides = {}) => inDraftPage(
++  makeWork(state, workOverrides),
++  draftOverrides,
++  (root) => stateFieldIn(root, state).label,
++);
++
++const connectorStateLabel = (state, workOverrides = {}) => inConnectorsPage(
++  [makeWork(state, workOverrides)],
++  (root) => stateFieldIn(root, state).label,
++);
++
++afterEach(() => {
++  cleanup();
++  delete globalThis.__HARBOR_PRELOADED__;
++  delete globalThis.__HARBOR_PARAMS__;
++  delete globalThis.__HARBOR_PATHNAME__;
++});
++
++/* ------------------------------------------------------------------------------------ f2p */
++
++describe('Draft validation work status', () => {
++  it('labels the validation work state of a draft differently from a plain connector work', () => {
++    const collapsed = [];
++    for (const state of WORK_STATES) {
++      const inDraft = draftStateLabel(state);
++      const generic = connectorStateLabel(state);
++      expect(inDraft.length).toBeGreaterThan(0);
++      if (inDraft === generic) collapsed.push({ state, label: inDraft });
++    }
++    expect(collapsed).toEqual([]);
++  });
++
++  it('uses one and the same label for the validation work state whatever the state is', () => {
++    const seen = WORK_STATES.map((state) => draftStateLabel(state));
++    // A single wording, so the label describes the field and not the value inside it ...
++    expect(Array.from(new Set(seen))).toHaveLength(1);
++    // ... and that wording is the draft-specific one, not the generic connector one.
++    expect(seen[0]).not.toBe(connectorStateLabel(WORK_STATES[0]));
++  });
++
++  it('names the validation work state after the validation it reports on', () => {
++    const label = draftStateLabel('complete');
++    expect(label.toLowerCase()).toMatch(/validation/);
++    expect(label.trim().toLowerCase()).not.toBe('status');
++  });
++
++  it('labels the validation work state the same way for an unrelated draft', () => {
++    // Second, disjoint data set: nothing about the wording may be tied to the values of the
++    // draft or of the work that the report happened to show.
++    const otherWork = {
++      id: 'work-77',
++      name: 'Bundle 4321 - partner feed',
++      received_time: '2025-11-30T23:45:00.000Z',
++      processed_time: '2025-12-01T00:02:00.000Z',
++      completed_time: '',
++      tracking: { import_expected_number: 9, import_processed_number: 9 },
++      errors: [{ timestamp: '2025-12-01T00:01:00.000Z', message: 'boom', sequence: 1, source: 'x' }],
++    };
++    const otherDraft = {
++      id: 'draft-99',
++      name: 'Partner ingestion draft',
++      draft_status: 'closed',
++      objectsCount: {
++        containersCount: 11,
++        entitiesCount: 12,
++        observablesCount: 13,
++        relationshipsCount: 14,
++        sightingsCount: 15,
++        reviewsCount: 16,
++        totalCount: 81,
++      },
++    };
++    const label = draftStateLabel('progress', otherWork, otherDraft);
++    expect(label).toBe(draftStateLabel('complete'));
++    expect(label).not.toBe(connectorStateLabel('progress', otherWork));
++  });
++});
++
++/* ------------------------------------------------------------------------------------ p2p */
++
++describe('Draft validation work status (p2p guards)', () => {
++  it('reads at least the wait, progress and complete work states from the platform schema', () => {
++    // Guard for the specs that loop over whatever the schema declares.
++    expect(WORK_STATES.length).toBeGreaterThanOrEqual(3);
++    expect(WORK_STATES).toContain('complete');
++  });
++
++  it('keeps the generic connector work line labelled with the platform status wording', () => {
++    for (const state of WORK_STATES) {
++      expect(connectorStateLabel(state)).toBe('Status');
++    }
++  });
++
++  it('leaves every other field label of the work line untouched in the draft context', () => {
++    const state = 'complete';
++    const draftLabels = inDraftPage(makeWork(state), {}, (root) => labelsIn(root));
++    const genericLabels = inConnectorsPage([makeWork(state)], (root) => labelsIn(root));
++    const draftStatus = draftStateLabel(state);
++    const genericStatus = connectorStateLabel(state);
++    expect(draftLabels.filter((l) => l !== draftStatus))
++      .toEqual(genericLabels.filter((l) => l !== genericStatus));
++    // The work line is more than its state field: name, timings, counters and progress.
++    expect(genericLabels.length).toBeGreaterThanOrEqual(6);
++  });
++
++  it('still shows the work state itself in both contexts', () => {
++    for (const state of WORK_STATES) {
++      expect(inDraftPage(makeWork(state), {}, (root) => stateFieldIn(root, state).value)).toBe(state);
++      expect(inConnectorsPage([makeWork(state)], (root) => stateFieldIn(root, state).value)).toBe(state);
++    }
++  });
++
++  it('still shows the name, timings and counters of the draft validation work', () => {
++    const work = makeWork('complete');
++    const byLabel = inDraftPage(work, {}, (root) => Object.fromEntries(fieldsIn(root).map((f) => [f.label, f.value])));
++    expect(byLabel.Name).toBe(work.name);
++    expect(byLabel['Work start time']).toBe(work.received_time);
++    expect(byLabel['Work end time']).toBe(work.completed_time);
++    // Which of the two tracking counters feeds which counter field is a separate (pre-existing)
++    // question, so assert on the pair rather than on the individual assignment.
++    expect([byLabel['Operations completed'], byLabel['Total number of operations']].sort())
++      .toEqual([String(work.tracking.import_expected_number), String(work.tracking.import_processed_number)].sort());
++  });
++
++  it('renders one generic work line per work of the connectors screen', () => {
++    const works = WORK_STATES.map((state, i) => makeWork(state, { id: `work-${i}`, name: `Bundle ${i}` }));
++    inConnectorsPage(works, (root) => {
++      const cards = Array.from(root.querySelectorAll('[data-harbor="card"]'));
++      expect(cards).toHaveLength(works.length);
++      cards.forEach((card, i) => {
++        const field = stateFieldIn(card, works[i].status);
++        expect(field.label).toBe('Status');
++        expect(fieldsIn(card).find((f) => f.label === 'Name').value).toBe(works[i].name);
++      });
++    });
++  });
++});
+diff --git a/opencti-platform/opencti-front/harbor_tests/setup.js b/opencti-platform/opencti-front/harbor_tests/setup.js
+new file mode 100644
+index 0000000..bb02c60
+--- /dev/null
++++ b/opencti-platform/opencti-front/harbor_tests/setup.js
+@@ -0,0 +1 @@
++import '@testing-library/jest-dom/vitest';
+diff --git a/opencti-platform/opencti-front/harbor_tests/stubs/Button.jsx b/opencti-platform/opencti-front/harbor_tests/stubs/Button.jsx
+new file mode 100644
+index 0000000..e6c4f37
+--- /dev/null
++++ b/opencti-platform/opencti-front/harbor_tests/stubs/Button.jsx
+@@ -0,0 +1,6 @@
++// Stand-in for the design-system @common/button/Button (the real one needs @mui/styles).
++import React from 'react';
++const Button = ({ children, variant, size, intent, gradient, iconOnly, startIcon, ...rest }) => (
++  <button type="button" {...rest}>{startIcon}{children}</button>
++);
++export default Button;
+diff --git a/opencti-platform/opencti-front/harbor_tests/stubs/Card.jsx b/opencti-platform/opencti-front/harbor_tests/stubs/Card.jsx
+new file mode 100644
+index 0000000..7f2d4e4
+--- /dev/null
++++ b/opencti-platform/opencti-front/harbor_tests/stubs/Card.jsx
+@@ -0,0 +1,7 @@
++// Stand-in for components/common/card/Card (the real one pulls @mui/styles, react-router-dom
++// and the theme helpers). It only has to be a container that renders its children.
++import React from 'react';
++const Card = ({ children, title, ...rest }) => (
++  <div data-harbor="card" {...rest}>{title}{children}</div>
++);
++export default Card;
+diff --git a/opencti-platform/opencti-front/harbor_tests/stubs/CardTitle.jsx b/opencti-platform/opencti-front/harbor_tests/stubs/CardTitle.jsx
+new file mode 100644
+index 0000000..cbd99f0
+--- /dev/null
++++ b/opencti-platform/opencti-front/harbor_tests/stubs/CardTitle.jsx
+@@ -0,0 +1,5 @@
++// Stand-in for components/common/card/CardTitle. Deliberately NOT a heading element: the spec
++// reads the field labels of a work line, which the real Label component renders as <h6>.
++import React from 'react';
++const CardTitle = ({ children, ...rest }) => <div data-harbor="card-title" {...rest}>{children}</div>;
++export default CardTitle;
+diff --git a/opencti-platform/opencti-front/harbor_tests/stubs/Drawer.jsx b/opencti-platform/opencti-front/harbor_tests/stubs/Drawer.jsx
+new file mode 100644
+index 0000000..cc2c296
+--- /dev/null
++++ b/opencti-platform/opencti-front/harbor_tests/stubs/Drawer.jsx
+@@ -0,0 +1,15 @@
++// Stand-in for private/components/common/drawer/Drawer (the real one needs @mui/styles, useAuth
++// and relay-backed avatars). Renders its children only when open; the specs never open it.
++import React from 'react';
++const Drawer = ({ title, open, onClose, children }) => {
++  if (!open) return null;
++  return (
++    <div role="dialog" aria-label={typeof title === 'string' ? title : undefined}>
++      <div>{title}</div>
++      <button type="button" aria-label="Close drawer" onClick={onClose}>x</button>
++      <div>{typeof children === 'function' ? children({ onClose }) : children}</div>
++    </div>
++  );
++};
++export const DrawerVariant = { create: 'create', update: 'update' };
++export default Drawer;
+diff --git a/opencti-platform/opencti-front/harbor_tests/stubs/dompurify.js b/opencti-platform/opencti-front/harbor_tests/stubs/dompurify.js
+new file mode 100644
+index 0000000..ad5ae61
+--- /dev/null
++++ b/opencti-platform/opencti-front/harbor_tests/stubs/dompurify.js
+@@ -0,0 +1,3 @@
++// dompurify is not installed in the offline verifier image. utils/String only calls sanitize().
++const purify = { sanitize: (s) => s };
++export default purify;
+diff --git a/opencti-platform/opencti-front/harbor_tests/stubs/i18n.jsx b/opencti-platform/opencti-front/harbor_tests/stubs/i18n.jsx
+new file mode 100644
+index 0000000..479315f
+--- /dev/null
++++ b/opencti-platform/opencti-front/harbor_tests/stubs/i18n.jsx
+@@ -0,0 +1,18 @@
++// Stand-in for components/i18n (the real one boots an intl provider over the app's language
++// files). t_i18n is the identity so the spec observes the *source* label the component chose,
++// not a translation of it.
++export const useFormatter = () => ({
++  t_i18n: (s) => s,
++  t: (s) => s,
++  n: (v) => v,
++  b: (v) => v,
++  fld: (v) => v,
++  fd: (v) => v,
++  fsd: (v) => v,
++  nsd: (v) => v,
++  nsdt: (v) => v,
++  fndt: (v) => v,
++});
++export const useIntl = () => ({ formatMessage: ({ id }) => id });
++export const isNone = (v) => v === null || v === undefined || v === '';
++export default { useFormatter };
+diff --git a/opencti-platform/opencti-front/harbor_tests/stubs/jsBase64.js b/opencti-platform/opencti-front/harbor_tests/stubs/jsBase64.js
+new file mode 100644
+index 0000000..5867c7e
+--- /dev/null
++++ b/opencti-platform/opencti-front/harbor_tests/stubs/jsBase64.js
+@@ -0,0 +1,6 @@
++// js-base64 is not installed in the offline verifier image.
++export const Base64 = {
++  encode: (s) => Buffer.from(String(s), 'utf-8').toString('base64'),
++  decode: (s) => Buffer.from(String(s), 'base64').toString('utf-8'),
++};
++export default { Base64 };
+diff --git a/opencti-platform/opencti-front/harbor_tests/stubs/loader.jsx b/opencti-platform/opencti-front/harbor_tests/stubs/loader.jsx
+new file mode 100644
+index 0000000..658d8fd
+--- /dev/null
++++ b/opencti-platform/opencti-front/harbor_tests/stubs/loader.jsx
+@@ -0,0 +1,4 @@
++// Stand-in for components/Loader (the real one needs @mui/styles and the theme).
++const Loader = () => null;
++export const LoaderVariant = { container: 'container', inElement: 'inElement', inline: 'inline' };
++export default Loader;
+diff --git a/opencti-platform/opencti-front/harbor_tests/stubs/makeStyles.js b/opencti-platform/opencti-front/harbor_tests/stubs/makeStyles.js
+new file mode 100644
+index 0000000..6ca45a0
+--- /dev/null
++++ b/opencti-platform/opencti-front/harbor_tests/stubs/makeStyles.js
+@@ -0,0 +1,2 @@
++const makeStyles = () => () => new Proxy({}, { get: (_t, k) => (typeof k === 'string' ? `mk-${k}` : undefined) });
++export default makeStyles;
+diff --git a/opencti-platform/opencti-front/harbor_tests/stubs/mdiMaterialUi.jsx b/opencti-platform/opencti-front/harbor_tests/stubs/mdiMaterialUi.jsx
+new file mode 100644
+index 0000000..302048a
+--- /dev/null
++++ b/opencti-platform/opencti-front/harbor_tests/stubs/mdiMaterialUi.jsx
+@@ -0,0 +1,10 @@
++import React from 'react';
++const icon = (name) => {
++  const C = ({ color, fontSize, ...rest }) => <span data-icon={name} {...rest} />;
++  C.displayName = name;
++  return C;
++};
++export const Delete = icon('Delete');
++export const Close = icon('Close');
++export const InformationOutline = icon('InformationOutline');
++export default { Delete, Close, InformationOutline };
+diff --git a/opencti-platform/opencti-front/harbor_tests/stubs/muiIcons.jsx b/opencti-platform/opencti-front/harbor_tests/stubs/muiIcons.jsx
+new file mode 100644
+index 0000000..930aa8b
+--- /dev/null
++++ b/opencti-platform/opencti-front/harbor_tests/stubs/muiIcons.jsx
+@@ -0,0 +1,11 @@
++import React from 'react';
++const icon = (name) => {
++  const C = ({ fontSize, ...rest }) => <span data-icon={name} {...rest} />;
++  C.displayName = name;
++  return C;
++};
++export const CloseOutlined = icon('CloseOutlined');
++export const Close = icon('Close');
++export const Add = icon('Add');
++export const Edit = icon('Edit');
++export default { CloseOutlined, Close, Add, Edit };
+diff --git a/opencti-platform/opencti-front/harbor_tests/stubs/muiStyles.js b/opencti-platform/opencti-front/harbor_tests/stubs/muiStyles.js
+new file mode 100644
+index 0000000..71c060f
+--- /dev/null
++++ b/opencti-platform/opencti-front/harbor_tests/stubs/muiStyles.js
+@@ -0,0 +1,18 @@
++// @mui/styles (legacy, deprecated in the app itself) is not installed in the offline image.
++// The real Label and the real TaskStatus read colours off this theme, so it must expose the
++// same shape: palette.text.light / palette.severity.*.
++export const useTheme = () => ({
++  spacing: (n = 1) => `${n * 8}px`,
++  palette: {
++    mode: 'dark',
++    text: { primary: '#ffffff', secondary: '#b0b0b0', light: '#8a8a8a', disabled: '#6f6f6f' },
++    background: { default: '#0a0a0a', paper: '#141414', nav: '#1a1a1a', accent: '#01478d' },
++    primary: { main: '#0fbcff' },
++    secondary: { main: '#00f1bd' },
++    severity: { critical: '#d4181e', high: '#f57c00', medium: '#ffc107', low: '#4caf50', info: '#2196f3', default: '#004C66' },
++  },
++});
++export const makeStyles = () => () => new Proxy({}, { get: (_t, k) => (typeof k === 'string' ? `mk-${k}` : undefined) });
++export const createStyles = (s) => s;
++export const withStyles = () => (c) => c;
++export default { useTheme, makeStyles, createStyles, withStyles };
+diff --git a/opencti-platform/opencti-front/harbor_tests/stubs/noopComponent.jsx b/opencti-platform/opencti-front/harbor_tests/stubs/noopComponent.jsx
+new file mode 100644
+index 0000000..f022317
+--- /dev/null
++++ b/opencti-platform/opencti-front/harbor_tests/stubs/noopComponent.jsx
+@@ -0,0 +1,6 @@
++// Shared stand-in for leaf screens/widgets that are imported by the modules under test but are
++// never part of what the spec observes (route screens, breadcrumbs, the error-line row...).
++// Renders nothing so it cannot contribute labels or chips to the DOM under assertion.
++const NoopComponent = () => null;
++export const Breadcrumbs = NoopComponent;
++export default NoopComponent;
+diff --git a/opencti-platform/opencti-front/harbor_tests/stubs/parseWorkErrors.js b/opencti-platform/opencti-front/harbor_tests/stubs/parseWorkErrors.js
+new file mode 100644
+index 0000000..82b4dc8
+--- /dev/null
++++ b/opencti-platform/opencti-front/harbor_tests/stubs/parseWorkErrors.js
+@@ -0,0 +1,5 @@
++// Stand-in for private/components/data/connectors/parseWorkErrors (the real one uses json5 and
++// a live relay fetchQuery to resolve entity representatives). The spec never opens the errors
++// drawer, so this is only needed for module resolution.
++const parseWorkErrors = async (errors) => (errors ?? []).map((e) => ({ ...e, level: 'Critical', rawError: e }));
++export default parseWorkErrors;
+diff --git a/opencti-platform/opencti-front/harbor_tests/stubs/ramda.js b/opencti-platform/opencti-front/harbor_tests/stubs/ramda.js
+new file mode 100644
+index 0000000..cd52681
+--- /dev/null
++++ b/opencti-platform/opencti-front/harbor_tests/stubs/ramda.js
+@@ -0,0 +1,28 @@
++// Minimal stand-in for the handful of ramda helpers reached from utils/String and utils/utils.
++// ramda is not installed in the offline verifier image.
++export const isNil = (v) => v === null || v === undefined;
++export const isEmpty = (v) => {
++  if (v === null || v === undefined) return false;
++  if (typeof v === 'string' || Array.isArray(v)) return v.length === 0;
++  if (v instanceof Map || v instanceof Set) return v.size === 0;
++  if (typeof v === 'object') return Object.keys(v).length === 0;
++  return false;
++};
++export const uniq = (list) => Array.from(new Set(list || []));
++export const last = (list) => (list && list.length ? list[list.length - 1] : undefined);
++export const head = (list) => (list && list.length ? list[0] : undefined);
++export const map = (fn, list) => (list === undefined ? (l) => (l || []).map(fn) : (list || []).map(fn));
++export const filter = (fn, list) => (list === undefined ? (l) => (l || []).filter(fn) : (list || []).filter(fn));
++export const includes = (needle, list) => (list === undefined ? (l) => (l || []).includes(needle) : (list || []).includes(needle));
++export const mergeAll = (list) => Object.assign({}, ...(list || []));
++export const pipe = (...fns) => (x) => fns.reduce((acc, fn) => fn(acc), x);
++export const join = (sep, list) => (list === undefined ? (l) => (l || []).join(sep) : (list || []).join(sep));
++export const split = (sep, s) => (s === undefined ? (v) => String(v).split(sep) : String(s).split(sep));
++export const toPairs = (o) => Object.entries(o || {});
++export const fromPairs = (p) => Object.fromEntries(p || []);
++export const assoc = (k, v, o) => ({ ...(o || {}), [k]: v });
++export const dissoc = (k, o) => { const c = { ...(o || {}) }; delete c[k]; return c; };
++export const uniqBy = (fn, list) => {
++  const seen = new Set();
++  return (list || []).filter((x) => { const k = fn(x); if (seen.has(k)) return false; seen.add(k); return true; });
++};
+diff --git a/opencti-platform/opencti-front/harbor_tests/stubs/reactRelay.jsx b/opencti-platform/opencti-front/harbor_tests/stubs/reactRelay.jsx
+new file mode 100644
+index 0000000..b4e320a
+--- /dev/null
++++ b/opencti-platform/opencti-front/harbor_tests/stubs/reactRelay.jsx
+@@ -0,0 +1,35 @@
++// Stand-in for `react-relay`: there is no relay runtime and no GraphQL server in the offline
++// verifier image.
++//
++// usePreloadedQuery hands back the fixture the spec published on globalThis, so the REAL
++// DraftRoot runs its own real fragment/branching logic over it. useFragment is the identity,
++// which is exactly what relay does once the data is masked. createRefetchContainer is the
++// identity too, so the REAL ConnectorWorks component (the generic connectors-page usage of
++// ConnectorWorkLine) can be rendered directly.
++export const graphql = (strings, ...exprs) => ({
++  kind: 'Request',
++  __harborGraphQL: String.raw({ raw: strings }, ...exprs),
++});
++
++export const useFragment = (_node, data) => data;
++export const usePreloadedQuery = () => (globalThis.__HARBOR_PRELOADED__ ?? {});
++
++const HARBOR_QUERY_REF = { __harborQueryRef: true };
++export const useQueryLoader = () => [HARBOR_QUERY_REF, () => {}, () => {}];
++
++export const useMutation = () => {
++  if (!globalThis.__HARBOR_MUTATIONS__) globalThis.__HARBOR_MUTATIONS__ = [];
++  const commit = (args) => {
++    globalThis.__HARBOR_MUTATIONS__.push(args);
++    if (typeof args?.onCompleted === 'function') args.onCompleted({}, null);
++  };
++  return [commit, false];
++};
++
++export const createFragmentContainer = (c) => c;
++export const createRefetchContainer = (c) => c;
++export const createPaginationContainer = (c) => c;
++export const useLazyLoadQuery = () => (globalThis.__HARBOR_PRELOADED__ ?? {});
++export const QueryRenderer = () => null;
++export const RelayEnvironmentProvider = ({ children }) => children;
++export default { graphql, useFragment, usePreloadedQuery, useQueryLoader, useMutation };
+diff --git a/opencti-platform/opencti-front/harbor_tests/stubs/reactRouterDom.jsx b/opencti-platform/opencti-front/harbor_tests/stubs/reactRouterDom.jsx
+new file mode 100644
+index 0000000..0f411c0
+--- /dev/null
++++ b/opencti-platform/opencti-front/harbor_tests/stubs/reactRouterDom.jsx
+@@ -0,0 +1,16 @@
++// Stand-in for react-router-dom (not installed offline). <Routes>/<Route> render nothing (the
++// spec looks at the page chrome above the router outlet, not at the routed screens); the rest
++// is enough for the REAL DraftRoot to run: it reads the draft id from useParams and the current
++// tab from useLocation().pathname.
++import React from 'react';
++export const Link = ({ to, children, ...rest }) => <a href={typeof to === 'string' ? to : '#'} {...rest}>{children}</a>;
++export const NavLink = Link;
++export const Navigate = () => null;
++export const Route = () => null;
++export const Routes = () => null;
++export const Outlet = () => null;
++export const MemoryRouter = ({ children }) => children;
++export const useNavigate = () => () => {};
++export const useLocation = () => ({ pathname: globalThis.__HARBOR_PATHNAME__ ?? '/', search: '', hash: '', state: null });
++export const useParams = () => (globalThis.__HARBOR_PARAMS__ ?? {});
++export default { Link, Navigate, Route, Routes, useLocation, useParams };
+diff --git a/opencti-platform/opencti-front/harbor_tests/stubs/relayEnvironment.js b/opencti-platform/opencti-front/harbor_tests/stubs/relayEnvironment.js
+new file mode 100644
+index 0000000..e99e89e
+--- /dev/null
++++ b/opencti-platform/opencti-front/harbor_tests/stubs/relayEnvironment.js
+@@ -0,0 +1,17 @@
++// Stand-in for src/relay/environment (the real one builds a relay Environment against a live
++// GraphQL endpoint). MESSAGING$ is the snackbar bus used by the REAL useApiMutation.
++export const APP_BASE_PATH = '';
++export const MESSAGING$ = {
++  notifySuccess: () => {},
++  notifyError: () => {},
++  notifyRelayError: () => {},
++  notifyCustomRelayError: () => {},
++  toastError: () => {},
++  toggleNav: { subscribe: () => ({ unsubscribe: () => {} }) },
++};
++export const relayErrorHandling = () => {};
++export const environment = {};
++export const commitMutation = () => {};
++export const fetchQuery = () => ({ toPromise: async () => ({}) });
++export const QueryRenderer = () => null;
++export default { environment, commitMutation, fetchQuery, APP_BASE_PATH, MESSAGING$ };
+diff --git a/opencti-platform/opencti-front/harbor_tests/stubs/relayRuntime.js b/opencti-platform/opencti-front/harbor_tests/stubs/relayRuntime.js
+new file mode 100644
+index 0000000..19f3968
+--- /dev/null
++++ b/opencti-platform/opencti-front/harbor_tests/stubs/relayRuntime.js
+@@ -0,0 +1,6 @@
++// Stand-in for `relay-runtime` (absent offline); only the graphql tag is ever used as a value.
++export const graphql = (strings, ...exprs) => ({ kind: 'Request', __harborGraphQL: String.raw({ raw: strings }, ...exprs) });
++export const ConnectionHandler = { getConnection: () => null, createEdge: () => null, insertEdgeBefore: () => {} };
++export const commitMutation = () => {};
++export const fetchQuery = () => ({ toPromise: async () => ({}) });
++export default { graphql, ConnectionHandler };
+diff --git a/opencti-platform/opencti-front/harbor_tests/stubs/rxjs.js b/opencti-platform/opencti-front/harbor_tests/stubs/rxjs.js
+new file mode 100644
+index 0000000..3e8c02a
+--- /dev/null
++++ b/opencti-platform/opencti-front/harbor_tests/stubs/rxjs.js
+@@ -0,0 +1,5 @@
++// Stand-in for `rxjs` (absent offline). Both DraftRoot and ConnectorWorks subscribe to an
++// interval to auto-refresh; the spec asserts on the first render, so the ticks never matter.
++export const interval = () => ({ subscribe: () => ({ unsubscribe: () => {} }) });
++export const Subject = class { subscribe() { return { unsubscribe: () => {} }; } next() {} };
++export default { interval, Subject };
+diff --git a/opencti-platform/opencti-front/harbor_tests/stubs/security.jsx b/opencti-platform/opencti-front/harbor_tests/stubs/security.jsx
+new file mode 100644
+index 0000000..f9bc53f
+--- /dev/null
++++ b/opencti-platform/opencti-front/harbor_tests/stubs/security.jsx
+@@ -0,0 +1,6 @@
++// Stand-in for utils/Security (the real one reads the logged-in user through useAuth + relay).
++const Security = ({ children, placeholder = null, hasAccess = true }) => (hasAccess ? children : placeholder);
++export const CollaborativeSecurity = ({ children }) => children;
++export const granted = () => true;
++export const CAPABILITY_INFORMATION = {};
++export default Security;
+diff --git a/opencti-platform/opencti-front/harbor_tests/stubs/time.js b/opencti-platform/opencti-front/harbor_tests/stubs/time.js
+new file mode 100644
+index 0000000..937602b
+--- /dev/null
++++ b/opencti-platform/opencti-front/harbor_tests/stubs/time.js
+@@ -0,0 +1,10 @@
++// Stand-in for utils/Time (moment-timezone + date-fns are absent offline). Only the polling
++// interval constants are reached from the modules under test.
++export const ONE_SECOND = 1000;
++export const FIVE_SECONDS = 5000;
++export const TEN_SECONDS = 10000;
++export const FIVE_MINUTES = 300000;
++export const now = () => new Date(0).toISOString();
++export const dayStartDate = () => new Date(0);
++export const dateFiltersValueForDisplay = (v) => v;
++export default { FIVE_SECONDS, TEN_SECONDS };
+diff --git a/opencti-platform/opencti-front/harbor_tests/stubs/useDraftContext.js b/opencti-platform/opencti-front/harbor_tests/stubs/useDraftContext.js
+new file mode 100644
+index 0000000..683e17c
+--- /dev/null
++++ b/opencti-platform/opencti-front/harbor_tests/stubs/useDraftContext.js
+@@ -0,0 +1,4 @@
++// Stand-in for utils/hooks/useDraftContext (reads the current draft off the relay store).
++// Returns whatever the spec published, so the REAL DraftRoot keeps its own read-only branching.
++const useDraftContext = () => (globalThis.__HARBOR_DRAFT_CONTEXT__ ?? null);
++export default useDraftContext;
+diff --git a/opencti-platform/opencti-front/harbor_tests/stubs/useGranted.js b/opencti-platform/opencti-front/harbor_tests/stubs/useGranted.js
+new file mode 100644
+index 0000000..a6b9011
+--- /dev/null
++++ b/opencti-platform/opencti-front/harbor_tests/stubs/useGranted.js
+@@ -0,0 +1,9 @@
++// Stand-in for utils/hooks/useGranted (relay-backed capabilities of the logged-in user).
++const useGranted = () => true;
++export const BYPASS = 'BYPASS';
++export const MODULES_MODMANAGE = 'MODULES_MODMANAGE';
++export const KNOWLEDGE_KNASKIMPORT = 'KNOWLEDGE_KNASKIMPORT';
++export const KNOWLEDGE_KNUPDATE = 'KNOWLEDGE_KNUPDATE';
++export const KNOWLEDGE_KNPARTICIPATE = 'KNOWLEDGE_KNPARTICIPATE';
++export const KNOWLEDGE_KNUPDATE_KNORGARESTRICT = 'KNOWLEDGE_KNUPDATE_KNORGARESTRICT';
++export default useGranted;
+diff --git a/opencti-platform/opencti-front/harbor_tests/stubs/useHelper.js b/opencti-platform/opencti-front/harbor_tests/stubs/useHelper.js
+new file mode 100644
+index 0000000..5b713b8
+--- /dev/null
++++ b/opencti-platform/opencti-front/harbor_tests/stubs/useHelper.js
+@@ -0,0 +1,7 @@
++// Stand-in for utils/hooks/useHelper (feature flags come from the platform settings over relay).
++const useHelper = () => ({
++  isFeatureEnable: (flag) => (globalThis.__HARBOR_FEATURES__ ?? []).includes(flag),
++  isRuntimeFieldEnable: () => false,
++  isSortableAttribute: () => false,
++});
++export default useHelper;
+diff --git a/opencti-platform/opencti-front/harbor_tests/stubs/useSwitchDraft.js b/opencti-platform/opencti-front/harbor_tests/stubs/useSwitchDraft.js
+new file mode 100644
+index 0000000..cf64414
+--- /dev/null
++++ b/opencti-platform/opencti-front/harbor_tests/stubs/useSwitchDraft.js
+@@ -0,0 +1,4 @@
++// Stand-in for private/components/drafts/useSwitchDraft (a relay mutation that moves the
++// session into draft mode).
++const useSwitchDraft = () => ({ enterDraft: () => {}, exitDraft: () => {} });
++export default useSwitchDraft;
+diff --git a/opencti-platform/opencti-front/harbor_tests/vitest.config.mts b/opencti-platform/opencti-front/harbor_tests/vitest.config.mts
+new file mode 100644
+index 0000000..8729d82
+--- /dev/null
++++ b/opencti-platform/opencti-front/harbor_tests/vitest.config.mts
+@@ -0,0 +1,117 @@
++// Harbor verifier vitest config (synthetic, added by test.patch).
++//
++// The opencti-front app cannot be booted wholesale in jsdom: the production entry graph pulls in
++// react-relay, generated __generated__/*.graphql artifacts, @mui/styles, ramda, moment-timezone,
++// rxjs, react-router-dom ... none of which are present in the offline verifier image.
++//
++// So we load the REAL modules that make up the feature under test -- DraftRoot (the draft page
++// that owns the call site), ConnectorWorkLine (the shared work line that owns the field labels),
++// ConnectorWorks (the OTHER, generic call site on the connectors page), plus the real Label,
++// TaskStatus, Tag and useApiMutation -- and substitute small stand-ins only for the LEAF modules
++// around them.
++//
++// Substitution is done with a resolveId plugin keyed on the RESOLVED path suffix rather than on
++// the literal import specifier, so it keeps working whether a module is imported as
++// '../../../../components/i18n', '@components/data/connectors/...' or '@common/button/Button',
++// and it survives the alias plugin rewriting the specifier to an absolute path.
++//
++// NOTE on the aliases: opencti-front's tsconfig maps @components/* to src/PRIVATE/components/*
++// (not src/components/*) and @common/* to src/components/common/*.
++import { defineConfig } from 'vitest/config';
++import react from '@vitejs/plugin-react';
++import path from 'node:path';
++import { fileURLToPath } from 'node:url';
++
++const here = path.dirname(fileURLToPath(import.meta.url));
++const root = path.resolve(here, '..');
++const stub = (f: string) => path.join(here, 'stubs', f);
++
++// Bare package specifiers that are simply absent from the offline image.
++const BARE_STUBS: Record<string, string> = {
++  'react-relay': stub('reactRelay.jsx'),
++  'relay-runtime': stub('relayRuntime.js'),
++  'react-router-dom': stub('reactRouterDom.jsx'),
++  rxjs: stub('rxjs.js'),
++  ramda: stub('ramda.js'),
++  dompurify: stub('dompurify.js'),
++  'js-base64': stub('jsBase64.js'),
++  'mdi-material-ui': stub('mdiMaterialUi.jsx'),
++  '@mui/icons-material': stub('muiIcons.jsx'),
++  '@mui/styles': stub('muiStyles.js'),
++  '@mui/styles/makeStyles': stub('makeStyles.js'),
++};
++
++// First-party modules replaced by stand-ins, keyed on their path under opencti-front/src.
++//
++// NOTE what is NOT in this map and therefore runs for real:
++//   private/components/drafts/DraftRoot                    <- call site the fix touches
++//   private/components/data/connectors/ConnectorWorkLine   <- component the fix touches
++//   private/components/data/connectors/ConnectorWorks      <- the OTHER call site (p2p anchor)
++//   components/common/label/Label                          <- renders every field label
++//   components/TaskStatus + components/common/tag/Tag      <- renders the status value
++//   utils/hooks/useApiMutation, utils/String, utils/tabUtils
++const SRC_STUBS: Record<string, string> = {
++  'components/i18n': stub('i18n.jsx'),
++  'components/Loader': stub('loader.jsx'),
++  'components/ErrorNotFound': stub('noopComponent.jsx'),
++  'components/Breadcrumbs': stub('noopComponent.jsx'),
++  'components/common/button/Button': stub('Button.jsx'),
++  'components/common/card/Card': stub('Card.jsx'),
++  'components/common/card/CardTitle': stub('CardTitle.jsx'),
++  'private/components/common/drawer/Drawer': stub('Drawer.jsx'),
++  'private/components/data/connectors/ConnectorWorksErrorLine': stub('noopComponent.jsx'),
++  'private/components/data/connectors/parseWorkErrors': stub('parseWorkErrors.js'),
++  'private/components/data/import/ImportFilesContent': stub('noopComponent.jsx'),
++  'private/components/drafts/DraftEntities': stub('noopComponent.jsx'),
++  'private/components/drafts/DraftRelationships': stub('noopComponent.jsx'),
++  'private/components/drafts/DraftSightings': stub('noopComponent.jsx'),
++  'private/components/drafts/DraftReview': stub('noopComponent.jsx'),
++  'private/components/drafts/DraftOverview': stub('noopComponent.jsx'),
++  'private/components/drafts/useSwitchDraft': stub('useSwitchDraft.js'),
++  'relay/environment': stub('relayEnvironment.js'),
++  'utils/Security': stub('security.jsx'),
++  'utils/Time': stub('time.js'),
++  'utils/hooks/useGranted': stub('useGranted.js'),
++  'utils/hooks/useDraftContext': stub('useDraftContext.js'),
++  'utils/hooks/useHelper': stub('useHelper.js'),
++};
++
++const srcDir = path.join(root, 'src');
++
++function harborStubs() {
++  return {
++    name: 'harbor-stubs',
++    enforce: 'pre' as const,
++    resolveId(source: string, importer?: string) {
++      if (Object.prototype.hasOwnProperty.call(BARE_STUBS, source)) return BARE_STUBS[source];
++      let abs: string | null = null;
++      if (path.isAbsolute(source)) abs = source;
++      else if (source.startsWith('@common/')) abs = path.join(srcDir, 'components/common', source.slice('@common/'.length));
++      else if (source.startsWith('@components/')) abs = path.join(srcDir, 'private/components', source.slice('@components/'.length));
++      else if (source.startsWith('src/')) abs = path.join(root, source);
++      else if (source.startsWith('.') && importer) abs = path.resolve(path.dirname(importer), source);
++      if (!abs) return null;
++      const rel = path.relative(srcDir, abs).replace(/\\/g, '/').replace(/\.(jsx?|tsx?)$/, '');
++      return Object.prototype.hasOwnProperty.call(SRC_STUBS, rel) ? SRC_STUBS[rel] : null;
++    },
++  };
++}
++
++export default defineConfig({
++  root,
++  plugins: [harborStubs(), react()],
++  resolve: {
++    alias: [
++      { find: /^@common\//, replacement: path.join(srcDir, 'components/common/') },
++      { find: /^@components\//, replacement: path.join(srcDir, 'private/components/') },
++    ],
++  },
++  test: {
++    environment: 'jsdom',
++    globals: false,
++    include: ['harbor_tests/**/*.test.jsx'],
++    setupFiles: [path.join(here, 'setup.js')],
++    css: false,
++    testTimeout: 30000,
++  },
++});

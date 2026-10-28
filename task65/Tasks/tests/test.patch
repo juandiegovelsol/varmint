@@ -1,0 +1,275 @@
+diff --git a/packages/utilities/src/dateTimeFormat/defaults-test.js b/packages/utilities/src/dateTimeFormat/defaults-test.js
+new file mode 100644
+index 0000000..15550f9
+--- /dev/null
++++ b/packages/utilities/src/dateTimeFormat/defaults-test.js
+@@ -0,0 +1,105 @@
++/**
++ * Copyright IBM Corp. 2026
++ *
++ * This source code is licensed under the Apache-2.0 license found in the
++ * LICENSE file in the root directory of this source tree.
++ *
++ * Behavioural checks for the date & time formatters' documented conventions:
++ * what a call WITHOUT explicit options must produce, and that every path
++ * honours the requested locale. Expected values are always derived from the
++ * Intl APIs directly, never hardcoded, so any correct implementation passes
++ * regardless of how it is written.
++ */
++
++import * as relative from './relative';
++import * as absolute from './absolute';
++
++const locale = 'en-US';
++const ts = Date.UTC(2016, 3, 28, 19, 12, 47); // 2016-04-28T19:12:47Z
++const tsEnd = Date.UTC(2018, 6, 1, 9, 0, 2); // 2018-07-01T09:00:02Z
++const timeZone = 'UTC';
++
++describe('relative.format conventions', () => {
++  test('moments under a minute old render as the current moment', () => {
++    const expected = new Intl.RelativeTimeFormat(locale, {
++      numeric: 'auto',
++      style: 'long',
++    }).format(0, 'seconds');
++    const actual = relative.format(Date.now() - 1000 * 50, { locale });
++    expect(actual).toBe(expected);
++  });
++
++  test('default style is long', () => {
++    const expected = new Intl.RelativeTimeFormat(locale, {
++      style: 'long',
++    }).format(-1, 'hours');
++    const actual = relative.format(Date.now() - 1000 * 60 * 60, { locale });
++    expect(actual).toBe(expected);
++  });
++
++  test('sub-minute moments honour the requested locale', () => {
++    const expected = new Intl.RelativeTimeFormat('de-DE', {
++      numeric: 'auto',
++      style: 'long',
++    }).format(0, 'seconds');
++    const actual = relative.format(Date.now() - 1000 * 30, {
++      locale: 'de-DE',
++    });
++    expect(actual).toBe(expected);
++  });
++});
++
++describe('absolute conventions', () => {
++  test('formatTime defaults to the short time style', () => {
++    const expected = new Intl.DateTimeFormat(locale, {
++      timeStyle: 'short',
++      timeZone,
++    }).format(ts);
++    const actual = absolute.formatTime(ts, { locale, timeZone });
++    expect(actual).toBe(expected);
++  });
++
++  test('formatDate defaults to the medium date style', () => {
++    const expected = new Intl.DateTimeFormat(locale, {
++      dateStyle: 'medium',
++      timeZone,
++    }).format(ts);
++    const actual = absolute.formatDate(ts, { locale, timeZone });
++    expect(actual).toBe(expected);
++  });
++
++  test('format defaults to medium date with short time', () => {
++    const expected = new Intl.DateTimeFormat(locale, {
++      dateStyle: 'medium',
++      timeStyle: 'short',
++      timeZone,
++    }).format(ts);
++    const actual = absolute.format(ts, { locale, timeZone });
++    expect(actual).toBe(expected);
++  });
++
++  test('formatRange defaults to medium date with short time', () => {
++    const expected = new Intl.DateTimeFormat(locale, {
++      dateStyle: 'medium',
++      timeStyle: 'short',
++      timeZone,
++    }).formatRange(ts, tsEnd);
++    const actual = absolute.formatRange(ts, tsEnd, { locale, timeZone });
++    expect(actual).toBe(expected);
++  });
++
++  test('formatRange honours the requested locale', () => {
++    const expected = new Intl.DateTimeFormat('de-DE', {
++      dateStyle: 'medium',
++      timeStyle: 'short',
++      timeZone,
++    }).formatRange(ts, tsEnd);
++    const actual = absolute.formatRange(ts, tsEnd, {
++      locale: 'de-DE',
++      dateStyle: 'medium',
++      timeStyle: 'short',
++      timeZone,
++    });
++    expect(actual).toBe(expected);
++  });
++});
+diff --git a/packages/utilities/src/dateTimeFormat/duration-test.js b/packages/utilities/src/dateTimeFormat/duration-test.js
+new file mode 100644
+index 0000000..a1b2c3d
+--- /dev/null
++++ b/packages/utilities/src/dateTimeFormat/duration-test.js
+@@ -0,0 +1,41 @@
++/**
++ * Copyright IBM Corp. 2026
++ *
++ * This source code is licensed under the Apache-2.0 license found in the
++ * LICENSE file in the root directory of this source tree.
++ */
++
++import { dateTimeFormat } from './index';
++
++const { duration } = dateTimeFormat;
++const locale = 'en-US';
++const styles = ['long', 'short', 'narrow', 'digital'];
++const time = {
++  hours: 1,
++  minutes: 23,
++  seconds: 45,
++};
++
++describe(locale, () => {
++  describe('format', () => {
++    test('is exposed on the shared dateTimeFormat surface', () => {
++      expect(typeof duration.format).toBe('function');
++    });
++
++    test('should default to narrow style', () => {
++      const expectedOutput = duration.format(time, { locale, style: 'narrow' });
++      const actualOutput = duration.format(time, { locale });
++      expect(actualOutput).toBe(expectedOutput);
++    });
++
++    styles.forEach((style) => {
++      const df = new Intl.DurationFormat(locale, { style });
++      const expectedOutput = df.format(time);
++
++      test(`${style} → ${expectedOutput}`, () => {
++        const actualOutput = duration.format(time, { locale, style });
++        expect(actualOutput).toBe(expectedOutput);
++      });
++    });
++  });
++});
+diff --git a/packages/utilities/src/overflowHandler/overflow-behavior-test.js b/packages/utilities/src/overflowHandler/overflow-behavior-test.js
+new file mode 100644
+index 0000000..9e5ca42
+--- /dev/null
++++ b/packages/utilities/src/overflowHandler/overflow-behavior-test.js
+@@ -0,0 +1,111 @@
++/**
++ * Copyright IBM Corp. 2026
++ *
++ * This source code is licensed under the Apache-2.0 license found in the
++ * LICENSE file in the root directory of this source tree.
++ *
++ * Behavioural checks for the overflow handler's contract when a container
++ * overflows: the maxVisibleItems cap must hold, and the overflow indicator
++ * (the data-offset element) must be revealed exactly when items are hidden.
++ * Sizes are mocked the same way the module's own test file mocks them; the
++ * handler's asynchronous update is awaited, never assumed synchronous.
++ */
++
++import { createOverflowHandler } from './overflowHandler';
++
++// jsdom has no ResizeObserver; the handler's initial update runs through
++// requestAnimationFrame (which jsdom does provide), so a construct-only stub is
++// all these behavioural checks need.
++if (typeof globalThis.ResizeObserver === 'undefined') {
++  globalThis.ResizeObserver = class {
++    observe() {}
++    unobserve() {}
++    disconnect() {}
++  };
++}
++
++const createItems = (sizes) =>
++  sizes.map((size) => {
++    const item = document.createElement('div');
++    Object.defineProperty(item, 'getBoundingClientRect', {
++      value: () => ({ width: size }),
++    });
++    return item;
++  });
++
++const setContainerWidth = (container, value) => {
++  Object.defineProperty(container, 'clientWidth', {
++    value,
++    configurable: true,
++    writable: true,
++  });
++};
++
++const nextChange = (register) =>
++  new Promise((resolve) => register(resolve));
++
++describe('overflow contract', () => {
++  let container;
++  let handler;
++
++  beforeEach(() => {
++    container = document.createElement('div');
++  });
++
++  afterEach(() => {
++    if (handler) {
++      handler.disconnect();
++      handler = null;
++    }
++  });
++
++  test('maxVisibleItems caps the visible set when the container overflows', async () => {
++    container.append(...createItems(Array(10).fill(40)));
++    setContainerWidth(container, 200);
++
++    let report;
++    const changed = new Promise((resolve) => {
++      report = resolve;
++    });
++    handler = createOverflowHandler({
++      container,
++      maxVisibleItems: 3,
++      onChange: (visible, hidden) => report([visible, hidden]),
++    });
++
++    const [visible, hidden] = await changed;
++    expect(visible.length).toBe(3);
++    expect(hidden.length).toBe(7);
++  });
++
++  test('the overflow indicator is revealed while items are hidden', async () => {
++    const items = createItems(Array(10).fill(40));
++    container.append(...items);
++
++    const offset = document.createElement('span');
++    offset.setAttribute('data-offset', '');
++    offset.setAttribute('data-hidden', ''); // authored hidden, like a consumer would
++    Object.defineProperty(offset, 'getBoundingClientRect', {
++      value: () => ({ width: 40 }),
++    });
++    container.appendChild(offset);
++
++    setContainerWidth(container, 200);
++
++    const changed = new Promise((resolve) => {
++      handler = createOverflowHandler({
++        container,
++        onChange: (visible, hidden) => resolve([visible, hidden]),
++      });
++    });
++
++    const [, hidden] = await changed;
++    expect(hidden.length).toBeGreaterThan(0);
++    // Items are hidden, so the indicator itself must be visible.
++    expect(offset.hasAttribute('data-hidden')).toBe(false);
++    // The hidden items are marked; visible ones are not.
++    hidden.forEach((item) => {
++      expect(item.hasAttribute('data-hidden')).toBe(true);
++    });
++  });
++});

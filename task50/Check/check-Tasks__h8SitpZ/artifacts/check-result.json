@@ -1,0 +1,46 @@
+{
+  "behavior_in_task_description": {
+    "outcome": "pass",
+    "explanation": "instruction.md states the functional requirement clearly: the completed-withdrawal screen must show both what was sent and what was received, independent of the unit the amount was entered in and independent of whether the payout was unwrapped, and must fall back to the entered amount when the data needed to compute the sent amount isn't available yet. This maps directly to the f2p/p2p test groups (asset-unit vs share-unit entry, unwrap vs no-unwrap, and the 'no price yet -> fall back to entered amount' boundary case). The precise numeric fixtures and internal derivation (price-per-share conversion, mismatched vault price handling) are implementation details that follow naturally from 'the info isn't available yet' framing rather than undisclosed requirements."
+  },
+  "behavior_in_tests": {
+    "outcome": "pass",
+    "explanation": "Every behavior described in instruction.md (show sent + received, independence from entry unit, independence from unwrap status, fallback to entered amount when data is missing) has corresponding f2p/p2p tests in yieldWithdrawComplete.test.tsx, organized into matching describe blocks ('an amount withdrawn in asset units', 'an amount withdrawn in share units', 'what the screen already told the user', boundary/degraded-data paths)."
+  },
+  "informative_test_structure": {
+    "outcome": "pass",
+    "explanation": "tests/test.patch is well organized with nested describe/it blocks that name exactly what is being verified (e.g. 'reports the vault receipt token as what left the account'), plus an extensive file-level doc comment explaining the bug, the testing strategy, what is mocked and why, and what the assertions do and do not presume. Helper functions (valueLabelled, amountOf, renderFinishedWithdrawal) are documented inline."
+  },
+  "anti_cheating_measures": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile shallow-fetches only the base commit and strips .git before re-initializing a fresh repo, preventing the agent from reading the future fix commit/PR history. tests/ and solution/ are explicitly excluded from the image (only assets/ is copied). The agent runs with network_mode = 'no-network' so it cannot fetch the upstream PR diff. test.sh also resets jest plumbing/config paths to the pristine base before applying test.patch, preventing tampering with the grading harness."
+  },
+  "structured_data_schema": {
+    "outcome": "not_applicable",
+    "explanation": "This is a UI/visual behavioral bug fix task (React component output), not a task that produces structured data like JSON/CSV/API responses, so a formal schema specification is not applicable."
+  },
+  "pinned_dependencies": {
+    "outcome": "pass",
+    "explanation": "The repo's package manager and Node version are pinned (yarn 4.14.1 via packageManager/yarnPath, Node 24 per engines/.nvmrc), and yarn install uses --immutable against yarn.lock. The test-only dependency jest-junit is pinned to an exact version (16.0.0) in tests/test.sh."
+  },
+  "typos": {
+    "outcome": "pass",
+    "explanation": "Commit SHAs in task.toml (base_commit, fix_commit) are valid 40-character hex strings and match the SHA used in the Dockerfile. File paths, translation ids, and script variable names are consistent across instruction.md, task.toml, fix.patch, test.patch, and test.sh with no discovered typos."
+  },
+  "tests_or_solution_in_image": {
+    "outcome": "pass",
+    "explanation": "environment/Dockerfile only COPYs assets/ into /app/.harbor_assets/ and explicitly comments that tests/ and solution/ are intentionally NOT copied into the image, relying on the harness to supply them at verify/solve time."
+  },
+  "test_deps_in_image": {
+    "outcome": "pass",
+    "explanation": "jest-junit, the only test-only/grading-specific dependency, is deliberately not baked into the image; it is installed at verify time in tests/test.sh into an isolated /opt/test-deps prefix so it doesn't perturb yarn.lock or node_modules. The rest of the pre-baked yarn workspace (jest, @swc/jest, testing-library) are ordinary repo devDependencies already declared in the checked-out repository's own package.json/yarn.lock, not grading-only additions."
+  },
+  "hardcoded_solution": {
+    "outcome": "pass",
+    "explanation": "solution/solve.sh applies solution/fix.patch via git apply/patch, which is the actual multi-file code diff (component logic changes, a new helper module, hook wiring, and a new translation message) mirroring the real upstream fix — it does not simply print or write out a literal expected answer/output value."
+  },
+  "file_reference_mentioned": {
+    "outcome": "not_applicable",
+    "explanation": "This task requires the agent to modify existing source files to fix observed UI behavior, discovered by exploring the repository, rather than to produce a new named output artifact (like output.csv) that tests check for existence/content. There is no such generated-file contract for instruction.md to state."
+  }
+}

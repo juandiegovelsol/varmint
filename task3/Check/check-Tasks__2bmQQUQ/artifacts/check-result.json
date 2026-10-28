@@ -1,0 +1,46 @@
+{
+  "behavior_in_task_description": {
+    "outcome": "pass",
+    "explanation": "All five f2p test behaviors are explicitly described in instruction.md: (1) configurable and scales linearly ('The reported weight scales linearly with the setting'), (2) applies to all decoration types ('The setting reaches every decoration line the renders show'), (3) varies per character ('The weight varies inside a single text object at the granularity the renders show'), (4) survives round-trip ('The setting survives the library's object round-trip'), and (5) default unchanged ('The weight in force today is the default... explicitly setting the default is indistinguishable from not setting it at all')."
+  },
+  "behavior_in_tests": {
+    "outcome": "pass",
+    "explanation": "All five behaviors from instruction.md are covered by the f2p tests in f2p_additions.spec.ts: configurable+scaling, applies to underline/overline/linethrough, per-character variation, round-trip serialization, and default preservation. The p2p tests cover pre-existing SVG export behaviors that must not regress."
+  },
+  "informative_test_structure": {
+    "outcome": "pass",
+    "explanation": "test.sh has four clearly labeled steps (reset test files, apply test.patch, run vitest tests, compute reward). verifier.py has a module docstring, named helper functions, and inline comments. f2p_additions.spec.ts has a comprehensive JSDoc block explaining the discovery approach, named helper functions (discoverKnob, numericDeclarations, distinctCount), and a describe block clearly scoped to 'text decoration line weight'."
+  },
+  "anti_cheating_measures": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile does not copy tests/ or solution/ into the image. The discoverKnob() approach dynamically discovers the control property by behavioral observation rather than looking for a hard-coded property name, preventing trivial string-matching shortcuts. test.sh resets scored test files from harbor_base before running, preventing agents from manipulating test files. The verifier explicitly notes 'NEVER greps source for the fix'."
+  },
+  "structured_data_schema": {
+    "outcome": "not_applicable",
+    "explanation": "The task requires modifying a TypeScript library's behavior, not producing structured data artifacts like JSON, CSV, or a database schema. No structured output file is produced by the agent."
+  },
+  "pinned_dependencies": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile pins the Node.js base image to node:22-bookworm, pins the repository to a specific git commit hash (bf5c66dc89474b441942eceafb5fb3b6f9c68913), and uses npm ci which installs from the checked-in package-lock.json. The only apt package installed at test time is python3 (no version needed per criteria). No pip packages are used."
+  },
+  "typos": {
+    "outcome": "pass",
+    "explanation": "No typos found in filenames, paths, commands, or variable names. The property name textDecorationThickness and constant TEXT_DECORATION_THICKNESS are used consistently across all files. Paths in instruction.md (/app/.harbor_assets/design_ref_N.png) match those in the Dockerfile COPY and evidence_bundle.json."
+  },
+  "tests_or_solution_in_image": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile only clones the repo, runs npm ci, and copies assets/ to /app/.harbor_assets/. It does not COPY tests/ or solution/ into the image at any point."
+  },
+  "test_deps_in_image": {
+    "outcome": "pass",
+    "explanation": "Python3, the only test-only dependency (used by verifier.py), is installed in test.sh at lines 11-14 rather than in the Dockerfile. The Dockerfile only installs ca-certificates, curl, and git — none of which are test-only."
+  },
+  "hardcoded_solution": {
+    "outcome": "pass",
+    "explanation": "solve.sh applies fix.patch via git apply/patch, which makes real source-code modifications to TypeScript files (Text.ts, constants.ts, TextSVGExportMixin.ts, etc.). It does not echo or cat any precomputed answer; it derives the final state by applying a diff."
+  },
+  "file_reference_mentioned": {
+    "outcome": "not_applicable",
+    "explanation": "The agent is expected to modify existing TypeScript source files, not produce new output files. There are no output artifacts (e.g., result.csv, output.json) that tests check for by filename."
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "behavior_in_task_description": {
+    "outcome": "pass",
+    "explanation": "instruction.md states the core defect (tickMinStep must be respected regardless of ascending/descending domain), gives the concrete minStep value (3) via text, defers the domain/scale-kind/orientation specifics to the screenshot, and explicitly scopes out log/time scales ('Scale kinds with their own specialized tick behavior... are outside the scope of this report'), which matches the p2p exclusion tests. The remaining f2p/p2p cases (single-tick collapse, binned/non-numeric passthrough, degenerate minStep) are natural corollaries of correctly generalizing the stated fix rather than independent undisclosed requirements, consistent with the task's own difficulty_explanation describing this as an intentionally minimal issue-style report."
+  },
+  "behavior_in_tests": {
+    "outcome": "pass",
+    "explanation": "The two behaviors explicitly called out in instruction.md — respecting minStep for both ascending and descending domains, and excluding specialized scales (log/time) from the constraint — are directly covered by f2p tests ('enforces minStep for ascending/descending domains') and a p2p test ('does not enforce minStep for log and time scales'). No described behavior is left untested."
+  },
+  "informative_test_structure": {
+    "outcome": "pass",
+    "explanation": "test.patch adds one tape() block per scenario with descriptive names (e.g. 'tickCount enforces minStep for descending domains'), each ending in t.end(), plus short inline comments clarifying intent (e.g. 'issue #4163: count capping alone yields step 2 < minStep 3', 'the count-capping formula still applies, but the iterative tickStep refinement... must not run for a binned scale'). This makes the coverage and rationale easy to follow."
+  },
+  "anti_cheating_measures": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile clones the repo, checks out the base commit, then strips .git entirely and re-inits a single-commit history tagged harbor_base, preventing the agent from viewing the fix PR or future history. tests/ and solution/ are not copied into the image. test.sh forcibly restores any test files the agent may have touched from harbor_base before applying test.patch, so editing tests cannot inflate the score. judge.py's rubric backend deliberately withholds the task instruction, golden patch, and tests from the judge to avoid turning it into a similarity/leak channel. Agent and verifier phases run with network_mode = 'no-network'."
+  },
+  "structured_data_schema": {
+    "outcome": "not_applicable",
+    "explanation": "This is a source-code bug-fix task (modify packages/vega-scale/src/ticks.js); it does not require the agent to produce structured output like JSON/CSV/API responses, so no schema documentation is expected."
+  },
+  "pinned_dependencies": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile pins the base image to node:22-bookworm, clones and checks out an exact base commit SHA, and installs the cloned repo's own dependencies via npm ci against its committed package-lock.json (implicit pinning). apt packages are left unpinned, which is acceptable per the stated guidance. No unpinned test-only Python/pip packages are introduced."
+  },
+  "typos": {
+    "outcome": "pass",
+    "explanation": "Cross-checked commit SHAs, file paths (/app/.harbor_assets/bug.png, packages/vega-scale/test/ticks-test.js), tape test-name strings, and identifiers (tickCount, tickMinStep, harbor_base) across instruction.md, task.toml, evidence_bundle.json, ASSET_MANIFEST.json, tests/config.json, tests/test.patch, and tests/verifier.py — all are consistent and well-formed. No misspellings or broken references found."
+  },
+  "tests_or_solution_in_image": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile only COPYs assets/ (the bug screenshot) into the image; it never copies tests/ or solution/, and its own comment states this is intentional ('tests/ and solution/ are intentionally NOT copied — the harness supplies them')."
+  },
+  "test_deps_in_image": {
+    "outcome": "pass",
+    "explanation": "The image installs the cloned repo's own workspace dependencies (npm ci), which already include tape as part of the project's normal devDependencies needed to build/run any of its tests — this is not a task-specific test dependency leak. tests/verifier.py and tests/judge.py use only the Python standard library, so no additional test-only packages need to be (or are) baked into the image."
+  },
+  "hardcoded_solution": {
+    "outcome": "pass",
+    "explanation": "solution/fix.patch contains the actual non-trivial code change (a while-loop iterating tickStep(lo, hi, count) against minStep, domain lo/hi normalization for descending domains, and passthrough guards for log/temporal/binned scales) rather than a final numeric/string answer. solve.sh's role is to apply this real diff as the oracle fix, which is the standard and only sensible representation of a 'solution' for a source-code bug-fix task — it is not visible to the agent and does not substitute for the engineering work the diff itself embodies."
+  },
+  "file_reference_mentioned": {
+    "outcome": "not_applicable",
+    "explanation": "This task requires the agent to locate and fix a bug within the existing cloned repository (not author new deliverable output files that tests then check), so there is no output filename that instruction.md would need to disclose. Which source file to modify is part of the intended debugging challenge."
+  }
+}

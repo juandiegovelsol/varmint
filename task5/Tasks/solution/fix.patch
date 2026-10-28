@@ -1,0 +1,84 @@
+diff --git a/src/components/tabs/celestial-pelle/PelleRiftBar.vue b/src/components/tabs/celestial-pelle/PelleRiftBar.vue
+index aaf25ed..00f6578 100644
+--- a/src/components/tabs/celestial-pelle/PelleRiftBar.vue
++++ b/src/components/tabs/celestial-pelle/PelleRiftBar.vue
+@@ -26,12 +26,15 @@
+       remToPx: parseInt(getComputedStyle(document.documentElement).fontSize, 10),
+       effects: [],
+       isDark: false,
+-      decayText: ""
++      selectedMilestoneResourceText: "",
++      selectedMilestoneDescriptionText: "",
++      selectedMilestoneUnlocked: false,
++      milestoneUnlockStates: [],
+     };
+   },
+   computed: {
+     tooltipContentStyle() {
+-      const hasMilestone = this.hasMilestone(this.selectedHoverMilestone);
++      const hasMilestone = this.selectedMilestoneUnlocked;
+       const baseColor = this.isDark ? "#111111" : "var(--color-base)";
+       return {
+         width: "20rem",
+@@ -63,16 +66,27 @@
+       this.reducedTo = rift.reducedTo;
+       this.hasEffectiveFill = rift.config.key === "decay" && PelleRifts.chaos.milestones[0].canBeApplied;
+ 
+-      // If it's chaos, update decay text
+-      if (rift.id === 3) this.decayText = wordShift.wordCycle(PelleRifts.decay.name);
++      this.refreshMilestoneDisplay();
++    },
++    // Everything this component draws from milestone data comes from sources Vue
++    // cannot track - the cycling name, the fill requirement, and canBeApplied, which
++    // is a prototype getter on the milestone's game-state class. None of them is ever
++    // a dependency, so cache them here on the tick and let the render follow.
++    refreshMilestoneDisplay() {
++      const milestone = this.selectedHoverMilestone;
++      this.selectedMilestoneResourceText = this.milestoneResourceText(milestone);
++      this.selectedMilestoneDescriptionText = this.milestoneDescriptionText(milestone);
++      this.selectedMilestoneUnlocked = this.hasMilestone(milestone);
++      this.milestoneUnlockStates = this.rift.milestones.map(ms => this.hasMilestone(ms));
+     },
+     hasMilestone(ms) {
+       return ms.canBeApplied;
+     },
+-    milestoneResourceText(rift, milestone) {
++    milestoneResourceText(milestone) {
++      const rift = this.rift;
+       return `${formatPercents(milestone.requirement)}
+       (${this.formatRift(rift.config.percentageToFill(milestone.requirement))} \
+-      ${rift.id === 3 ? this.decayText : rift.drainResource})`;
++      ${rift.id === 3 ? wordShift.wordCycle(PelleRifts.decay.name) : rift.drainResource})`;
+     },
+     milestoneDescriptionText(milestone) {
+       if (typeof milestone.description === "string") return milestone.description;
+@@ -111,6 +125,7 @@
+ 
+       if (milestonesCloseTo.length) {
+         this.selectedHoverMilestone = milestonesCloseTo.sort((a, b) => a.dist - b.dist)[0].m;
++        this.refreshMilestoneDisplay();
+       }
+     }
+   }
+@@ -158,7 +173,7 @@
+         :key="'milestone-line-' + idx"
+         class="o-pelle-rift-bar-milestone-line"
+         :class="{
+-          'o-pelle-rift-bar-milestone-line--unlocked': hasMilestone(milestone),
++          'o-pelle-rift-bar-milestone-line--unlocked': milestoneUnlockStates[idx],
+           'o-pelle-rift-bar-milestone-line--disabled': reducedTo < milestone.requirement
+         }"
+         :style="{
+@@ -178,10 +193,10 @@
+       content-class="o-pelle-rift-bar-milestone-hover-area"
+     >
+       <template #tooltipContent>
+-        {{ milestoneResourceText(rift, selectedHoverMilestone) }}
++        {{ selectedMilestoneResourceText }}
+         <br>
+         <br>
+-        {{ milestoneDescriptionText(selectedHoverMilestone) }}
++        {{ selectedMilestoneDescriptionText }}
+       </template>
+     </CustomizeableTooltip>
+   </div>

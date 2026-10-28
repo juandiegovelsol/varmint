@@ -1,0 +1,37 @@
+version = "1.0"
+
+[metadata]
+task_id = "fabricjs__fabric.js-10775-mm"
+title = "One of two canvas text objects does not render"
+repository_name = "fabricjs/fabric.js"
+repo_url = "https://github.com/fabricjs/fabric.js"
+issue_number = 10775
+pr_number = 10785
+base_commit = "2721047af4506c5daa56177e95dd5ba65ad446f5"
+fix_commit = "de9d722abcfb536402007e24ea06e212f386437c"
+task_type = "visual_bug_fix"
+language = "TypeScript"
+framework = "fabricjs"
+cross_file = false
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = "Instruction is symptom-only: it states that one of two text objects is invisible and never names the property, the triggering value, a repro recipe, or the repo. What the corrected render looks like exists only in the expected screenshot, where every line of both objects sits on the first row, so the agent must read that from the pixels before it can even reproduce the defect. The repair is then graded on two independent axes - the computed text height and the actual painted output - so the obvious partial fixes fall short: guarding the division paints the glyphs outside the box, coercing the zero to one spreads the lines down the canvas, and repairing only the height sum leaves the object painting nothing at all."
+files_edited = [ "src/shapes/Text/Text.ts",]
+f2p = [ "multi-line text keeps a finite height when lineHeight is 0", "zero lineHeight piles every rendered line onto the first row",]
+p2p = [ "lineHeight with multi line", "lineHeight with single line",]
+tags = [ "multimodal", "visual_bug_fix", "fabricjs", "visual_required",]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "no-network"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

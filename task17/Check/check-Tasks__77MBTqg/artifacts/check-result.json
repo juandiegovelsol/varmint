@@ -1,0 +1,46 @@
+{
+  "behavior_in_task_description": {
+    "outcome": "pass",
+    "explanation": "instruction.md gives the exact reproducing SVG (two <style> tags, two classed circles), shows actual vs. intended screenshots, and explicitly calls out the extra required behaviors that are tested: rules split across more than one style element, a shape carrying more than one class, and a fill value that references a paint server via url(...) (which contains a colon, matching the 'preserves class fill values that contain a colon' test). The order-reversed/three-element and class-prefix-collision f2p tests are specific instances of the 'more than one style element' and 'more than one class' categories already named in the text, so they are reasonably covered rather than sprung on the agent with zero textual basis."
+  },
+  "behavior_in_tests": {
+    "outcome": "pass",
+    "explanation": "Every behavior called out in instruction.md (multi style-tag parsing, multi-class shapes, paint-server/colon-bearing fill values) has a corresponding f2p test in tests/test.patch, and the config.json f2p/p2p lists match task.toml's metadata exactly, so described behavior is exercised by the hidden test suite."
+  },
+  "informative_test_structure": {
+    "outcome": "pass",
+    "explanation": "tests/test.sh is broken into clearly commented steps (reset test files, apply test.patch, run vitest, compute reward); tests/verifier.py has a module docstring, a dedicated canon_reward() function, and clear helper functions; tests/test.patch uses descriptive per-test names (e.g. 'preserves class fill values that contain a colon') grouped under one describe block, making the suite easy to read and maintain."
+  },
+  "anti_cheating_measures": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile strips the original getCSSRules.spec.ts/parser.spec.ts, deletes .git history and re-inits a single-commit repo (hiding the real upstream PR/diff), and obfuscate_harbor.py renames the buggy files/functions (getCSSRules->collectSheetRules, selectorMatches->ruleSelectorTest) so a filename/symbol grep for the known GitHub issue can't locate the fix. tests/ and solution/ are explicitly not copied into the image, and both agent and verifier run with network_mode=no-network, preventing the agent from simply fetching the real PR diff. Verified against the live fabric.js repo that base_commit is the direct parent of fix_commit and that the pre-obfuscation file contents match exactly what obfuscate_harbor.py and fix.patch expect, so the hardening is faithful rather than broken/fragile."
+  },
+  "structured_data_schema": {
+    "outcome": "not_applicable",
+    "explanation": "This is a source-code visual bug-fix task verified via unit tests and screenshots; there is no structured output (JSON/CSV/API/DB schema) for the agent to produce."
+  },
+  "pinned_dependencies": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile clones the exact upstream repo/commit and runs `npm ci`, which installs exact versions from the repository's own package-lock.json; apt packages (git, curl, ca-certificates, python3) are not pinned, which is acceptable per guidance. No additional ad hoc dependency installs are introduced by the task itself."
+  },
+  "typos": {
+    "outcome": "pass",
+    "explanation": "Cross-checked file paths, renamed symbols, commit hashes (both 40-char hex and confirmed valid via the GitHub API as parent/fix commits of the real PR #10684/issue #10683), and JSON/TOML files for validity; f2p/p2p lists in task.toml and tests/config.json match exactly, and all 12 test names in test.patch map 1:1 to the config lists. No filename, path, or command typos were found."
+  },
+  "tests_or_solution_in_image": {
+    "outcome": "pass",
+    "explanation": "environment/Dockerfile only COPYs obfuscate_harbor.py (deleted after use) and assets/; it explicitly comments that tests/ and solution/ are NOT copied into the image and are supplied by the harness at verify time."
+  },
+  "test_deps_in_image": {
+    "outcome": "pass",
+    "explanation": "The only test runner dependency (vitest) is already a devDependency of the cloned fabric.js repo and is installed via the repo's own `npm ci`, which the agent also needs for building/testing its own fix — it is not a hidden dependency added solely for grading."
+  },
+  "hardcoded_solution": {
+    "outcome": "pass",
+    "explanation": "solution/solve.sh performs real steps (reversing the obfuscation renames via git mv, running unobfuscate_for_fix.py, then git apply of fix.patch) rather than printing a final answer. fix.patch is a genuine code diff (loop-variable fix in getCSSRules.ts and a colon-index split plus a longest-class-first matching fix in selectorMatches.ts) verified to apply cleanly against the real base-commit file contents fetched from GitHub."
+  },
+  "file_reference_mentioned": {
+    "outcome": "not_applicable",
+    "explanation": "The task requires the agent to fix existing source files to correct rendering behavior; it does not require producing any new, specifically-named output file that instruction.md would need to reference. The hidden spec file (svgClassFills.spec.ts) is supplied by the harness via test.patch, not authored by the agent."
+  }
+}

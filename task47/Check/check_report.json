@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "checks": {
+        "behavior_in_task_description": {
+          "explanation": "instruction.md's five numbered issues (missing delete affordance, silent-drop/half-filled-row validation, non-descriptive global banner, lack of strict numeric typing, nameless blank category persistence) map cleanly onto the f2p tests: 'refused_and_flagged' tests correspond to the half-filled-row rule, 'survives_and_is_flagged' tests correspond to the 'never silently dropped' requirement, 'does_not_block_an_unrelated_edit' and 'not_stored_as_a_nameless_one' correspond to the fully-blank-row/blank-category silent-discard rules, and the non-numeric-score test corresponds to the data-integrity issue. No test requires an interface, schema, or exact command not already described in prose in the instructions.",
+          "outcome": "pass"
+        },
+        "behavior_in_tests": {
+          "explanation": "All five described issues have corresponding f2p tests except the literal 'add a trash icon' UI affordance (issue 1), which cannot be exercised by an HTTP-level Django test client since it is pure client-side JS/DOM behavior; its functional consequence (a half-filled/blank added row must not be lost and must not block saving) is thoroughly covered instead. The p2p list also verifies that ordinary CRUD on rows/categories keeps working, so no regression path is left unchecked.",
+          "outcome": "pass"
+        },
+        "informative_test_structure": {
+          "explanation": "tests/test.patch's test_review_score_validation.py is clearly sectioned with a module docstring, a labeled '# The defect.' block for the new bug-fix tests and a '# Adjacent behaviour that must survive any repair.' block for regression tests, plus well-named helper functions (harvest, row_notes, _refusal, _flagged_rows) and descriptive test names that each state the exact scenario being asserted.",
+          "outcome": "pass"
+        },
+        "anti_cheating_measures": {
+          "explanation": "The Dockerfile shallow-fetches only the base commit and rewrites git history into a single 'harbor_base' commit so the agent cannot see the fixing PR/diff; tests/ and solution/ are explicitly not COPYed into the image (mounted only at verify time); verifier.py computes reward purely from the JUnit report and never inspects candidate source; and the test file deliberately plants every symbol/CSS-class/message string the reference fix introduces as ordinary user-visible fixture data (the '_CANARIES' block) specifically to prove the suite is keyed on behavior, not on string/name matching that a shortcut implementation could trivially satisfy.",
+          "outcome": "pass"
+        },
+        "structured_data_schema": {
+          "explanation": "This task is a UI/behavioral bug fix verified via rendered HTML and database state through Django's test client; it does not require the agent to produce or expose any structured API/JSON/CSV output with a defined schema.",
+          "outcome": "not_applicable"
+        },
+        "pinned_dependencies": {
+          "explanation": "Python/application dependencies are installed with `uv sync --frozen --all-extras --group test`, which resolves strictly from the repo's committed uv.lock (fully pinned); the base image is pinned to python:3.12-slim-trixie. The one loosely-pinned reference is `COPY --from=ghcr.io/astral-sh/uv:latest`, a build tool tag rather than a Python/pip package, which the stated guidance (pip packages must be pinned, apt generally need not be) does not squarely cover.",
+          "outcome": "pass"
+        },
+        "typos": {
+          "explanation": "No typos were found in filenames, paths, shell commands, JSON/TOML keys, or identifiers across instruction.md, task.toml, evidence_bundle.json, the Dockerfile, tests/*, and solution/*; asset paths referenced in instruction.md match ASSET_MANIFEST.json exactly, and f2p/p2p identifiers match 1:1 between task.toml and tests/config.json.",
+          "outcome": "pass"
+        },
+        "tests_or_solution_in_image": {
+          "explanation": "The Dockerfile only COPYs environment/assets/ into /app/.harbor_assets; it explicitly comments that tests/ and solution/ are intentionally not baked in and are mounted by the harness at verify time.",
+          "outcome": "pass"
+        },
+        "test_deps_in_image": {
+          "explanation": "The packages baked into the image at build time (pytest, pytest-django, lxml, etc.) come from the repository's own pyproject.toml/uv.lock '--group test' and core dependencies (lxml is a normal top-level dependency of eventyay, not something added solely for this task's grading test), and this is done deliberately so the verifier can run fully offline; no dependency specific to defeating or hinting at this particular bug is pre-installed.",
+          "outcome": "pass"
+        },
+        "hardcoded_solution": {
+          "explanation": "solve.sh applies solution/fix.patch, the actual multi-file upstream developer fix (forms/event.py, views/event.py, the review.html template, JS and CSS), rather than writing/echoing an expected output value; it reproduces the real code change across five files, which is the standard oracle-solution pattern for this kind of code-fix task.",
+          "outcome": "pass"
+        },
+        "file_reference_mentioned": {
+          "explanation": "The task does not require the agent to produce a specifically-named output artifact (e.g. a results file) for the tests to check; correctness is verified by exercising the existing organiser settings page over HTTP and inspecting database state, not by locating a generated file.",
+          "outcome": "not_applicable"
+        }
+      },
+      "cost_usd": 0.655989,
+      "task_name": "Tasks",
+      "error": null
+    }
+  ]
+}

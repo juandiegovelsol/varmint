@@ -1,0 +1,99 @@
+version = "1.0"
+
+[metadata]
+task_id = "tldraw__tldraw-8821-mm"
+title = "Following indicator border is hidden behind menus and panels"
+repository_name = "tldraw/tldraw"
+repo_url = "https://github.com/tldraw/tldraw"
+issue_number = 8821
+pr_number = 9210
+base_commit = "56c3bc3fbec3bdf48e314732a51dd22fcfdd53a5"
+fix_commit = "6421dbe4e25a481f85e70814e96aaa4bf44a4a94"
+task_type = "visual_bug_fix"
+language = "TypeScript"
+framework = "Vitest (jsdom) + @testing-library/react - full <Tldraw /> component render"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = """
+Three defects are graded, all within "the follow experience." Only the first is disclosed by
+mechanism; instruction.md's closing line ("this isn't the only thing currently wrong with the
+follow experience... fix that too") tells the agent a broader audit of that one feature is in
+scope, without naming what the other two are, where they live, or how to detect them - there is no
+test feedback during solving, so each must be found and understood by reading, not by iterating
+against a runner.
+
+1. Disclosed (image-gated): the colored follow border is painted behind the on-screen panels and
+   is clipped at each panel's edges instead of forming one continuous frame. instruction.md gives
+   only the user-visible symptom via the screenshot - no file, component, CSS class, layer
+   variable, or mechanism is named, and there is no link back to the source project. The agent
+   must recognise this as an occlusion/layering defect from the image alone, then find the
+   follow-indicator render on its own. The fix is conceptually non-trivial even once found:
+   raising the indicator's z-index cannot work, because it renders inside a container whose own
+   stacking context is capped below the UI layer's, and a child's z-index can never escape its
+   ancestor's stacking context. The only fix that works is relocating the indicator's render out
+   of the canvas-overlay component and into the UI-layer component, placed after the panel groups
+   so ordinary paint order puts it on top, and kept there in every layout including the
+   minimal/focus layout where the usual panels are swapped out.
+
+2. Hidden, injected via environment/assets/bugs/bug_01.patch (applied to harbor_base, reversed in
+   solution/fix.patch): a single comparison operator is flipped in Editor.ts's
+   getViewportPageBoundsForFollowing (`<` -> `>`), inverting the branch that grows our viewport to
+   fully contain the followed user's viewport while preserving our own aspect ratio. Whenever the
+   two users' aspect ratios differ, the follower's target viewport is undersized instead of
+   correctly enlarged, and the camera ends up over-zoomed relative to what the leader is actually
+   showing. Not part of the described bug and has no dedicated repo tests before this task (the
+   whole describe block was `it.todo`); requires deriving the correct "smallest box of a given
+   aspect ratio that contains another box" geometry to notice the sign is backwards.
+
+3. Hidden, injected via environment/assets/bugs/bug_02.patch (applied to harbor_base, reversed in
+   solution/fix.patch): in the same startFollowingUser method, a few hundred lines away, the page-
+   follow effect's condition is inverted (`!==` -> `===`), so it "switches page" precisely when the
+   leader's page already matches ours (a no-op) and does nothing when the leader actually navigates
+   to a different page - silently breaking cross-page following. Also has no dedicated test before
+   this task; the fix requires noticing that the visible condition contradicts its own comment
+   ("if the page changed, switch page") once read carefully, not any signal from outside the code.
+
+Both hidden bugs live in the same method/feature area as each other (startFollowingUser) but are
+functionally and spatially independent of the disclosed CSS/DOM bug - a narrow fix informed only by
+the screenshot would never open Editor.ts at all. The closing instruction line is what makes
+looking there a legitimate, motivated choice rather than a lucky guess; actually finding and fixing
+each bug still requires reading unfamiliar, untested reactive/geometry code with no external cue
+about which lines are wrong.
+"""
+files_edited = [
+  "packages/tldraw/src/lib/ui/TldrawUi.tsx",
+  "packages/tldraw/src/lib/ui.css",
+  "packages/editor/src/lib/editor/Editor.ts"
+]
+f2p = [
+  "places the following indicator inside the UI layout, not the canvas-in-front overlay",
+  "renders the following indicator after the toolbar and menu panels in the UI layout",
+  "still places the following indicator inside the UI layout while in focus mode",
+  "expands the viewport to fully contain the followed user, preserving our own aspect ratio",
+  "follows a user to another page without unfollowing them"
+]
+p2p = [
+  "still renders the rich text toolbar inside the canvas-in-front overlay",
+  "still renders the image toolbar inside the canvas-in-front overlay",
+  "still renders the video toolbar inside the canvas-in-front overlay",
+  "still renders the cursor chat bubble inside the canvas-in-front overlay",
+  "renders no following indicator when no override is supplied and nobody is being followed",
+  "renders the following indicator override exactly once"
+]
+tags = ["multimodal", "visual_bug_fix", "tldraw", "typescript", "react", "ui_component", "css", "stacking-context", "geometry", "camera"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+network_mode = "public"
+timeout_sec = 2400.0
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

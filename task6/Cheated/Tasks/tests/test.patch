@@ -1,0 +1,81 @@
+diff --git a/src/shapes/Text/Text.spec.ts b/src/shapes/Text/Text.spec.ts
+index 4e0c4ac..524597c 100644
+--- a/src/shapes/Text/Text.spec.ts
++++ b/src/shapes/Text/Text.spec.ts
+@@ -9,6 +9,7 @@ import {
+   FabricObject,
+   getFabricDocument,
+   IText,
++  StaticCanvas,
+   Textbox,
+   version,
+ } from '../../../fabric';
+@@ -309,6 +310,68 @@ describe('FabricText', () => {
+     ).toBe(true);
+   });
+ 
++  it('multi-line text keeps a finite height when lineHeight is 0', () => {
++    const text = createTextObject();
++    text.text = 'hello\nworld';
++    text.lineHeight = 0;
++    text.initDimensions();
++
++    const single = createTextObject();
++    single.text = 'hello';
++    single.lineHeight = 0;
++    single.initDimensions();
++
++    expect(Number.isFinite(text.height)).toBe(true);
++    expect(text.height).toBeGreaterThan(0);
++    // every line piles onto the first row, so the box stays one line tall
++    expect(text.height).toBeCloseTo(single.height);
++  });
++
++  it('zero lineHeight piles every rendered line onto the first row', () => {
++    const paintedBox = (value: string, lineHeight?: number) => {
++      const options: Record<string, unknown> = {
++        fontSize: 40,
++        left: 10,
++        top: 10,
++        originX: 'left',
++        originY: 'top',
++      };
++      if (lineHeight !== undefined) {
++        options.lineHeight = lineHeight;
++      }
++      const canvas = new StaticCanvas(undefined, { width: 400, height: 400 });
++      canvas.add(new FabricText(value, options));
++      canvas.renderAll();
++      const pixels = canvas.getContext().getImageData(0, 0, 400, 400).data;
++      let top = Infinity;
++      let bottom = -Infinity;
++      let ink = 0;
++      for (let y = 0; y < 400; y++) {
++        for (let x = 0; x < 400; x++) {
++          const i = (y * 400 + x) * 4;
++          if (pixels[i + 3] > 10 && pixels[i] < 200) {
++            ink++;
++            top = Math.min(top, y);
++            bottom = Math.max(bottom, y);
++          }
++        }
++      }
++      return { ink, top, extent: ink ? bottom - top + 1 : 0 };
++    };
++
++    // one line at the default lineHeight: unaffected by the defect, so it is the yardstick
++    const reference = paintedBox('hello');
++    const stacked = paintedBox('hello\nworld\nagain\nfinal', 0);
++
++    // the object paints at all ...
++    expect(stacked.ink).toBeGreaterThan(0);
++    // ... inside its own box rather than above it ...
++    expect(stacked.top).toBeGreaterThanOrEqual(reference.top - 4);
++    // ... and all four lines land on the first row, so the band stays about one line tall
++    expect(stacked.extent).toBeGreaterThan(reference.extent * 0.8);
++    expect(stacked.extent).toBeLessThan(reference.extent * 2);
++  });
++
+   it('set with "hash"', () => {
+     const text = createTextObject();
+ 

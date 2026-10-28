@@ -1,0 +1,86 @@
+version = "1.0"
+
+[metadata]
+task_id = "Textualize__textual-5386-mm"
+title = "last-of-type (and maybe others) not applied all the time"
+repository_name = "Textualize/textual"
+repo_url = "https://github.com/Textualize/textual"
+issue_number = 5386
+pr_number = 5387
+base_commit = "5cb6cd03746afce553c88ab07362130a8880369a"
+fix_commit = "3cd079ab2e7a5043e5ae09adb30fe249761d2e35"
+task_type = "visual_bug_fix"
+language = "Python"
+framework = "Textual"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = """
+The instruction names no selector, colour, property, file or CSS API -- and no trigger
+either. It is two captures and one sentence saying the earlier look never returns. What
+each capture shows, which one came first, and what happened between them are written
+into the captures themselves as a caption line; none of it is repeated in the text, so
+an agent that does not open the images knows only that some screen changed.
+
+Diffing them yields five independent losses on five different strips -- the red block at
+the end of one strip, the teal block at the start of another, the greyed-out block, the
+one block a rule singles out by name, and a whole strip that shares one look -- while a
+sixth strip is untouched. Those five losses do not share a single line of code. They are
+four distinct defects in the machinery that lets Textual reuse one resolved style entry
+for several widgets when it re-applies the stylesheet to a group: two misspelt names in
+the set of pseudo-classes that must switch that reuse off, an inverted guard that decides
+when a widget's own name may be folded out of the reuse key, a reuse key that identifies
+a widget's container by type instead of by identity, and a dropped component of the key
+that tracks a widget's enabled/disabled state -- the last of those in a different module
+from the other three.
+
+Nothing is a typo hunt: three of the four defects are ordinary-looking code, two of them
+carrying confident comments that justify the wrong behaviour. Each defect is invisible on
+first draw (widgets are resolved one at a time then) and only appears once a whole group
+is resolved in one pass, so a reproduction has to drive the re-application path before it
+shows anything at all. The strip that still looks right in the second capture rules out
+the one shortcut that would sweep all five away at once, and scoring is all-or-nothing:
+finding four of the five losses scores exactly the same as finding none.
+
+The difficulty is entirely in locating the four defects, never in guessing extra
+requirements. Every graded test asserts one of the differences visible between the two
+captures, under the one action their captions name; there is no test for a scenario, a
+trigger or a property the captures do not show.
+"""
+files_edited = [
+  "src/textual/css/stylesheet.py",
+  "src/textual/widget.py",
+]
+f2p = [
+  "tests.test_style_cache_regressions::test_board_keeps_its_look_after_the_window_goes_behind_and_returns",
+  "tests.test_style_cache_regressions::test_end_highlight_survives_the_window_going_behind_and_returning",
+  "tests.test_style_cache_regressions::test_start_highlight_survives_the_window_going_behind_and_returning",
+  "tests.test_style_cache_regressions::test_off_block_keeps_its_fill_when_the_window_goes_behind_and_returns",
+  "tests.test_style_cache_regressions::test_pinned_block_keeps_its_fill_when_the_window_goes_behind_and_returns",
+  "tests.test_style_cache_regressions::test_single_colour_strip_survives_the_window_going_behind_and_returning",
+]
+p2p = [
+  "tests.test_style_cache_regressions::test_board_looks_right_when_it_is_first_drawn",
+  "tests.test_style_cache_regressions::test_flagged_block_is_the_one_that_is_never_affected",
+  "tests.test_style_cache_regressions::test_scenario_is_non_vacuous",
+]
+tags = ["multimodal", "visual_bug_fix", "Textual"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+# Required to be "public" corpus-wide: a sealed verifier cannot install what tests need,
+# which turns a correct submission into a legitimate-looking 0.0. This task's test.sh
+# uses it to install its pinned pytest deps at verify time.
+# The AGENT phase above stays sealed — this does not open the network to the solver.
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

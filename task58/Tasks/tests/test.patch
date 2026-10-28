@@ -1,0 +1,659 @@
+diff --git a/tests/test_migrator_test_modifier_key.mjs b/tests/test_migrator_test_modifier_key.mjs
+new file mode 100644
+index 0000000..87bb376
+--- /dev/null
++++ b/tests/test_migrator_test_modifier_key.mjs
+@@ -0,0 +1,653 @@
++#!/usr/bin/env node
++/**
++ * Behavioural verifier for SR5-FoundryVTT issue #1831 —
++ * "[BUG] Active Effects targeting apply-to test => `data.modifiers` on SuccessTest instances
++ * not working anymore" (fixed by PR #1835, merge commit
++ * 2f4323f4d5158ab0b258804d8ebdaa97a27654db, which lands the Version0_33_1 migrator addition
++ * also carried by the sibling PR #1834 branch).
++ *
++ * Drives the stable, pre-existing PUBLIC entry point that exists under the same name/signature
++ * on both the base tree and the fixed tree — Migrator.migrate(type, data) — transpiled with the
++ * repo's own pinned TypeScript compiler and executed headless against hand-built plain-object
++ * ActiveEffect fixtures, exactly the way the repo's OWN maintainer-authored Quench suite
++ * (src/unittests/Migrators.spec.ts) already calls `Migrator.migrate('Actor', source)` and
++ * `new Version0_33_1().handlesActiveEffect(effect)` against plain object literals — no live
++ * FoundryVTT Document, world, or server is required for this bug class.
++ *
++ * The bug: SR5 renamed the SuccessTest data key that `apply-to: test` Active Effect changes
++ * write into from `data.modifiers` to `data.pool`. Effects authored (or imported) before that
++ * rename still carry a change with key `data.modifiers` (or `data.modifiers.mod`), and since
++ * nothing rewrites that key going forward, the effect silently stops doing anything — the
++ * dice pool bonus it used to grant a SuccessTest is dropped on the floor with no error. The
++ * current test data schema exposes exactly three modifiable fields (`data.pool`, `data.threshold`,
++ * `data.limit`) — anything else on a `test_all`/`test_item`-scoped effect is necessarily stale,
++ * whatever its exact spelling, so the fix normalizes anything outside that whitelist to
++ * `data.pool` rather than special-casing only the two known historical spellings. This suite
++ * asserts on that general contract (see `unrecognized_legacy_key_on_test_effect_also_migrates_to_pool`),
++ * not just the two literal legacy strings — a fix that hardcodes only `data.modifiers`/`.mod`
++ * without reasoning from the schema will fail that case. The fix adds Version0_33_1, a version
++ * migration registered into Migrator.s_Versions so Migrator.migrate() picks it up for any
++ * document not yet at the new version.
++ *
++ * Base/fix note: issue #1831 and #1830 were fixed by commits on a since-deleted feature branch
++ * that were never reachable as standalone commits on `master` — only their SQUASHED cumulative
++ * diff (this repo's actual merge commit 2f4323f4d5158ab0b258804d8ebdaa97a27654db) is. That
++ * squash also carries sibling issue #1832's own fix (SuccessTestEffectsFlow.ts/ActionFlow.ts),
++ * which this task's fix.patch deliberately excludes — scoped to just
++ * src/module/migrator/Migrator.ts + src/module/migrator/versions/Version0_33_1.ts, the two
++ * files that implement #1831 (Version0_33_1.ts is a brand-new file at this task's base_commit,
++ * so it also carries the unrelated-but-bundled #1830 Case A logic (`.mod`-suffix ModifiableValue
++ * keys); this suite deliberately does not assert on Case A at all, since that is issue #1830's
++ * concern, not #1831's).
++ *
++ * The candidate source is never grepped for symbol names (the reference fix's own class name
++ * `Version0_33_1` and its private helper names are NEVER required to exist) — the verdict is
++ * read off the actual mutated fixture data returned by Migrator.migrate().
++ */
++import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
++import { createRequire } from 'module';
++import path from 'path';
++
++const require = createRequire(import.meta.url);
++
++// ── Paths ─────────────────────────────────────────────────────────────────────
++const DEFAULT_APP = '/app';
++const APP = existsSync(DEFAULT_APP) ? DEFAULT_APP : (process.env.SR5_APP_ROOT || DEFAULT_APP);
++const DEFAULT_REPORT_DIR = '/logs/verifier';
++const REPORT_DIR = existsSync(DEFAULT_APP)
++    ? DEFAULT_REPORT_DIR
++    : (process.env.SR5_REPORT_DIR || DEFAULT_REPORT_DIR);
++const REPORT = path.join(REPORT_DIR, 'report.xml');
++const SUITE = 'migrator_test_modifier_key';
++
++const CASE_NAMES = [
++    // f2p
++    'legacy_data_modifiers_key_migrates_to_pool_on_test_all_effect',
++    'legacy_data_modifiers_mod_key_migrates_to_pool_on_test_item_effect',
++    'legacy_test_modifier_migration_matches_full_applyto_and_key_matrix',
++    'migration_preserves_sibling_changes_and_effect_identity',
++    'migration_handles_effect_with_multiple_legacy_test_modifier_changes',
++    'unrecognized_legacy_key_on_test_effect_also_migrates_to_pool',
++    // p2p
++    'non_test_effect_data_modifiers_key_is_left_alone',
++    'effect_with_similar_but_non_matching_applyto_value_is_left_alone',
++    'unrelated_change_key_on_test_effect_is_left_alone',
++    'effect_already_at_current_system_version_is_not_touched_at_all',
++    'older_effect_still_receives_pre_existing_version_migrations',
++    'test_scoped_effect_with_no_changes_is_left_alone_without_erroring',
++    'effect_already_using_modern_pool_key_on_test_effect_is_left_alone',
++    'effect_targeting_canonical_limit_field_on_test_effect_is_left_alone',
++];
++
++const results = [];
++function record(name, passed, msg = '') {
++    results.push({ name, passed, msg });
++}
++async function safeAsync(name, fn) {
++    try {
++        await fn();
++    } catch (e) {
++        record(name, false, `unexpected error: ${e && e.stack ? e.stack : e}`);
++    }
++}
++
++// ── foundry.utils path helpers (matching FoundryVTT's real dot-path semantics) ────────────────
++function getProp(obj, p) {
++    const parts = String(p).split('.');
++    let cur = obj;
++    for (const part of parts) {
++        if (cur === undefined || cur === null) return undefined;
++        cur = cur[part];
++    }
++    return cur;
++}
++function hasProp(obj, p) {
++    const parts = String(p).split('.');
++    let cur = obj;
++    for (const part of parts) {
++        if (cur === undefined || cur === null || typeof cur !== 'object' || !(part in cur)) return false;
++        cur = cur[part];
++    }
++    return true;
++}
++function setProp(obj, p, value) {
++    const parts = String(p).split('.');
++    let cur = obj;
++    for (let i = 0; i < parts.length - 1; i++) {
++        const part = parts[i];
++        if (cur[part] === undefined || cur[part] === null || typeof cur[part] !== 'object') cur[part] = {};
++        cur = cur[part];
++    }
++    const last = parts[parts.length - 1];
++    const changed = cur[last] !== value;
++    cur[last] = value;
++    return changed;
++}
++const deepClone = (v) => (v && typeof v === 'object' ? JSON.parse(JSON.stringify(v)) : v);
++
++// ── Generic auto-stub for modules we do not model ─────────────────────────────
++function autoStub(label) {
++    const cache = new Map();
++    const fn = function () {};
++    return new Proxy(fn, {
++        get(_t, prop) {
++            if (prop === '__esModule') return true;
++            if (prop === Symbol.toPrimitive) return () => `[stub ${label}]`;
++            if (prop === 'toString') return () => `[stub ${label}]`;
++            if (prop === 'then') return undefined;
++            if (typeof prop === 'symbol') return undefined;
++            if (!cache.has(prop)) cache.set(prop, autoStub(`${label}.${String(prop)}`));
++            return cache.get(prop);
++        },
++        set() {
++            return true;
++        },
++        has() {
++            return true;
++        },
++        apply() {
++            return undefined;
++        },
++        construct() {
++            return {};
++        },
++    });
++}
++
++// An auto-vivifying dataModels registry: CONFIG.ActiveEffect.dataModels[<any type>].schema always
++// resolves to a (behaviourally inert) object, since Migrator.migrate() always reads it, but
++// Sanitizer.sanitize() -- auto-stubbed below, out of the migrator/ real-module prefix -- never
++// actually inspects it.
++function fakeDataModels() {
++    return new Proxy({}, { get: () => ({ schema: {} }) });
++}
++
++// ── FoundryVTT globals the migrator pipeline reaches for ─────────────────────────────────────
++// Verified by reading Migrator.ts, VersionMigration.ts and every src/module/migrator/versions/
++// *.ts file at base_commit end-to-end: Migrator.migrate('ActiveEffect', data) only ever touches
++// foundry.utils.{deepClone,setProperty}, game.system.version, CONST.ACTIVE_EFFECT_MODES and
++// CONFIG[type].dataModels; no other global is reachable from the ActiveEffect-migration code
++// path this suite drives.
++globalThis.foundry = {
++    utils: {
++        deepClone,
++        duplicate: deepClone,
++        setProperty: setProp,
++        getProperty: getProp,
++        hasProperty: hasProp,
++        mergeObject: (a, b) => ({ ...deepClone(a), ...deepClone(b) }),
++        randomID: () => Math.random().toString(36).slice(2, 18),
++    },
++};
++globalThis.CONFIG = {
++    Item: { dataModels: fakeDataModels(), typeLabels: {} },
++    Actor: { dataModels: fakeDataModels(), typeLabels: {} },
++    ActiveEffect: { dataModels: fakeDataModels() },
++    Combat: { dataModels: fakeDataModels() },
++    Combatant: { dataModels: fakeDataModels() },
++    Dice: { rollModes: {} },
++};
++globalThis.game = {
++    // Deliberately NOT '0.33.x'/'0.34.x' (this repo's real system.json values) -- the fixture's
++    // OWN _stats.systemVersion below is what getMigrators() filters against, and decoupling this
++    // sentinel from the repo's real version string keeps the suite from silently going stale the
++    // next time system.json is bumped.
++    system: { version: '9.9.9' },
++    i18n: { lang: 'en', localize: (k) => String(k), format: (k) => String(k), has: () => false },
++    settings: { get: () => false },
++};
++globalThis.canvas = {};
++globalThis.ui = { notifications: { info() {}, warn() {}, error() {} } };
++globalThis.Hooks = { on() {}, once() {}, call() {}, callAll() {} };
++globalThis.CONST = { ACTIVE_EFFECT_MODES: { CUSTOM: 0, MULTIPLY: 1, ADD: 2, DOWNGRADE: 3, UPGRADE: 4, OVERRIDE: 5 } };
++
++// ── TypeScript loading of the real modules ───────────────────────────────────
++let ts;
++for (const candidate of [
++    path.join(APP, 'node_modules/typescript'),
++    'typescript',
++    '/usr/local/lib/node_modules/typescript',
++]) {
++    try {
++        ts = require(candidate);
++        break;
++    } catch {
++        /* keep looking */
++    }
++}
++if (!ts) fatal('cannot require typescript — expected it in the image node_modules');
++
++const TRANSPILED = new Map();
++function transpile(absPath) {
++    if (TRANSPILED.has(absPath)) return TRANSPILED.get(absPath);
++    const source = readFileSync(absPath, 'utf8');
++    const out = ts.transpileModule(source, {
++        fileName: path.basename(absPath),
++        reportDiagnostics: true,
++        compilerOptions: {
++            module: ts.ModuleKind.CommonJS,
++            target: ts.ScriptTarget.ES2022,
++            useDefineForClassFields: true,
++            experimentalDecorators: false,
++            isolatedModules: true,
++        },
++    });
++    const errors = (out.diagnostics ?? []).filter((d) => d.category === 1);
++    if (errors.length) {
++        throw new Error(
++            `${path.basename(absPath)} does not compile: ` +
++                errors.map((d) => ts.flattenDiagnosticMessageText(d.messageText, ' ')).join(' | '),
++        );
++    }
++    TRANSPILED.set(absPath, out.outputText);
++    return out.outputText;
++}
++
++/**
++ * Directory-prefix real-module policy (not a fixed file list): any file actually reachable
++ * under src/module/migrator/ is transpiled and executed for real, regardless of its name, so an
++ * alternative fix is free to add a brand-new sibling file (or rename the reference fix's own new
++ * file) and still have it executed rather than silently auto-stubbed. Everything imported from
++ * OUTSIDE that directory (Sanitizer, FLAGS/constants, SR5/config, DataDefaults, UpdateActionFlow
++ * and other item-flow helpers a handful of migrators reach for) is auto-stubbed -- verified by
++ * reading every versions/*.ts file at base_commit: none of those imports are ever touched by
++ * handlesActiveEffect or by a migrateActiveEffect that this suite's fixtures cause to run (only
++ * ActiveEffect-type handlers/migrators for migrators whose TargetVersion exceeds the fixture's
++ * own systemVersion are ever invoked, and every one of the five pre-existing classes that
++ * override handlesActiveEffect/migrateActiveEffect -- Version0_18_0, Version0_30_0, Version0_31_5,
++ * Version0_32_0, Version0_33_0 -- was read end-to-end to confirm this).
++ */
++function makeLoader({ realPrefixes, moduleStubs = {} }) {
++    const cache = new Map();
++    const loadErrors = [];
++    function isRealModule(relPath) {
++        return realPrefixes.some((p) => relPath.startsWith(p));
++    }
++    function load(absPath) {
++        if (cache.has(absPath)) return cache.get(absPath);
++        const code = transpile(absPath);
++        const mod = { exports: {} };
++        cache.set(absPath, mod.exports);
++        const dir = path.dirname(absPath);
++        const req = (specifier) => {
++            const spec = String(specifier);
++            const base = spec.split('/').pop();
++            if (Object.prototype.hasOwnProperty.call(moduleStubs, base)) return moduleStubs[base];
++
++            let resolved = null;
++            if (spec.startsWith('.')) resolved = path.resolve(dir, spec);
++            else if (spec.startsWith('@/')) resolved = path.join(APP, 'src', spec.slice(2));
++            else if (spec.startsWith('src/')) resolved = path.join(APP, spec);
++
++            if (resolved) {
++                for (const candidate of [resolved + '.ts', path.join(resolved, 'index.ts')]) {
++                    if (!existsSync(candidate)) continue;
++                    const rel = path.relative(APP, candidate).split(path.sep).join('/');
++                    if (!isRealModule(rel)) break;
++                    try {
++                        return load(candidate);
++                    } catch (e) {
++                        loadErrors.push(`${rel}: ${e.message}`);
++                        return autoStub(spec);
++                    }
++                }
++            }
++            return autoStub(spec);
++        };
++        const factory = new Function('require', 'exports', 'module', '__filename', '__dirname', code);
++        factory(req, mod.exports, mod, absPath, dir);
++        cache.set(absPath, mod.exports);
++        return mod.exports;
++    }
++    const requireReal = (relPath) => load(path.join(APP, relPath));
++    return { requireReal, loadErrors };
++}
++
++function quiet(fn) {
++    const saved = {
++        log: console.log, info: console.info, debug: console.debug,
++        warn: console.warn, error: console.error, table: console.table,
++    };
++    console.log = console.info = console.debug = console.warn = console.error = console.table = () => {};
++    try {
++        return fn();
++    } finally {
++        Object.assign(console, saved);
++    }
++}
++
++const loader = makeLoader({ realPrefixes: ['src/module/migrator/'] });
++
++let Migrator;
++try {
++    Migrator = quiet(() => loader.requireReal('src/module/migrator/Migrator.ts').Migrator);
++} catch (e) {
++    fatal(`could not load the repo's own Migrator.ts: ${e && e.stack ? e.stack : e}`);
++}
++if (loader.loadErrors.length) {
++    fatal(`module load errors: ${loader.loadErrors.join(' || ')}`);
++}
++if (!Migrator || typeof Migrator.migrate !== 'function') {
++    fatal('Migrator.migrate is not a function after loading');
++}
++
++// ── Fixtures ──────────────────────────────────────────────────────────────────
++// systemVersion '0.33.0' isolates Version0_33_1 as the only migrator in scope for the Case-B
++// (test-modifier-key) fixtures: every OTHER migrator in Migrator.s_Versions has a TargetVersion
++// <= '0.33.0', so getMigrators()'s strict `compareVersion(migrator.TargetVersion, version) > 0`
++// filter excludes all of them regardless of the fixture's own shape.
++function makeTestEffect({ id = 'effect1', name = 'Test Effect', applyTo = 'test_all', changes, systemVersion = '0.33.0' } = {}) {
++    return {
++        _id: id,
++        name,
++        type: 'base',
++        flags: {},
++        _stats: { systemVersion },
++        system: { applyTo },
++        changes,
++    };
++}
++
++// [f2p] The literal #1831 defect: a `test_all`-scoped effect whose change still targets the
++// legacy `data.modifiers` key (the exact key named in the issue title/body) must be rewritten to
++// `data.pool` so the SuccessTest dice-pool bonus it grants actually applies again.
++await safeAsync('legacy_data_modifiers_key_migrates_to_pool_on_test_all_effect', () => {
++    const effect = makeTestEffect({
++        applyTo: 'test_all',
++        changes: [{ key: 'data.modifiers', mode: CONST.ACTIVE_EFFECT_MODES.CUSTOM, value: '2' }],
++    });
++    const migrated = quiet(() => Migrator.migrate('ActiveEffect', effect));
++    if (effect.changes[0].key === 'data.pool') {
++        record('legacy_data_modifiers_key_migrates_to_pool_on_test_all_effect', true);
++    } else {
++        record('legacy_data_modifiers_key_migrates_to_pool_on_test_all_effect', false,
++            `key=${effect.changes[0].key} migrated=${migrated}`);
++    }
++});
++
++// [f2p] The `.mod`-suffixed variant (`data.modifiers.mod`) on a `test_item`-scoped effect must
++// ALSO be rewritten to `data.pool` -- a plausible narrow fix might only special-case the bare
++// `data.modifiers` key and miss this legacy sibling.
++await safeAsync('legacy_data_modifiers_mod_key_migrates_to_pool_on_test_item_effect', () => {
++    const effect = makeTestEffect({
++        applyTo: 'test_item',
++        changes: [{ key: 'data.modifiers.mod', mode: CONST.ACTIVE_EFFECT_MODES.CUSTOM, value: '-1' }],
++    });
++    quiet(() => Migrator.migrate('ActiveEffect', effect));
++    if (effect.changes[0].key === 'data.pool') {
++        record('legacy_data_modifiers_mod_key_migrates_to_pool_on_test_item_effect', true);
++    } else {
++        record('legacy_data_modifiers_mod_key_migrates_to_pool_on_test_item_effect', false,
++            `key=${effect.changes[0].key}`);
++    }
++});
++
++// [f2p] Comprehensive matrix across applyTo + key combinations in one assertion: both test-scoped
++// applyTo values, both legacy key spellings, an unrelated key, and two non-test applyTo values
++// must ALL land correctly -- this single test doubles as an internal scoping guard (it embeds
++// cases that must NOT migrate right alongside the ones that must).
++await safeAsync('legacy_test_modifier_migration_matches_full_applyto_and_key_matrix', () => {
++    const cases = [
++        { applyTo: 'test_all', key: 'data.modifiers', expectMigrated: true },
++        { applyTo: 'test_item', key: 'data.modifiers', expectMigrated: true },
++        { applyTo: 'test_all', key: 'data.modifiers.mod', expectMigrated: true },
++        { applyTo: 'test_item', key: 'data.modifiers.mod', expectMigrated: true },
++        { applyTo: 'actor', key: 'data.modifiers', expectMigrated: false },
++        { applyTo: 'item', key: 'data.modifiers', expectMigrated: false },
++        { applyTo: 'test_all', key: 'data.threshold', expectMigrated: false },
++    ];
++    const problems = [];
++    cases.forEach((c, i) => {
++        const effect = makeTestEffect({ id: `matrix${i}`, applyTo: c.applyTo, changes: [{ key: c.key, mode: CONST.ACTIVE_EFFECT_MODES.CUSTOM, value: '1' }] });
++        quiet(() => Migrator.migrate('ActiveEffect', effect));
++        const expectedKey = c.expectMigrated ? 'data.pool' : c.key;
++        if (effect.changes[0].key !== expectedKey) {
++            problems.push(`[${i}] applyTo=${c.applyTo} key=${c.key}: expected ${expectedKey}, got ${effect.changes[0].key}`);
++        }
++    });
++    if (problems.length === 0) record('legacy_test_modifier_migration_matches_full_applyto_and_key_matrix', true);
++    else record('legacy_test_modifier_migration_matches_full_applyto_and_key_matrix', false, problems.join(' || '));
++});
++
++// [f2p] Migrating one legacy key must not disturb a sibling change on the same effect, nor the
++// effect's own identity fields -- guards against a lazy fix that overwrites the whole `changes`
++// array instead of rewriting just the one matching entry's key.
++await safeAsync('migration_preserves_sibling_changes_and_effect_identity', () => {
++    const effect = makeTestEffect({
++        id: 'eff42', name: 'Called Shot', applyTo: 'test_all',
++        changes: [
++            { key: 'data.modifiers', mode: CONST.ACTIVE_EFFECT_MODES.CUSTOM, value: '2' },
++            { key: 'data.threshold', mode: CONST.ACTIVE_EFFECT_MODES.CUSTOM, value: '1' },
++        ],
++    });
++    quiet(() => Migrator.migrate('ActiveEffect', effect));
++
++    const problems = [];
++    if (effect.changes[0].key !== 'data.pool') problems.push(`changes[0].key=${effect.changes[0].key}`);
++    if (effect.changes[1].key !== 'data.threshold') problems.push(`changes[1].key=${effect.changes[1].key}`);
++    if (effect.changes[1].value !== '1') problems.push(`changes[1].value=${effect.changes[1].value}`);
++    if (effect._id !== 'eff42') problems.push(`_id=${effect._id}`);
++    if (effect.name !== 'Called Shot') problems.push(`name=${effect.name}`);
++    if (problems.length === 0) record('migration_preserves_sibling_changes_and_effect_identity', true);
++    else record('migration_preserves_sibling_changes_and_effect_identity', false, problems.join(' || '));
++});
++
++// [f2p] Two DIFFERENT legacy-key changes on the SAME effect must BOTH be rewritten to
++// `data.pool` -- guards against a fix that stops after the first matching change (e.g. via
++// `.find()` + early return, or overwriting `changes` from a single located index) instead of
++// migrating every matching entry on the effect.
++await safeAsync('migration_handles_effect_with_multiple_legacy_test_modifier_changes', () => {
++    const effect = makeTestEffect({
++        applyTo: 'test_item',
++        changes: [
++            { key: 'data.modifiers', mode: CONST.ACTIVE_EFFECT_MODES.CUSTOM, value: '1' },
++            { key: 'data.modifiers.mod', mode: CONST.ACTIVE_EFFECT_MODES.CUSTOM, value: '-1' },
++        ],
++    });
++    quiet(() => Migrator.migrate('ActiveEffect', effect));
++    const problems = [];
++    if (effect.changes[0].key !== 'data.pool') problems.push(`changes[0].key=${effect.changes[0].key}`);
++    if (effect.changes[1].key !== 'data.pool') problems.push(`changes[1].key=${effect.changes[1].key}`);
++    if (problems.length === 0) record('migration_handles_effect_with_multiple_legacy_test_modifier_changes', true);
++    else record('migration_handles_effect_with_multiple_legacy_test_modifier_changes', false, problems.join(' || '));
++});
++
++// [f2p] A key that is NEITHER of the two historically-known legacy spellings (`data.modifiers` /
++// `data.modifiers.mod`) NOR one of the fields the current test data schema actually exposes
++// (`data.pool`, `data.threshold`, `data.limit`) must ALSO be normalized to `data.pool` on a
++// test-scoped Custom effect -- guards against a fix that only special-cases the two known
++// historical strings instead of generalizing from what the schema actually allows for test data.
++await safeAsync('unrecognized_legacy_key_on_test_effect_also_migrates_to_pool', () => {
++    const effect = makeTestEffect({
++        applyTo: 'test_all',
++        changes: [{ key: 'data.legacyPoolField', mode: CONST.ACTIVE_EFFECT_MODES.CUSTOM, value: '3' }],
++    });
++    quiet(() => Migrator.migrate('ActiveEffect', effect));
++    if (effect.changes[0].key === 'data.pool') {
++        record('unrecognized_legacy_key_on_test_effect_also_migrates_to_pool', true);
++    } else {
++        record('unrecognized_legacy_key_on_test_effect_also_migrates_to_pool', false,
++            `key=${effect.changes[0].key}`);
++    }
++});
++
++// [p2p] A non-test-scoped effect's `data.modifiers` key must NEVER be rewritten, on base OR fix
++// -- guards against a bandaid that drops the apply-to scoping and migrates the key everywhere.
++await safeAsync('non_test_effect_data_modifiers_key_is_left_alone', () => {
++    const effect = makeTestEffect({ applyTo: 'actor', changes: [{ key: 'data.modifiers', mode: CONST.ACTIVE_EFFECT_MODES.CUSTOM, value: '2' }] });
++    quiet(() => Migrator.migrate('ActiveEffect', effect));
++    if (effect.changes[0].key === 'data.modifiers') {
++        record('non_test_effect_data_modifiers_key_is_left_alone', true);
++    } else {
++        record('non_test_effect_data_modifiers_key_is_left_alone', false, `key changed to ${effect.changes[0].key}`);
++    }
++});
++
++// [p2p] An applyTo value that merely LOOKS related ('test', neither 'test_all' nor 'test_item')
++// must not trigger the migration -- catches a bandaid that matches applyTo with a substring/
++// prefix check (e.g. `applyTo.startsWith('test')`) instead of the exact enum comparison the
++// reference fix uses.
++await safeAsync('effect_with_similar_but_non_matching_applyto_value_is_left_alone', () => {
++    const effect = makeTestEffect({ applyTo: 'test', changes: [{ key: 'data.modifiers', mode: CONST.ACTIVE_EFFECT_MODES.CUSTOM, value: '2' }] });
++    quiet(() => Migrator.migrate('ActiveEffect', effect));
++    if (effect.changes[0].key === 'data.modifiers') {
++        record('effect_with_similar_but_non_matching_applyto_value_is_left_alone', true);
++    } else {
++        record('effect_with_similar_but_non_matching_applyto_value_is_left_alone', false, `key changed to ${effect.changes[0].key}`);
++    }
++});
++
++// [p2p] An unrelated change key on a test-scoped effect is left alone, on base OR fix -- guards
++// against a bandaid that keys off applyTo alone and rewrites every change key it finds.
++await safeAsync('unrelated_change_key_on_test_effect_is_left_alone', () => {
++    const effect = makeTestEffect({ applyTo: 'test_all', changes: [{ key: 'data.threshold', mode: CONST.ACTIVE_EFFECT_MODES.CUSTOM, value: '1' }] });
++    quiet(() => Migrator.migrate('ActiveEffect', effect));
++    if (effect.changes[0].key === 'data.threshold') {
++        record('unrelated_change_key_on_test_effect_is_left_alone', true);
++    } else {
++        record('unrelated_change_key_on_test_effect_is_left_alone', false, `key changed to ${effect.changes[0].key}`);
++    }
++});
++
++// [p2p] An effect already at the current system version is not touched at all -- the generic,
++// pre-existing "already up to date" early-return in Migrator.migrate() (unchanged by this fix)
++// must survive untouched.
++await safeAsync('effect_already_at_current_system_version_is_not_touched_at_all', () => {
++    const effect = makeTestEffect({
++        applyTo: 'test_all',
++        changes: [{ key: 'data.modifiers', mode: CONST.ACTIVE_EFFECT_MODES.CUSTOM, value: '2' }],
++        systemVersion: game.system.version,
++    });
++    const migrated = quiet(() => Migrator.migrate('ActiveEffect', effect));
++    if (effect.changes[0].key === 'data.modifiers' && migrated === false) {
++        record('effect_already_at_current_system_version_is_not_touched_at_all', true);
++    } else {
++        record('effect_already_at_current_system_version_is_not_touched_at_all', false,
++            `key=${effect.changes[0].key} migrated=${migrated}`);
++    }
++});
++
++// [p2p] An older effect (pre-0.31.5) still receives its OWN pre-existing version migration
++// (Version0_31_5's `system.force` -> `system.attributes.force` active-effect key rename) --
++// guards against a fix that accidentally drops or replaces the rest of Migrator.s_Versions.
++// mode is deliberately ADD (not CUSTOM) so Version0_33_0's unrelated CUSTOM-mode migration never
++// fires for this fixture, keeping the check isolated to Version0_31_5 alone.
++await safeAsync('older_effect_still_receives_pre_existing_version_migrations', () => {
++    const effect = makeTestEffect({
++        id: 'legacyforce1', name: 'Force Bonus', applyTo: 'actor',
++        changes: [{ key: 'system.force', mode: CONST.ACTIVE_EFFECT_MODES.ADD, value: '2' }],
++        systemVersion: '0.31.0',
++    });
++    quiet(() => Migrator.migrate('ActiveEffect', effect));
++    if (effect.changes[0].key === 'system.attributes.force') {
++        record('older_effect_still_receives_pre_existing_version_migrations', true);
++    } else {
++        record('older_effect_still_receives_pre_existing_version_migrations', false, `key=${effect.changes[0].key}`);
++    }
++});
++
++// [p2p] A test-scoped effect with an empty `changes` array must be left alone without
++// throwing -- guards against a fix that indexes `changes[0]` unguarded instead of iterating
++// defensively, which would crash on this legitimate (changes-less) effect shape.
++await safeAsync('test_scoped_effect_with_no_changes_is_left_alone_without_erroring', () => {
++    const effect = makeTestEffect({ applyTo: 'test_all', changes: [] });
++    quiet(() => Migrator.migrate('ActiveEffect', effect));
++    if (Array.isArray(effect.changes) && effect.changes.length === 0) {
++        record('test_scoped_effect_with_no_changes_is_left_alone_without_erroring', true);
++    } else {
++        record('test_scoped_effect_with_no_changes_is_left_alone_without_erroring', false,
++            `changes=${JSON.stringify(effect.changes)}`);
++    }
++});
++
++// [p2p] An effect whose change key is ALREADY the modern `data.pool` -- the exact configuration
++// this bug report's own screenshot shows -- must be left completely alone: same key, same
++// value, still a single change. Guards against an overzealous fix that doesn't recognize
++// `data.pool` itself as one of the canonical test fields and "normalizes" it anyway, which is a
++// no-op at best and, for a fix that reuses this branch to touch other fields on the same change,
++// a silent corruption at worst.
++await safeAsync('effect_already_using_modern_pool_key_on_test_effect_is_left_alone', () => {
++    const effect = makeTestEffect({
++        applyTo: 'test_all',
++        changes: [{ key: 'data.pool', mode: CONST.ACTIVE_EFFECT_MODES.CUSTOM, value: '2' }],
++    });
++    quiet(() => Migrator.migrate('ActiveEffect', effect));
++    if (effect.changes.length === 1 && effect.changes[0].key === 'data.pool' && effect.changes[0].value === '2') {
++        record('effect_already_using_modern_pool_key_on_test_effect_is_left_alone', true);
++    } else {
++        record('effect_already_using_modern_pool_key_on_test_effect_is_left_alone', false,
++            `changes=${JSON.stringify(effect.changes)}`);
++    }
++});
++
++// [p2p] A test-scoped effect legitimately targeting the third canonical field, `data.limit` --
++// not just `data.threshold`, which the other canonical-field guard above already covers -- must
++// also be left alone. Rounds out the whitelist so a fix can't pass by special-casing only two of
++// the three real test fields and normalizing the third one by mistake.
++await safeAsync('effect_targeting_canonical_limit_field_on_test_effect_is_left_alone', () => {
++    const effect = makeTestEffect({
++        applyTo: 'test_item',
++        changes: [{ key: 'data.limit', mode: CONST.ACTIVE_EFFECT_MODES.CUSTOM, value: '1' }],
++    });
++    quiet(() => Migrator.migrate('ActiveEffect', effect));
++    if (effect.changes[0].key === 'data.limit') {
++        record('effect_targeting_canonical_limit_field_on_test_effect_is_left_alone', true);
++    } else {
++        record('effect_targeting_canonical_limit_field_on_test_effect_is_left_alone', false,
++            `key=${effect.changes[0].key}`);
++    }
++});
++
++// ── Report ───────────────────────────────────────────────────────────────────
++
++writeReport(results);
++for (const r of results) {
++    console.log(`${r.passed ? 'PASS' : 'FAIL'} ${r.name}${r.passed ? '' : ` — ${r.msg}`}`);
++}
++const failed = results.filter((r) => !r.passed);
++process.exit(failed.length ? 1 : 0);
++
++// ── Utilities ────────────────────────────────────────────────────────────────
++
++function writeReport(cases) {
++    const failures = cases.filter((c) => !c.passed).length;
++    const rows = cases.map((c) => {
++        const inner = c.passed ? '' : `\n    <failure message="${esc(c.msg)}">${esc(c.msg)}</failure>`;
++        return `  <testcase classname="${SUITE}" name="${esc(c.name)}" time="0">` + inner + `\n  </testcase>`;
++    });
++    const xml =
++        `<?xml version="1.0" encoding="utf-8"?>\n` +
++        `<testsuite name="${SUITE}" tests="${cases.length}" ` +
++        `failures="${failures}" errors="0" time="1">\n` +
++        rows.join('\n') +
++        '\n</testsuite>\n';
++    mkdirSync(REPORT_DIR, { recursive: true });
++    writeFileSync(REPORT, xml, 'utf8');
++}
++
++function esc(s) {
++    return String(s ?? '')
++        .replace(/&/g, '&amp;')
++        .replace(/</g, '&lt;')
++        .replace(/>/g, '&gt;')
++        .replace(/"/g, '&quot;');
++}
++
++function fatal(msg) {
++    const rows = CASE_NAMES.map(
++        (name) =>
++            `  <testcase classname="${SUITE}" name="${esc(name)}" time="0">\n` +
++            `    <error message="${esc(msg)}">${esc(msg)}</error>\n` +
++            `  </testcase>`,
++    );
++    const xml =
++        `<?xml version="1.0" encoding="utf-8"?>\n` +
++        `<testsuite name="${SUITE}" tests="${CASE_NAMES.length}" ` +
++        `failures="${CASE_NAMES.length}" errors="${CASE_NAMES.length}" time="0">\n` +
++        rows.join('\n') +
++        '\n</testsuite>\n';
++    mkdirSync(REPORT_DIR, { recursive: true });
++    writeFileSync(REPORT, xml, 'utf8');
++    console.error('FATAL:', msg);
++    process.exit(2);
++}

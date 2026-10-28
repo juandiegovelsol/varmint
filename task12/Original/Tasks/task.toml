@@ -1,0 +1,51 @@
+version = "1.0"
+
+[metadata]
+task_id = "vega__vega-4163-mm"
+title = "tickMinStep Ignored for Some Continuous Scales"
+repository_name = "vega/vega"
+repo_url = "https://github.com/vega/vega"
+issue_number = 4163
+pr_number = 4162
+base_commit = "15c5b1f0492e928d5b799de17c187323fed652de"
+fix_commit = "ecd07276f103be4b62fde444c8d9c60d340cbdd6"
+task_type = "data_viz_correctness"
+language = "JavaScript"
+framework = "tape / Node.js"
+cross_file = false
+visual_essentiality = "helpful"
+difficulty = "medium"
+difficulty_explanation = """The screenshot shows an axis with ticks at step 2 (0, 2, 4, 6, 8, 10, 12) when a minimum tick step of 3 was requested (expected: 0, 3, 6, 9, 12). The image confirms the rendered axis mismatch; the issue text describes the reproduction scale/axis configuration and the general defect closely enough that the screenshot is helpful confirmation rather than strictly required for diagnosis. The fix is non-trivial: d3's tickStep function does not decrease monotonically as count increases (tick steps can jump), so simply capping the count based on domain/minStep arithmetic is insufficient. The correct fix adds a while-loop that iterates count downward until tickStep(lo, hi, count) >= minStep, plus proper handling of descending domains and passthrough for logarithmic, temporal, and binned scales. Identifying this non-monotonicity property and the appropriate while-loop solution requires understanding d3's internal tick-step algorithm."""
+files_edited = [
+  "packages/vega-scale/src/ticks.js"
+]
+f2p = [
+  "tape('tickCount enforces minStep for ascending continuous domains', ...)",
+  "tape('tickCount collapses to a single tick when domain span equals minStep', ...)",
+  "tape('tickCount enforces minStep for descending domains', ...)"
+]
+p2p = [
+  "tape('validTicks uses count correctly', ...)",
+  "tape('tickValues uses scale and count correctly', ...)",
+  "tape('tickCount leaves count unchanged when no minStep is given', ...)",
+  "tape('tickCount degenerates to a single count when minStep exceeds the domain span', ...)",
+  "tape('tickCount passes non-numeric domains through unaffected', ...)",
+  "tape('tickCount does not enforce minStep for log and time scales', ...)",
+  "tape('tickCount does not apply iterative minStep refinement to binned scales', ...)"
+]
+tags = ["multimodal", "data_viz_correctness", "tape", "ticks", "axis", "d3"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "no-network"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

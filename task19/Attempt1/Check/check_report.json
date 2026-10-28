@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "checks": {
+        "behavior_in_task_description": {
+          "explanation": "instruction.md describes the general behavioral contract being tested — sector angles must be proportional to data values, and this must hold at exact-threshold boundaries and for partial pies (non-360° spans) — which lines up with the three f2p cases (above-threshold no-shift, exact-threshold equality, partial-pie no-shift). It intentionally omits the prop name (minAngle) and exact numbers, consistent with this being a diagnose-from-symptoms bug task rather than a spec-implementation task; the screenshot plus text description give an agent enough to locate the relevant code path (minAngle handling in Pie.tsx) without being handed the fix.",
+          "outcome": "pass"
+        },
+        "behavior_in_tests": {
+          "explanation": "The behavior described in instruction.md (angle accuracy under normal, threshold-equal, and partial-pie configurations) is directly covered by the f2p tests in test.patch, and basic rendering correctness is covered by the p2p tests (6-sector rendering, correct redistribution when segments are below threshold). No described behavior is left untested.",
+          "outcome": "pass"
+        },
+        "informative_test_structure": {
+          "explanation": "Each new test in test.patch has a comment block explaining the input data, the expected natural angles, why redistribution should or shouldn't occur, and (for the redistribution case) the exact arithmetic used to derive expected angles. test.sh is broken into clearly labeled numbered steps (restore test files, apply patch, install deps, run vitest, compute reward), and verifier.py is a small, readable module with a documented reward policy at the top.",
+          "outcome": "pass"
+        },
+        "anti_cheating_measures": {
+          "explanation": "The Dockerfile clones the repo, checks out the base commit, then deletes .git and re-inits a single-commit repo specifically to prevent the agent from inspecting future history/the fix PR. tests/ and solution/ are not baked into the image and are only supplied by the harness at verify time. test.sh explicitly restores any test files the agent might have edited before applying test.patch, and verifier.py computes reward purely from JUnit test results rather than grepping source for the fix. The agent runs with network_mode=no-network, preventing it from fetching the real upstream fix online.",
+          "outcome": "pass"
+        },
+        "structured_data_schema": {
+          "explanation": "This task is a UI/rendering bug fix in a React component (Pie.tsx); it does not involve the agent producing structured output like JSON/CSV/API responses, so a documented schema is not relevant.",
+          "outcome": "not_applicable"
+        },
+        "pinned_dependencies": {
+          "explanation": "The Dockerfile pins the package manager exactly (corepack prepare pnpm@9.15.0). No pnpm-lock.yaml exists at the pinned base commit, so --no-frozen-lockfile is required and is explained in a comment; this is an inherited property of the chosen base commit rather than an omission introduced by the task. verifier.py and test.sh use only Python stdlib and pnpm/vitest already present in the repo, with no additional unpinned pip/apt packages introduced by the task itself.",
+          "outcome": "pass"
+        },
+        "typos": {
+          "explanation": "Cross-checked file paths and identifiers across instruction.md, Dockerfile, evidence_bundle.json, and ASSET_MANIFEST.json (e.g. /app/.harbor_assets/bug.png) and they are consistent; no typos found in config keys, patch file paths, or script commands.",
+          "outcome": "pass"
+        },
+        "tests_or_solution_in_image": {
+          "explanation": "environment/Dockerfile only COPYs assets/ into the image (for the bug screenshot); it does not copy tests/ or solution/, which are supplied separately by the harness at verify time per the Dockerfile's own comment.",
+          "outcome": "pass"
+        },
+        "test_deps_in_image": {
+          "explanation": "The only dependency installation baked into the image is the standard `pnpm install` for the recharts repo itself (which already includes vitest/testing-library as devDependencies in its own package.json prior to any task-specific changes). No test-only dependencies are added to the Dockerfile beyond what the base repository already requires to build/run; test.sh notes explicitly that pnpm/vitest are already present and no extra install step is needed at verify time.",
+          "outcome": "pass"
+        },
+        "hardcoded_solution": {
+          "explanation": "solve.sh applies fix.patch via git apply/patch, which is a genuine multi-line source code change to computePieSectors in src/polar/Pie.tsx (adding the needsMinAngleAdjustment guard) rather than printing or echoing a final answer. The patch matches the real upstream fix commit f67fbddc for issue #6814/PR #7097.",
+          "outcome": "pass"
+        },
+        "file_reference_mentioned": {
+          "explanation": "This is a source-code bug-fix task where the agent edits existing repository files (verified to be src/polar/Pie.tsx) rather than producing new named output artifacts for the verifier to check, so there is no output filename that instruction.md would need to reference.",
+          "outcome": "not_applicable"
+        }
+      },
+      "cost_usd": 0.5737011000000001,
+      "task_name": "Tasks",
+      "error": null
+    }
+  ]
+}

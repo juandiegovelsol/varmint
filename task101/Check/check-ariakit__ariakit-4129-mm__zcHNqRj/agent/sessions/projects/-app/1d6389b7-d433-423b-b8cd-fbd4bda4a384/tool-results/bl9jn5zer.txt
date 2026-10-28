@@ -1,0 +1,719 @@
+=== instruction.md
+# Focus ends up in the wrong place
+
+Two scenarios, A and B, are captured frame by frame in the attached images. Each caption states the action performed, and the ring marks where keyboard focus is afterwards.
+
+In each scenario the last frame (A4 and B3) shows a wrong result. The matching "Expected" image shows where focus should go instead.
+
+![Scenario A](/app/.harbor_assets/screen.png)
+![A1](/app/.harbor_assets/focus_trace_1.png)
+![A2](/app/.harbor_assets/focus_trace_2.png)
+![A3](/app/.harbor_assets/focus_trace_3.png)
+![A4](/app/.harbor_assets/focus_trace_4.png)
+![A expected](/app/.harbor_assets/expected_A.png)
+![B1](/app/.harbor_assets/disabled_trace_1.png)
+![B2](/app/.harbor_assets/disabled_trace_2.png)
+![B3](/app/.harbor_assets/disabled_trace_3.png)
+![B expected](/app/.harbor_assets/expected_B.png)
+
+## Expected
+
+Make both scenarios behave as in the Expected images. Each Expected image shows one acceptable outcome; what matters is where focus goes relative to the buttons on the page.
+
+Keep all other behavior unchanged, including the earlier frames and whatever the same keys do afterwards.
+
+## Attached visual evidence
+
+- `/app/.harbor_assets/screen.png`
+- `/app/.harbor_assets/focus_trace_1.png` … `focus_trace_4.png`
+- `/app/.harbor_assets/expected_A.png`
+- `/app/.harbor_assets/disabled_trace_1.png` … `disabled_trace_3.png`
+- `/app/.harbor_assets/expected_B.png`
+
+Inspect every attached file before making changes. The images describe observable behavior; they do not prescribe source files, internal names, or an implementation strategy.
+=== task.toml
+version = "1.0"
+
+[metadata]
+task_id = "ariakit__ariakit-4129-mm"
+title = "Toolbar becomes unreachable by keyboard when the active button is removed or disabled"
+repository_name = "ariakit/ariakit"
+repo_url = "https://github.com/ariakit/ariakit"
+issue_number = 4129
+pr_number = 4191
+base_commit = "ac992aed50e709b34b064aa005b7b7deb226db48"
+fix_commit = "4698ea146b3da284b89ae09f6d3f2e7cad7190c5"
+task_type = "accessibility_visual"
+language = "TypeScript"
+framework = "Ariakit"
+cross_file = false
+visual_essentiality = "required"
+difficulty = "medium"
+difficulty_explanation = """
+The text names no widget, key, button or symptom: it only points at captioned frames. A text-only solver cannot know that the defect is a keyboard-focus trap in a grouped set of buttons, so the images are the only way to locate the problem. The frames show scenario A (focus moves Bold -> Italic, Italic is removed, and the next focus step jumps past the group to 'Before') and scenario B (first button disabled; the second Tab skips the group and lands on 'After'). The Expected images show focus landing inside the group in both cases.
+
+The patch touches one function in one file, but that function is the roving-tabindex gatekeeper shared by every composite-based widget. A fix that special-cases only one scenario fails the other f2p test, and a fix that breaks the activeId === null short-circuit or the virtualFocus/tabbable shortcuts regresses the p2p tests (composite, toolbar, tab and radio keyboard navigation).
+"""
+files_edited = [
+  "packages/ariakit-react-core/src/composite/composite-item.tsx",
+]
+f2p = [
+  "toolbar is still accessible with disabled activeId",
+  "toolbar is still accessible with stale activeId",
+]
+p2p = [
+  "navigate through items with keyboard",
+  "https://github.com/ariakit/ariakit/issues/4083",
+  "navigate with keyboard",
+  "select with keyboard",
+  "arrow right",
+]
+tags = ["multimodal", "accessibility_visual", "ariakit", "typescript", "accessibility", "keyboard-navigation", "focus-management", "react"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"
+=== environment/Dockerfile
+FROM node:20-bookworm
+
+# Use https apt mirrors (plain HTTP is blocked in this sandbox)
+RUN sed -i 's#http://#https://#g' /etc/apt/sources.list.d/*.sources /etc/apt/sources.list 2>/dev/null; true
+
+WORKDIR /app
+
+# Check out the exact base commit (git and python3 already ship with node:20-bookworm).
+RUN git init -q /app \
+ && git -C /app remote add origin https://github.com/ariakit/ariakit.git \
+ && git -C /app fetch --depth 1 origin ac992aed50e709b34b064aa005b7b7deb226db48 \
+ && git -C /app -c advice.detachedHead=false checkout ac992aed50e709b34b064aa005b7b7deb226db48
+
+# Install every dependency the tests need (vitest ships its own JUnit reporter) at build time.
+RUN npm ci --no-audit
+
+# Drop the upstream history and record the task base; the fix commit must be unreachable.
+RUN rm -rf /app/.git \
+ && git -C /app init -q \
+ && git -C /app -c user.email=h@l -c user.name=h add -A \
+ && git -C /app -c user.email=h@l -c user.name=h commit -q -m base \
+ && git -C /app tag harbor_base
+
+# Visual evidence for the agent only; never the tests or solution.
+RUN mkdir -p /logs /app/.harbor_assets
+COPY assets/*.png /app/.harbor_assets/
+
+CMD ["bash"]
+=== environment/assets/ASSET_MANIFEST.json
+[
+  {
+    "role": "screenshot",
+    "file": "screen.png",
+    "container_path": "/app/.harbor_assets/screen.png",
+    "bytes": 10754,
+    "sha256": "b7725db806af27be6091ccf7c5b1caf160724f3b4e93e669f0552e9de2c2817e",
+    "source_kind": "captured_from_repo",
+    "description": "Scenario A: initial page, no focus yet (captioned)."
+  },
+  {
+    "role": "focus_trace_frame",
+    "file": "focus_trace_1.png",
+    "container_path": "/app/.harbor_assets/focus_trace_1.png",
+    "bytes": 10128,
+    "sha256": "e426b5f015c2383477482c7dc92bd8e8c0e02c483da6138f90439835597a2b3a",
+    "source_kind": "captured_from_repo",
+    "description": "Scenario A, frame 1/4: press Tab."
+  },
+  {
+    "role": "focus_trace_frame",
+    "file": "focus_trace_2.png",
+    "container_path": "/app/.harbor_assets/focus_trace_2.png",
+    "bytes": 10000,
+    "sha256": "266d414f0196d0888c512568df3ea13cead7257cbbbd85a88a46ce0f86a440c1",
+    "source_kind": "captured_from_repo",
+    "description": "Scenario A, frame 2/4: press Right Arrow."
+  },
+  {
+    "role": "focus_trace_frame",
+    "file": "focus_trace_3.png",
+    "container_path": "/app/.harbor_assets/focus_trace_3.png",
+    "bytes": 10006,
+    "sha256": "c7468649b6eb5db98f605a5c322cca58ad8665dbc3bbbf34faf869ff9ed2eac4",
+    "source_kind": "captured_from_repo",
+    "description": "Scenario A, frame 3/4: click \"Toggle Italic\"."
+  },
+  {
+    "role": "focus_trace_frame",
+    "file": "focus_trace_4.png",
+    "container_path": "/app/.harbor_assets/focus_trace_4.png",
+    "bytes": 10052,
+    "sha256": "1571bd994bb0f3e3e7c0f532ce2c9660bcb3fbfbc9d7ce14fbff20f0cbc4a7e3",
+    "source_kind": "captured_from_repo",
+    "description": "Scenario A, frame 4/4: press Shift+Tab."
+  },
+  {
+    "role": "screenshot",
+    "file": "disabled_trace_1.png",
+    "container_path": "/app/.harbor_assets/disabled_trace_1.png",
+    "bytes": 8254,
+    "sha256": "2f14a86cfda2487ee9d0a9f9fb4c16cb8bddfc3a4e7aeb656d5e54f2350a694e",
+    "source_kind": "captured_from_repo",
+    "description": "Scenario B: initial page, first toolbar button disabled."
+  },
+  {
+    "role": "focus_trace_frame",
+    "file": "disabled_trace_2.png",
+    "container_path": "/app/.harbor_assets/disabled_trace_2.png",
+    "bytes": 8781,
+    "sha256": "a67518bb4082f32a4a2ce56060bbdb7e179110bf79c332ecb1f61cdbf278a6bb",
+    "source_kind": "captured_from_repo",
+    "description": "Scenario B, frame 2/3: press Tab."
+  },
+  {
+    "role": "focus_trace_frame",
+    "file": "disabled_trace_3.png",
+    "container_path": "/app/.harbor_assets/disabled_trace_3.png",
+    "bytes": 8745,
+    "sha256": "eede74aa0aa39514d9a8a2532af7916a9a8f241ba649e5d7f4a3fdfc236a2383",
+    "source_kind": "captured_from_repo",
+    "description": "Scenario B, frame 3/3: press Tab."
+  },
+  {
+    "role": "expected_frame",
+    "file": "expected_A.png",
+    "container_path": "/app/.harbor_assets/expected_A.png",
+    "bytes": 12225,
+    "sha256": "3067a8c63654b07a90adc6d6594ddabce130ed84368f1f7e07c201decc6936bc",
+    "source_kind": "captured_from_repo",
+    "description": "Scenario A: expected result of step A4 (reference build)."
+  },
+  {
+    "role": "expected_frame",
+    "file": "expected_B.png",
+    "container_path": "/app/.harbor_assets/expected_B.png",
+    "bytes": 10957,
+    "sha256": "420123bbba57ed8cbfa38c62c84fbe9ab8c089b4cf6565b6f8c07861d9918f0f",
+    "source_kind": "captured_from_repo",
+    "description": "Scenario B: expected result of step B3 (reference build)."
+  }
+]=== evidence_bundle.json
+[
+  {
+    "role": "screenshot",
+    "file": "screen.png",
+    "container_path": "/app/.harbor_assets/screen.png",
+    "bytes": 10754,
+    "sha256": "b7725db806af27be6091ccf7c5b1caf160724f3b4e93e669f0552e9de2c2817e",
+    "source_kind": "captured_from_repo",
+    "description": "Scenario A: initial page, no focus yet (captioned).",
+    "local_path": "/app/.harbor_assets/screen.png",
+    "url": "",
+    "source_url": "",
+    "labels_added_during_packaging": []
+  },
+  {
+    "role": "focus_trace_frame",
+    "file": "focus_trace_1.png",
+    "container_path": "/app/.harbor_assets/focus_trace_1.png",
+    "bytes": 10128,
+    "sha256": "e426b5f015c2383477482c7dc92bd8e8c0e02c483da6138f90439835597a2b3a",
+    "source_kind": "captured_from_repo",
+    "description": "Scenario A, frame 1/4: press Tab.",
+    "local_path": "/app/.harbor_assets/focus_trace_1.png",
+    "url": "",
+    "source_url": "",
+    "labels_added_during_packaging": []
+  },
+  {
+    "role": "focus_trace_frame",
+    "file": "focus_trace_2.png",
+    "container_path": "/app/.harbor_assets/focus_trace_2.png",
+    "bytes": 10000,
+    "sha256": "266d414f0196d0888c512568df3ea13cead7257cbbbd85a88a46ce0f86a440c1",
+    "source_kind": "captured_from_repo",
+    "description": "Scenario A, frame 2/4: press Right Arrow.",
+    "local_path": "/app/.harbor_assets/focus_trace_2.png",
+    "url": "",
+    "source_url": "",
+    "labels_added_during_packaging": []
+  },
+  {
+    "role": "focus_trace_frame",
+    "file": "focus_trace_3.png",
+    "container_path": "/app/.harbor_assets/focus_trace_3.png",
+    "bytes": 10006,
+    "sha256": "c7468649b6eb5db98f605a5c322cca58ad8665dbc3bbbf34faf869ff9ed2eac4",
+    "source_kind": "captured_from_repo",
+    "description": "Scenario A, frame 3/4: click \"Toggle Italic\".",
+    "local_path": "/app/.harbor_assets/focus_trace_3.png",
+    "url": "",
+    "source_url": "",
+    "labels_added_during_packaging": []
+  },
+  {
+    "role": "focus_trace_frame",
+    "file": "focus_trace_4.png",
+    "container_path": "/app/.harbor_assets/focus_trace_4.png",
+    "bytes": 10052,
+    "sha256": "1571bd994bb0f3e3e7c0f532ce2c9660bcb3fbfbc9d7ce14fbff20f0cbc4a7e3",
+    "source_kind": "captured_from_repo",
+    "description": "Scenario A, frame 4/4: press Shift+Tab.",
+    "local_path": "/app/.harbor_assets/focus_trace_4.png",
+    "url": "",
+    "source_url": "",
+    "labels_added_during_packaging": []
+  },
+  {
+    "role": "screenshot",
+    "file": "disabled_trace_1.png",
+    "container_path": "/app/.harbor_assets/disabled_trace_1.png",
+    "bytes": 8254,
+    "sha256": "2f14a86cfda2487ee9d0a9f9fb4c16cb8bddfc3a4e7aeb656d5e54f2350a694e",
+    "source_kind": "captured_from_repo",
+    "description": "Scenario B: initial page, first toolbar button disabled.",
+    "local_path": "/app/.harbor_assets/disabled_trace_1.png",
+    "url": "",
+    "source_url": "",
+    "labels_added_during_packaging": []
+  },
+  {
+    "role": "focus_trace_frame",
+    "file": "disabled_trace_2.png",
+    "container_path": "/app/.harbor_assets/disabled_trace_2.png",
+    "bytes": 8781,
+    "sha256": "a67518bb4082f32a4a2ce56060bbdb7e179110bf79c332ecb1f61cdbf278a6bb",
+    "source_kind": "captured_from_repo",
+    "description": "Scenario B, frame 2/3: press Tab.",
+    "local_path": "/app/.harbor_assets/disabled_trace_2.png",
+    "url": "",
+    "source_url": "",
+    "labels_added_during_packaging": []
+  },
+  {
+    "role": "focus_trace_frame",
+    "file": "disabled_trace_3.png",
+    "container_path": "/app/.harbor_assets/disabled_trace_3.png",
+    "bytes": 8745,
+    "sha256": "eede74aa0aa39514d9a8a2532af7916a9a8f241ba649e5d7f4a3fdfc236a2383",
+    "source_kind": "captured_from_repo",
+    "description": "Scenario B, frame 3/3: press Tab.",
+    "local_path": "/app/.harbor_assets/disabled_trace_3.png",
+    "url": "",
+    "source_url": "",
+    "labels_added_during_packaging": []
+  },
+  {
+    "role": "expected_frame",
+    "file": "expected_A.png",
+    "container_path": "/app/.harbor_assets/expected_A.png",
+    "bytes": 12225,
+    "sha256": "3067a8c63654b07a90adc6d6594ddabce130ed84368f1f7e07c201decc6936bc",
+    "source_kind": "captured_from_repo",
+    "description": "Scenario A: expected result of step A4 (reference build).",
+    "local_path": "/app/.harbor_assets/expected_A.png",
+    "url": "",
+    "source_url": "",
+    "labels_added_during_packaging": []
+  },
+  {
+    "role": "expected_frame",
+    "file": "expected_B.png",
+    "container_path": "/app/.harbor_assets/expected_B.png",
+    "bytes": 10957,
+    "sha256": "420123bbba57ed8cbfa38c62c84fbe9ab8c089b4cf6565b6f8c07861d9918f0f",
+    "source_kind": "captured_from_repo",
+    "description": "Scenario B: expected result of step B3 (reference build).",
+    "local_path": "/app/.harbor_assets/expected_B.png",
+    "url": "",
+    "source_url": "",
+    "labels_added_during_packaging": []
+  }
+]=== tests/config.json
+{
+  "task_id": "ariakit__ariakit-4129-mm",
+  "verifier_mode": "test_execution",
+  "test_framework": "vitest",
+  "test_files": [
+    "examples/toolbar-active-id-disabled/index.tsx",
+    "examples/toolbar-active-id-disabled/style.css",
+    "examples/toolbar-active-id-disabled/test.ts",
+    "examples/toolbar-active-id-stale/index.tsx",
+    "examples/toolbar-active-id-stale/style.css",
+    "examples/toolbar-active-id-stale/test.ts"
+  ],
+  "f2p": [
+    "toolbar is still accessible with disabled activeId",
+    "toolbar is still accessible with stale activeId"
+  ],
+  "p2p": [
+    "navigate through items with keyboard",
+    "https://github.com/ariakit/ariakit/issues/4083",
+    "navigate with keyboard",
+    "select with keyboard",
+    "arrow right"
+  ]
+}
+=== tests/test.sh
+#!/usr/bin/env bash
+# Behavioral verifier. Resets every path test.patch touches to the immutable harbor_base tag, applies
+# the hidden tests, runs ONLY the configured f2p + p2p tests with the repository's own runner into a
+# JUnit report, and lets verifier.py turn that report into the reward. Nothing here reads the
+# candidate's source to decide anything.
+set -uo pipefail
+
+# ---- task-specific values, filled by the task builder ----------------------------------------
+# run_tests runs the configured tests with the repository's own runner and writes JUnit XML to
+# $JUNIT_OUT. The test ids (f2p + p2p from /tests/config.json) are in $TEST_IDS_FILE, one per line.
+# Write plain shell commands here; no quoting of the whole block is needed.
+run_tests() {
+  npx vitest run \
+    examples/toolbar-active-id-disabled/test.ts \
+    examples/toolbar-active-id-stale/test.ts \
+    examples/composite/test.ts \
+    examples/toolbar/test.ts \
+    examples/tab/test.ts \
+    examples/radio/test.ts \
+    --reporter=junit --outputFile="$JUNIT_OUT"
+}
+# Directories holding the repo's test plumbing (configs, helpers) that must also be restored so a
+# candidate cannot replace the harness. Space-separated, relative to /app; '' if none.
+PROTECTED_DIRS='examples/composite/test.ts examples/toolbar/test.ts examples/tab/test.ts examples/radio/test.ts vitest.config.ts vitest.setup.ts package.json'
+# -----------------------------------------------------------------------------------------------
+
+mkdir -p /logs/verifier
+STDOUT_LOG=/logs/verifier/test-stdout.txt
+STDERR_LOG=/logs/verifier/test-stderr.txt
+export JUNIT_OUT=/logs/verifier/junit.xml
+export TEST_IDS_FILE=/logs/verifier/test_ids.txt
+: > "$STDOUT_LOG"; : > "$STDERR_LOG"
+rm -f "$JUNIT_OUT" /logs/verifier/reward.txt /logs/verifier/reward.json
+
+ensure_reward() { [ -f /logs/verifier/reward.txt ] || echo 0 > /logs/verifier/reward.txt; }
+trap ensure_reward EXIT
+
+cd /app || { echo "no /app" | tee -a "$STDERR_LOG"; exit 1; }
+
+# Capture the agent's submission BEFORE anything below mutates /app -- this is the last
+# moment the tree is base + agent work; the restore loop and test.patch come next.
+#
+# A THROWAWAY INDEX, never /app/.git/index: `git add` against the real one would leave paths
+# staged and change how the `git checkout harbor_base --` and `git clean` below behave.
+#
+# TRACKED EDITS + A SOURCE WHITELIST, not `add -A` with a blacklist. This image builds wx
+# in-tree AFTER the harbor_base commit (environment/Dockerfile), so everything the build
+# emits is untracked and NOT in wx's .gitignore. A bare `add -A` captured 380MB of .o/.d/.so;
+# excluding those by extension still left ~120 configure-generated files (samples/*/Makefile,
+# bk-deps, version-script, lib/wx/config/*, the utils/wxrc/wxrc binary) because most have no
+# extension to blacklist. Inverting it -- stage tracked modifications, then add only untracked
+# files that LOOK like source -- keeps the agent's work and drops generated output by default.
+_SUB=/logs/verifier/submission.patch
+_SUBIDX=/tmp/.submission_index
+_SUBSRC=('*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hh' '*.hpp' '*.hxx' '*.inl' '*.m' '*.mm'
+         '*.py' '*.rb' '*.go' '*.rs' '*.java' '*.js' '*.ts' '*.tsx' '*.cs' '*.kt' '*.swift')
+rm -f "$_SUBIDX"
+GIT_INDEX_FILE="$_SUBIDX" git -C /app read-tree harbor_base 2>>"$STDERR_LOG" || true
+GIT_INDEX_FILE="$_SUBIDX" git -C /app add -u 2>>"$STDERR_LOG" || true
+# Enumerate before adding: `git add` aborts and stages NOTHING if any one pathspec matches
+# no file, which silently drops the agent's new files on most tasks.
+# Generated-output dirs are dropped from the UNTRACKED scan only. A project that keeps real
+# source under lib/ is unaffected: those files are tracked at harbor_base, so `add -u` above
+# already has them. This drops only files CREATED under a build dir during the run -- which,
+# left in, break replay: they are recorded as new-file hunks and a fresh container from the
+# same image already has them, so `git apply` fails with "already exists in working directory".
+mapfile -t _SUBNEW < <(git -C /app ls-files --others --exclude-standard \
+  -- "${_SUBSRC[@]}" ':(exclude)lib/' ':(exclude)build/' ':(exclude).deps/' 2>/dev/null)
+if [ "${#_SUBNEW[@]}" -gt 0 ]; then
+  GIT_INDEX_FILE="$_SUBIDX" git -C /app add -- "${_SUBNEW[@]}" 2>>"$STDERR_LOG" || true
+fi
+GIT_INDEX_FILE="$_SUBIDX" git -C /app diff --binary --cached harbor_base \
+  > "$_SUB" 2>>"$STDERR_LOG" || true
+rm -f "$_SUBIDX"
+
+# WHAT THE WHITELIST DROPPED, listed rather than silently discarded. The split above captures
+# every change to a TRACKED file (any extension, deletions included) but only NEW files that
+# look like source -- so an agent adding config.yml, a .cmake module or an extensionless script
+# loses it, and the patch still looks clean. That is the failure this manifest exists to expose.
+#
+# NEWEST FIRST, which is the useful ordering and not a cosmetic one: build output and image
+# assets are created before the agent phase starts, so anything the agent made sorts to the top.
+# Build artifacts are excluded by the same rules as the capture, to keep the list readable.
+#
+# If something here belongs in the submission, widen _SUBSRC. Do not reach for `add -A`.
+_SUBSKIP=/logs/verifier/submission-skipped.txt
+_SUBCAP=/tmp/.submission_captured
+if [ "${#_SUBNEW[@]}" -gt 0 ]; then printf '%s\n' "${_SUBNEW[@]}" > "$_SUBCAP"; else : > "$_SUBCAP"; fi
+_SUBSKIPN=$(git -C /app ls-files --others --exclude-standard -- . \
+    ':(exclude)lib/' ':(exclude)build/' ':(exclude).deps/' \
+    ':(exclude)*.o' ':(exclude)*.d' ':(exclude)*.a' ':(exclude)*.lo' ':(exclude)*.la' \
+    ':(exclude)*.so' ':(exclude)*.so.*' ':(exclude)*.gch' ':(exclude)*.pyc' 2>/dev/null \
+  | grep -vxF -f "$_SUBCAP" 2>/dev/null | wc -l)
+{ echo "# Untracked files NOT captured into submission.patch, newest first."
+  echo "# Anything the agent created sorts above build output, which predates the agent phase."
+  echo "# total: ${_SUBSKIPN}  (showing at most 40)"
+  git -C /app ls-files --others --exclude-standard -- . \
+      ':(exclude)lib/' ':(exclude)build/' ':(exclude).deps/' \
+      ':(exclude)*.o' ':(exclude)*.d' ':(exclude)*.a' ':(exclude)*.lo' ':(exclude)*.la' \
+      ':(exclude)*.so' ':(exclude)*.so.*' ':(exclude)*.gch' ':(exclude)*.pyc' 2>/dev/null \
+    | grep -vxF -f "$_SUBCAP" 2>/dev/null | head -200 \
+    | while IFS= read -r _f; do
+        printf '%s\t%s\t%s\n' "$(stat -c %Y "/app/$_f" 2>/dev/null || echo 0)" \
+                              "$(stat -c %s "/app/$_f" 2>/dev/null || echo 0)" "$_f"
+      done \
+    | sort -rn | head -40 | awk -F'\t' '{printf "%s\t%s\t%s\n",$1,$2,$3}'
+} > "$_SUBSKIP" 2>/dev/null || true
+rm -f "$_SUBCAP"
+
+# Size guard. The whitelist is a heuristic, so a task laying out source unusually could still
+# produce something enormous. Cap it and leave a diagnosable stub: a truncated capture is
+# recoverable, a full disk is not.
+_SUBSZ=$(wc -c < "$_SUB" 2>/dev/null || echo 0)
+if [ "$_SUBSZ" -gt 5242880 ]; then
+  { echo "SUBMISSION CAPTURE SUPPRESSED: ${_SUBSZ} bytes exceeds the 5MB cap."
+    echo "Directories contributing to the discarded patch:"
+    grep -a "^diff --git" "$_SUB" | sed 's#^diff --git a/##; s# b/.*##; s#/[^/]*$##' \
+      | sort | uniq -c | sort -rn | head -20
+  } > "$_SUB.suppressed" 2>/dev/null
+  : > "$_SUB"
+  echo "== submission.patch SUPPRESSED (${_SUBSZ} bytes > 5MB cap) ==" | tee -a "$STDOUT_LOG"
+else
+  echo "== captured submission.patch (${_SUBSZ} bytes, $(grep -ac '^diff --git' "$_SUB" 2>/dev/null || echo 0) files) ==" \
+    | tee -a "$STDOUT_LOG"
+fi
+
+
+# 1. Restore every path test.patch touches. Both diff headers are read, so new files, binary
+#    baselines (image-comparison PNGs, snapshots), renames and deletions are all covered.
+_patch_paths=$( { sed -n 's#^diff --git a/\(.*\) b/.*#\1#p' /tests/test.patch
+                  sed -n 's#^diff --git a/.* b/\(.*\)#\1#p' /tests/test.patch; } | sort -u )
+for _p in $_patch_paths; do
+  git -C /app checkout harbor_base -- "$_p" 2>/dev/null || rm -rf "/app/$_p" 2>/dev/null || true
+done
+for _d in $PROTECTED_DIRS; do
+  git -C /app checkout harbor_base -- "$_d" 2>/dev/null || true
+  git -C /app clean -fdq -- "$_d" 2>/dev/null || true
+done
+
+# 2. Apply the hidden tests.
+echo "== applying test.patch ==" | tee -a "$STDOUT_LOG"
+git apply --binary /tests/test.patch 2>>"$STDERR_LOG" \
+  || git apply /tests/test.patch 2>>"$STDERR_LOG" \
+  || patch -p1 -i /tests/test.patch 2>>"$STDERR_LOG" \
+  || { echo "ERROR: could not apply test.patch" | tee -a "$STDERR_LOG"; exit 1; }
+
+# 3. Run only the configured tests.
+python3 - <<'PY' > "$TEST_IDS_FILE"
+import json
+c = json.load(open("/tests/config.json"))
+print("\n".join(c["f2p"] + c["p2p"]))
+PY
+echo "== running f2p + p2p tests ==" | tee -a "$STDOUT_LOG"
+( cd /app && run_tests ) >>"$STDOUT_LOG" 2>>"$STDERR_LOG" \
+  || echo "(tests exited non-zero; parsing the report)" | tee -a "$STDOUT_LOG"
+
+# 4. Reward from the report.
+echo "== computing reward ==" | tee -a "$STDOUT_LOG"
+# Rubric judge — SUB-AGENT backend: no API key, no network. On the first pass there is no
+# verdict yet, so judge.py writes a judge request under /logs/verifier/judge/ and prints
+# nothing; scoring falls back to tests alone. Once a judge sub-agent has written
+# verdict.json there, `mm_run.sh <task> rescore` folds the verdict into the reward.
+# The `|| echo ""` is load-bearing: the judge must never be able to fail the run.
+RUBRIC=""
+if [ -f /tests/rubrics.json ]; then
+  RUBRIC=$(python3 /tests/judge.py --rubrics /tests/rubrics.json --repo /app \
+             2>/logs/verifier/judge.log || echo "")
+  echo "Rubric verdict: ${RUBRIC:-pending (judge request written; rescore after grading)}"
+fi
+
+python3 /tests/verifier.py "${REPORTS[@]}" --rubric "${RUBRIC:-}"
+
+echo "reward=$(cat /logs/verifier/reward.txt 2>/dev/null)" | tee -a "$STDOUT_LOG"
+=== tests/verifier.py
+#!/usr/bin/env python3
+"""Turn the JUnit report into the task reward.
+
+The reward is binary: 1.0 only when every configured f2p and p2p test is found exactly once in the
+report and passed; otherwise 0.0. f2p_passed / f2p_total and p2p_passed / p2p_total record how close
+a run came. The verifier reads test outcomes only, never the candidate's source.
+"""
+import atexit
+import json
+import os
+import sys
+import xml.etree.ElementTree as ET
+
+import json as _cj, os as _co, sys as _cs
+
+_CANON_JSON = "/logs/verifier/reward.json"
+_CANON_TXT = "/logs/verifier/reward.txt"
+_canon = {}
+
+
+def canon_reward(f2p_passed, f2p_total, p2p_passed, p2p_total, rubric):
+    """THE reward policy for the whole corpus. BINARY -- there is no partial credit.
+
+    tests_passed is 1.0 only when every f2p test passes AND every p2p test still passes. A
+    strict subset of f2p passing is not partial progress worth scoring: the task is unsolved,
+    so it is 0.0.
+
+    reward is the same value, zeroed when the rubric judge failed a criterion. A "pass" or a
+    "not graded" verdict never lowers the score -- the judge must never be able to penalise a
+    run it could not grade.
+    """
+    f, t = int(f2p_passed), int(f2p_total)
+    p, q = int(p2p_passed), int(p2p_total)
+    solved = bool(t) and f == t and p == q
+    tests_passed = 1.0 if solved else 0.0
+    _canon.clear()
+    _canon.update({
+        "reward": 0.0 if rubric == "fail" else tests_passed,
+        "tests_passed": tests_passed,
+        "f2p_passed": f, "f2p_total": t,
+        "p2p_passed": p, "p2p_total": q,
+        "rubric_passed": {"pass": 1, "fail": 0}.get(rubric, -1),
+    })
+    return _canon["reward"]
+
+
+@atexit.register
+def _canon_flush():
+    if not _canon:
+        return
+    try:
+        _co.makedirs(_co.path.dirname(_CANON_JSON), exist_ok=True)
+        with open(_CANON_JSON, "w") as _h:
+            _cj.dump(_canon, _h, indent=2)
+        # reward.txt too: harbor prefers reward.json, but the sandbox teardown script and the
+        # lighthouse UI read reward.txt. Writing both from one dict means they cannot disagree.
+        with open(_CANON_TXT, "w") as _h:
+            _h.write(str(_canon["reward"]))
+    except Exception as _exc:
+        print("WARNING: could not write %s: %s" % (_CANON_JSON, _exc), file=_cs.stderr)
+
+
+def rubric_verdict(argv):
+    """The verdict test.sh hands in as `--rubric pass|fail|""`.
+
+    Anything that is not an explicit pass/fail -- including the empty string test.sh passes
+    when judge.py wrote no verdict -- means "not graded", which must never penalise the run.
+    """
+    if "--rubric" not in argv:
+        return None
+    i = argv.index("--rubric")
+    value = argv[i + 1].strip().lower() if i + 1 < len(argv) else ""
+    return value if value in ("pass", "fail") else None
+
+
+CONF = json.load(open("/tests/config.json"))
+F2P, P2P = CONF["f2p"], CONF["p2p"]
+REPORT = os.environ.get("JUNIT_OUT", "/logs/verifier/junit.xml")
+OUT_DIR = "/logs/verifier"
+
+
+def load_junit(path):
+    """Every reported test, keyed by "classname name" and by name; a key seen twice with different
+    outcomes counts as failed."""
+    results = {}
+    if not os.path.exists(path):
+        return results
+    try:
+        root = ET.parse(path).getroot()
+    except ET.ParseError:
+        return results
+    for tc in root.iter("testcase"):
+        tags = {c.tag for c in tc}
+        outcome = "skip" if "skipped" in tags else ("fail" if tags & {"failure", "error"} else "pass")
+        full = f"{tc.get('classname', '')} {tc.get('name', '')}".strip()
+        for key in {full, tc.get("name", "")}:
+            if key in results and results[key] != outcome:
+                results[key] = "fail"
+            else:
+                results[key] = outcome
+    return results
+
+
+def junit_key(test_id):
+    """A pytest node id (tests/test_x.py::TestA::test_b[png]) as the JUnit report names it
+    ("tests.test_x.TestA test_b[png]"); other ids unchanged."""
+    if "::" not in test_id:
+        return test_id
+    parts = test_id.split("::")
+    mod = parts[0][:-3] if parts[0].endswith(".py") else parts[0]
+    return f"{'.'.join([mod.replace('/', '.')] + parts[1:-1])} {parts[-1]}"
+
+
+def resolve(test_id, results):
+    """The outcome of one configured test: an exact key match first (the id as written, or a
+    pytest node id in JUnit form), else the single reported test whose key ends with it. Missing
+    or ambiguous counts as not passed."""
+    keys = [test_id, junit_key(test_id)]
+    if " > " in test_id:  # "describe > test": jest-junit joins with a space, playwright with " › "
+        head, rest = test_id.split(" > ", 1)
+        keys += [test_id.replace(" > ", " "), test_id.replace(" > ", " › "), head + " " + rest.replace(" > ", " › ")]
+    keys += [k.replace('"', "") for k in keys]  # jest-junit drops quotation marks from names
+    keys = list(dict.fromkeys(keys))
+    for key in keys:
+        if key in results:
+            return results[key]
+    for key in keys:
+        hits = {k: v for k, v in results.items() if k.endswith(key)}
+        if hits and len(set(hits.values())) == 1:
+            return next(iter(hits.values()))
+        if hits:
+            return "ambiguous"
+    # "file > test" with a describe level left out: a test in that file whose name ends the same
+    parts = test_id.split(" > ")
+    if len(parts) >= 2 and ("." in parts[0] or "/" in parts[0]):
+        hits = {k: v for k, v in results.items() if k.startswith(parts[0] + " ") and k.endswith(parts[-1])}
+        if hits and len(set(hits.values())) == 1:
+            return next(iter(hits.values()))
+        if hits:
+            return "ambiguous"
+    return "missing"
+
+
+def main():
+    results = load_junit(REPORT)
+    detail = {}
+    f2p_ok = 0
+    for t in F2P:
+        r = resolve(t, results)
+        detail[f"f2p::{t}"] = r
+        f2p_ok += r == "pass"
+    p2p_ok = 0
+    for t in P2P:
+        r = resolve(t, results)
+        detail[f"p2p::{t}"] = r
+        p2p_ok += r == "pass"
+    canon_reward(f2p_ok, len(F2P), p2p_ok, len(P2P), rubric_verdict(sys.argv[1:]))
+    reward = dict(_canon)
+    os.makedirs(OUT_DIR, exist_ok=True)
+    json.dump(detail, open(f"{OUT_DIR}/reward_detail.json", "w"), indent=2)
+    print(json.dumps(reward))
+
+
+if __name__ == "__main__":
+    main()
+=== solution/solve.sh
+#!/usr/bin/env bash
+# Oracle solution: apply the human developer's fix (source files only; no test files).
+set -euxo pipefail
+cd /app
+
+apply_if_nonempty() {
+  local p="$1"
+  if [ -f "$p" ] && grep -q '[^[:space:]]' "$p"; then
+    git apply "$p" 2>/dev/null || patch -p1 < "$p"
+  fi
+}
+
+apply_if_nonempty /solution/fix.patch
+echo "Applied fix.patch."

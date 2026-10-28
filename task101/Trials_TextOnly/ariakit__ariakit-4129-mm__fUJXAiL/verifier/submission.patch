@@ -1,0 +1,238 @@
+diff --git a/packages/ariakit-core/src/utils/focus.ts b/packages/ariakit-core/src/utils/focus.ts
+index f31b6aa..5f2ffa0 100644
+--- a/packages/ariakit-core/src/utils/focus.ts
++++ b/packages/ariakit-core/src/utils/focus.ts
+@@ -21,6 +21,9 @@ function hasNegativeTabIndex(element: Element) {
+  */
+ export function isFocusable(element: Element) {
+   if (!element.matches(selector)) return false;
++  // Disabled form controls can't receive focus even if they have a tabindex
++  // attribute.
++  if (element.matches(":disabled")) return false;
+   if (!isVisible(element)) return false;
+   if (element.closest("[inert]")) return false;
+   return true;
+@@ -206,6 +209,32 @@ export function getLastTabbable(fallbackToFocusable?: boolean) {
+   return getLastTabbableIn(document.body, false, fallbackToFocusable);
+ }
+ 
++/**
++ * Returns the elements in `elements` that come after `activeElement` in the
++ * sequential focus navigation order (or before it, when `elements` is
++ * reversed). If the active element is not part of `elements` because it's no
++ * longer focusable (for example, it has been disabled or hidden while
++ * focused), its position in the DOM is used as the starting point, just like
++ * browsers do.
++ */
++function getFocusableElementsAfter(
++  container: HTMLElement,
++  elements: HTMLElement[],
++  activeElement: HTMLElement | null,
++  reversed = false,
++) {
++  const activeIndex = elements.indexOf(activeElement as HTMLElement);
++  if (activeIndex !== -1) return elements.slice(activeIndex + 1);
++  if (!activeElement || activeElement === container) return elements;
++  if (!contains(container, activeElement)) return elements;
++  const position = reversed
++    ? Node.DOCUMENT_POSITION_PRECEDING
++    : Node.DOCUMENT_POSITION_FOLLOWING;
++  return elements.filter(
++    (element) => activeElement.compareDocumentPosition(element) & position,
++  );
++}
++
+ /**
+  * Returns the next tabbable element in `container`.
+  */
+@@ -217,8 +246,11 @@ export function getNextTabbableIn(
+ ) {
+   const activeElement = getActiveElement(container);
+   const allFocusable = getAllFocusableIn(container, includeContainer);
+-  const activeIndex = allFocusable.indexOf(activeElement as HTMLElement);
+-  const nextFocusableElements = allFocusable.slice(activeIndex + 1);
++  const nextFocusableElements = getFocusableElementsAfter(
++    container,
++    allFocusable,
++    activeElement,
++  );
+   return (
+     nextFocusableElements.find(isTabbable) ||
+     (fallbackToFirst ? allFocusable.find(isTabbable) : null) ||
+@@ -254,8 +286,12 @@ export function getPreviousTabbableIn(
+ ) {
+   const activeElement = getActiveElement(container);
+   const allFocusable = getAllFocusableIn(container, includeContainer).reverse();
+-  const activeIndex = allFocusable.indexOf(activeElement as HTMLElement);
+-  const previousFocusableElements = allFocusable.slice(activeIndex + 1);
++  const previousFocusableElements = getFocusableElementsAfter(
++    container,
++    allFocusable,
++    activeElement,
++    true,
++  );
+   return (
+     previousFocusableElements.find(isTabbable) ||
+     (fallbackToLast ? allFocusable.find(isTabbable) : null) ||
+diff --git a/packages/ariakit-test/src/__tests__/press-tab-test.ts b/packages/ariakit-test/src/__tests__/press-tab-test.ts
+new file mode 100644
+index 0000000..bc3f927
+--- /dev/null
++++ b/packages/ariakit-test/src/__tests__/press-tab-test.ts
+@@ -0,0 +1,66 @@
++import { click } from "../click.ts";
++import { press } from "../press.ts";
++import { q } from "../query.ts";
++
++beforeEach(() => {
++  document.body.innerHTML = `
++    <div>
++      <button>1</button>
++      <button>2</button>
++      <button>3</button>
++      <button>4</button>
++    </div>
++  `;
++});
++
++afterEach(() => {
++  document.body.innerHTML = "";
++});
++
++test("skip disabled button with tabindex", async () => {
++  q.button("3")!.setAttribute("disabled", "");
++  q.button("3")!.setAttribute("tabindex", "0");
++  await click(q.button("2"));
++  await press.Tab();
++  expect(q.button("4")).toHaveFocus();
++  await press.ShiftTab();
++  expect(q.button("2")).toHaveFocus();
++});
++
++test("tab from button disabled while focused", async () => {
++  await click(q.button("2"));
++  q.button("2")!.setAttribute("disabled", "");
++  await press.Tab();
++  expect(q.button("3")).toHaveFocus();
++});
++
++test("shift+tab from button disabled while focused", async () => {
++  await click(q.button("2"));
++  q.button("2")!.setAttribute("disabled", "");
++  await press.ShiftTab();
++  expect(q.button("1")).toHaveFocus();
++});
++
++test("tab from button hidden while focused", async () => {
++  await click(q.button("2"));
++  q.button("2")!.hidden = true;
++  await press.Tab();
++  expect(q.button("3")).toHaveFocus();
++});
++
++test("tab from button removed while focused", async () => {
++  await click(q.button("2"));
++  q.button("2")!.remove();
++  expect(document.body).toHaveFocus();
++  await press.Tab();
++  expect(q.button("3")).toHaveFocus();
++  await press.Tab();
++  expect(q.button("4")).toHaveFocus();
++});
++
++test("shift+tab from button removed while focused", async () => {
++  await click(q.button("2"));
++  q.button("2")!.remove();
++  await press.ShiftTab();
++  expect(q.button("1")).toHaveFocus();
++});
+diff --git a/packages/ariakit-test/src/press.ts b/packages/ariakit-test/src/press.ts
+index 12b03f3..e0211f4 100644
+--- a/packages/ariakit-test/src/press.ts
++++ b/packages/ariakit-test/src/press.ts
+@@ -1,5 +1,6 @@
+ import { isTextField, setSelectionRange } from "@ariakit/core/utils/dom";
+ import {
++  getAllTabbable,
+   getNextTabbable,
+   getPreviousTabbable,
+   isFocusable,
+@@ -59,9 +60,61 @@ async function incrementNumberInput(element: HTMLInputElement, by = 1) {
+   await dispatch.change(element);
+ }
+ 
++// Browsers keep track of a sequential focus navigation starting point. If the
++// focused element is removed from the DOM, focus moves to the body element,
++// but pressing Tab continues from where the removed element was instead of
++// starting over from the beginning of the document. We emulate that by keeping
++// a live range positioned right before the last focused element, which the DOM
++// updates automatically when the element is removed. This only applies when
++// the element's parent is still in the DOM. Otherwise (for example, when the
++// whole tree has been unmounted), Tab starts over from the beginning.
++let lastFocusedElement: Element | null = null;
++let lastFocusedParent: Node | null = null;
++let startingPoint: Range | null = null;
++
++if (typeof document !== "undefined") {
++  document.addEventListener(
++    "focusin",
++    (event) => {
++      const target = event.target as Element | null;
++      if (!target || target.tagName === "BODY") return;
++      if (!target.parentNode) return;
++      lastFocusedElement = target;
++      lastFocusedParent = target.parentNode;
++      startingPoint = target.ownerDocument.createRange();
++      startingPoint.setStartBefore(target);
++      startingPoint.collapse(true);
++    },
++    true,
++  );
++}
++
++function getTabbableFromStartingPoint(shiftKey?: boolean) {
++  if (!lastFocusedElement || !startingPoint) return;
++  if (lastFocusedElement.isConnected) return;
++  if (document.activeElement && document.activeElement !== document.body) {
++    return;
++  }
++  const range = startingPoint;
++  if (!lastFocusedParent?.isConnected) return;
++  if (range.startContainer !== lastFocusedParent) return;
++  const tabbable = getAllTabbable();
++  if (shiftKey) {
++    const previous = tabbable.filter((el) => range.comparePoint(el, 0) < 0);
++    return previous[previous.length - 1] || null;
++  }
++  return tabbable.find((el) => range.comparePoint(el, 0) > 0) || null;
++}
++
+ const keyDownMap: KeyActionMap = {
+   async Tab(_, { shiftKey }) {
+-    const nextElement = shiftKey ? getPreviousTabbable() : getNextTabbable();
++    const fromStartingPoint = getTabbableFromStartingPoint(shiftKey);
++    const nextElement =
++      fromStartingPoint !== undefined
++        ? fromStartingPoint
++        : shiftKey
++          ? getPreviousTabbable()
++          : getNextTabbable();
+     if (nextElement) {
+       await focus(nextElement);
+     }
+@@ -201,8 +254,13 @@ export function press(
+ 
+     if (!element) return;
+ 
+-    // We can't press on elements that aren't focusable
+-    if (!isFocusable(element) && element.tagName !== "BODY") return;
++    // We can't press on elements that aren't focusable, unless the element
++    // still has focus after becoming non-focusable (for example, it has been
++    // disabled or hidden while focused). In this case, browsers still move
++    // focus to the next/previous tabbable element on Tab.
++    const isActive = element.ownerDocument?.activeElement === element;
++    const canTab = key === "Tab" && isActive;
++    if (!isFocusable(element) && element.tagName !== "BODY" && !canTab) return;
+ 
+     // If it's a printable character, we type it
+     if (isTextField(element)) {

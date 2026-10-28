@@ -1,0 +1,51 @@
+version = "1.0"
+
+[metadata]
+task_id = "IvarK__AntimatterDimensionsSourceCode-3020-mm"
+title = "Inconsistency of Tickspeed visibility"
+repository_name = "IvarK/AntimatterDimensionsSourceCode"
+repo_url = "https://github.com/IvarK/AntimatterDimensionsSourceCode"
+issue_number = 3020
+pr_number = 3034
+base_commit = "0bcc55d2c8cdbf4decfc59e99f889694b52fcb52"
+fix_commit = "ee2db9be2fdb473b942b509159ea001dc303bb33"
+task_type = "visual_bug_fix"
+language = "JavaScript"
+framework = "Vue.js 2"
+cross_file = true
+visual_essentiality = "essential"
+difficulty = "medium"
+difficulty_explanation = """The instruction never names the affected stat, the affected screen region or the affected game state — all of that is only recoverable from the two screenshots. Reading them yields the literal strings rendered by the header ("You have ... antimatter.", "AD Tickspeed: ... / sec", "... faster per upgrade"), which locate HeaderCenterContainer and the per-theme branch inside it. Diagnosing the root cause means noticing that the Classic branch renders a row whose content is suppressed while Tickspeed is still locked, whereas the Modern branch renders an unconditional info block. Acting on the no-lost-controls constraint is the cross-file half: the Classic header row is also the only Tickspeed purchase control Classic players have before Reality, because ClassicAntimatterDimensionsTab gates its own row behind v-if=hasRealityButton, so unifying the header forces that gate to be removed as well."""
+files_edited = [
+  "src/components/tabs/antimatter-dimensions/ClassicAntimatterDimensionsTab.vue",
+  "src/components/ui-modes/HeaderTickspeedInfo.vue",
+  "src/components/ui-modes/HeaderTickspeedRowClassic.vue",
+  "src/components/ui-modes/HeaderTickspeedRowModern.vue",
+  "src/components/ui-modes/prestige-header/HeaderCenterContainer.vue",
+]
+f2p = [
+  "tickspeed-visibility > both UI themes show the same header information on a fresh save",
+  "tickspeed-visibility > Classic players can buy Tickspeed before Reality is unlocked",
+]
+p2p = [
+  "tickspeed-visibility > Modern players can buy Tickspeed before Reality is unlocked",
+]
+synthetic_tests = true
+synthetic_test_signal = "Rendered output only. (1) mount HeaderCenterContainer twice on one fresh-save state, once per theme, and require the normalised text to be identical while still reporting the live Tickspeed figures; (2) mount each Antimatter Dimensions tab pre-Reality, press every button, and require the Tickspeed purchase to fire. No component name, file, prop or CSS class is referenced."
+synthetic_test_harness = "vitest@1.6.1 + @vitejs/plugin-vue2@1.1.2 + @vue/test-utils@1.3.6 + jsdom@24.1.3 + vue@2.7.16"
+tags = ["multimodal", "visual_bug_fix", "vue.js", "vue2", "ui-themes", "conditional-rendering"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

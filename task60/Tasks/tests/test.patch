@@ -1,0 +1,606 @@
+diff --git a/tests/test_modifiable_value_linked.mjs b/tests/test_modifiable_value_linked.mjs
+new file mode 100644
+index 0000000..32c7b8a
+--- /dev/null
++++ b/tests/test_modifiable_value_linked.mjs
+@@ -0,0 +1,600 @@
++#!/usr/bin/env node
++/**
++ * Behavioural verifier for SR5-FoundryVTT issue #1746 -
++ * "[FEATURE] Fractional Value For Adept Power AP"
++ * (fixed by PR #1824, "[BUG] Allow Decimal value for ModifiableValueLinked", squash-merge commit
++ * ac79d4dfa1b7280210a34f1d8c5e92f820ce533c; base_commit is that squash commit's own sole parent,
++ * 7d19e38d49e38d9851c4b0b25d8240c448a1c24b -- the PR's own stated baseRefOid, fb1ad5cb0df7835ee
++ * edd60317d702c37c10ead33, went stale after one unrelated PR (#1821, "Fix sheet input focus
++ * restore on rerender") squash-merged in between PR creation and merge).
++ *
++ * The bug: src/module/types/template/Base.ts's BaseValuePair() hardcodes integer:true on both
++ * its value and base NumberFields. ModifiableValueSchema() spreads BaseValuePair() verbatim, and
++ * ModifiableValueLinked() spreads ModifiableValueSchema() verbatim, so every consumer of the
++ * shared "linked modifiable value" schema fragment (Action.ts's DamageData().ap -- this issue's
++ * literal "AP" field, used on every Item with a damage-dealing action, including the "Elemental
++ * Body" Adept Power shown in the issue's own screenshot, and MinimalActionData().limit) inherited
++ * an integer-only NumberField with no way to opt out. Foundry's NumberField silently rounds a
++ * fractional input to the nearest whole number at clean() time when its own integer option is
++ * true -- it does not throw a visible validation error -- so entering "0.5" for an Adept Power's
++ * AP silently became 0 or 1 with no feedback to the user.
++ *
++ * f2p tests drive the real, transpiled AP field exactly as the real application constructs it --
++ * src/module/types/item/Action.ts's DamageData().ap -- rather than an internal factory in
++ * isolation, and are not tied to which file the fix touches. A fix threaded through Base.ts's
++ * factory chain (the historical PR's own shape: BaseValuePair -> ModifiableValueSchema ->
++ * ModifiableValueLinked, each taking an optional { integer } parameter) and a structurally
++ * different fix scoped locally to Action.ts's own construction of the ap field (overriding its
++ * value/base NumberFields at the call site, leaving Base.ts untouched) are both exercised for
++ * real and score identically, because both are real-loaded and the f2p tests read the field the
++ * real application actually uses, never an implementation detail private to either file.
++ *
++ * Real-module policy is a DIRECTORY prefix for src/module/types/template/ (16 small pure
++ * schema-fragment-factory files, none imported by Base.ts itself under the historical fix) PLUS
++ * one specific FILE, src/module/types/item/Action.ts -- the real production consumer of
++ * ModifiableValueLinked() for the issue's own AP field. Action.ts is added by exact file, not a
++ * whole-directory prefix, because most of src/module/types/item/ carries import-time side effects
++ * (top-level console.log(Factory(), new Class()) calls against a real ItemBase/CONFIG/Dice/UI
++ * stack) unrelated to this bug class; Action.ts's own such call is harmless once ItemBase and
++ * TagifyAltField are auto-stubbed and CONFIG.Dice.rollModes is given a minimal shape. An off-file
++ * alternative fix that adds a brand-new sibling module under src/module/types/template/ and has
++ * Base.ts delegate to it is likewise picked up and executed for real, since that policy is a
++ * directory prefix rather than a fixed file list.
++ *
++ * f2p: ap_value_field_survives_fractional_input_unrounded
++ *      ap_base_field_survives_fractional_input_unrounded
++ *      linked_ap_schemafield_cleans_fractional_damage_ap_payload_intact
++ * p2p: unrelated_value_field_bare_call_still_rounds_to_integer
++ *      value_max_pair_sibling_factory_still_integer_only
++ *      change_entry_numeric_fields_still_integer_only
++ *      threshold_bare_base_value_pair_call_still_integer_only
++ *
++ * Three more f2p tests cover src/module/mods/ModifiableValue.ts's calcTotal() -- the pure,
++ * dependency-free computation that turns every ModifiableValue field's {base, changes} into its
++ * final number (Base Damage, AP, and Limit all resolve through it) -- and
++ * src/module/helpers.ts's Helpers.modifyDamageByHits(). These were never reachable as bugs while
++ * every field was integer-only; they only became live defects once fractional totals became
++ * possible, so "implemented correctly" (the issue's own words) extends past field input to
++ * what gets calculated from it:
++ *
++ * f2p: modifiable_value_total_rounds_up_not_truncated
++ *      modifiable_value_changes_apply_in_priority_order
++ *      reduce_damage_by_hits_does_not_mutate_original
++ * p2p: modifiable_value_min_max_enforcement_still_applies
++ *      modifiable_value_same_mode_changes_still_accumulate
++ *      modify_damage_by_hits_raising_path_still_adds_correctly
++ */
++import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
++import { createRequire } from 'module';
++import path from 'path';
++
++const require = createRequire(import.meta.url);
++
++// -- Paths --------------------------------------------------------------------
++const DEFAULT_APP = '/app';
++const APP = existsSync(DEFAULT_APP) ? DEFAULT_APP : (process.env.SR5_APP_ROOT || DEFAULT_APP);
++const DEFAULT_REPORT_DIR = '/logs/verifier';
++const REPORT_DIR = existsSync(DEFAULT_APP)
++    ? DEFAULT_REPORT_DIR
++    : (process.env.SR5_REPORT_DIR || DEFAULT_REPORT_DIR);
++const REPORT = path.join(REPORT_DIR, 'report.xml');
++const SUITE = 'modifiable_value_linked_decimal';
++
++const CASE_NAMES = [
++    // f2p
++    'ap_value_field_survives_fractional_input_unrounded',
++    'ap_base_field_survives_fractional_input_unrounded',
++    'linked_ap_schemafield_cleans_fractional_damage_ap_payload_intact',
++    'modifiable_value_total_rounds_up_not_truncated',
++    'modifiable_value_changes_apply_in_priority_order',
++    'reduce_damage_by_hits_does_not_mutate_original',
++    // p2p
++    'unrelated_value_field_bare_call_still_rounds_to_integer',
++    'value_max_pair_sibling_factory_still_integer_only',
++    'change_entry_numeric_fields_still_integer_only',
++    'threshold_bare_base_value_pair_call_still_integer_only',
++    'modifiable_value_min_max_enforcement_still_applies',
++    'modifiable_value_same_mode_changes_still_accumulate',
++    'modify_damage_by_hits_raising_path_still_adds_correctly',
++];
++
++const results = [];
++function record(name, passed, msg = '') {
++    results.push({ name, passed, msg });
++}
++function safe(name, fn) {
++    try {
++        fn();
++    } catch (e) {
++        record(name, false, `unexpected error: ${e && e.stack ? e.stack : e}`);
++    }
++}
++
++// -- Generic auto-stub for modules we do not model -----------------------------
++// apply() returns {} (not bare undefined): a real-loaded file that object-spreads an
++// auto-stubbed call's return value must not crash.
++function autoStub(label) {
++    const cache = new Map();
++    const fn = function () {};
++    return new Proxy(fn, {
++        get(_t, prop) {
++            if (prop === '__esModule') return true;
++            if (prop === Symbol.toPrimitive) return () => `[stub ${label}]`;
++            if (prop === 'toString') return () => `[stub ${label}]`;
++            if (prop === 'then') return undefined;
++            if (typeof prop === 'symbol') return undefined;
++            if (!cache.has(prop)) cache.set(prop, autoStub(`${label}.${String(prop)}`));
++            return cache.get(prop);
++        },
++        set() {
++            return true;
++        },
++        has() {
++            return true;
++        },
++        apply() {
++            return {};
++        },
++        construct() {
++            return {};
++        },
++    });
++}
++
++// -- Minimal, faithful-enough foundry.data.fields.DataField family ------------
++// Only clean() is modeled -- the part of Foundry's schema-field pipeline that decides whether a
++// fractional NumberField value survives a document update. An integer-constrained NumberField
++// ROUNDS a fractional input rather than rejecting it outright, which is exactly why a 0.5 AP
++// silently became 0/1 with no validation error shown to the user.
++class DataField {
++    constructor(options = {}) {
++        this.options = options || {};
++    }
++    getInitialValue() {
++        return 'initial' in this.options ? this.options.initial : undefined;
++    }
++    clean(value) {
++        if (value === undefined) return this.getInitialValue();
++        return value;
++    }
++}
++class StringField extends DataField {
++    getInitialValue() {
++        if ('initial' in this.options) return this.options.initial;
++        return this.options.required && !this.options.nullable ? '' : undefined;
++    }
++}
++class BooleanField extends DataField {
++    getInitialValue() {
++        return 'initial' in this.options ? this.options.initial : false;
++    }
++}
++class DocumentUUIDField extends DataField {}
++class NumberField extends DataField {
++    clean(value) {
++        if (value === undefined) return this.getInitialValue();
++        let v = typeof value === 'string' ? Number(value) : value;
++        if (typeof v === 'number' && Number.isFinite(v) && this.options.integer) v = Math.round(v);
++        return v;
++    }
++}
++class ArrayField extends DataField {
++    constructor(element, options = {}) {
++        super(options);
++        this.element = element;
++    }
++    getInitialValue() {
++        return 'initial' in this.options ? this.options.initial : [];
++    }
++    clean(value) {
++        const arr = Array.isArray(value) ? value : this.getInitialValue();
++        return arr.map((v) => (this.element && typeof this.element.clean === 'function' ? this.element.clean(v) : v));
++    }
++}
++class SchemaField extends DataField {
++    constructor(fields, options = {}) {
++        super(options);
++        this.fields = fields || {};
++    }
++    getInitialValue() {
++        const out = {};
++        for (const [k, f] of Object.entries(this.fields)) out[k] = f && typeof f.getInitialValue === 'function' ? f.getInitialValue() : undefined;
++        return out;
++    }
++    clean(value) {
++        const src = value && typeof value === 'object' ? value : {};
++        const out = {};
++        for (const [k, f] of Object.entries(this.fields)) {
++            out[k] = f && typeof f.clean === 'function' ? f.clean(src[k]) : src[k];
++        }
++        return out;
++    }
++}
++
++globalThis.foundry = {
++    data: { fields: { ArrayField, BooleanField, DocumentUUIDField, NumberField, SchemaField, StringField } },
++    // ModifiableValue.calcTotal() only ever reads clean numeric data through this, and
++    // Helpers.modifyDamageByHits() uses it to produce an independent copy before mutating --
++    // a real JSON round-trip is behaviourally identical to Foundry's own implementation for
++    // the plain {base, value, changes} shape this suite constructs.
++    utils: { duplicate: (x) => JSON.parse(JSON.stringify(x)) },
++};
++// CONFIG.Dice.rollModes is read at Action.ts module top-level (ActionRollData's roll_mode
++// field, reached via the module's own bottom-of-file console.log(ActionData(), new Action())
++// side effect). Only the shape needed for that field construction to not throw is modeled.
++globalThis.CONFIG = { Dice: { rollModes: {} } };
++// ModifiableValue.calcTotal() switches on these mode numbers directly; values are Foundry's own
++// published enum (foundry.CONST.ACTIVE_EFFECT_MODES): CUSTOM=0, MULTIPLY=1, ADD=2, DOWNGRADE=3,
++// UPGRADE=4, OVERRIDE=5.
++globalThis.CONST = { ACTIVE_EFFECT_MODES: { CUSTOM: 0, MULTIPLY: 1, ADD: 2, DOWNGRADE: 3, UPGRADE: 4, OVERRIDE: 5 } };
++
++// -- TypeScript loading of the real modules ------------------------------------
++let ts;
++for (const candidate of [
++    path.join(APP, 'node_modules/typescript'),
++    'typescript',
++    '/usr/local/lib/node_modules/typescript',
++]) {
++    try {
++        ts = require(candidate);
++        break;
++    } catch {
++        /* keep looking */
++    }
++}
++if (!ts) fatal('cannot require typescript - expected it in the image node_modules');
++
++const TRANSPILED = new Map();
++function transpile(absPath) {
++    if (TRANSPILED.has(absPath)) return TRANSPILED.get(absPath);
++    const source = readFileSync(absPath, 'utf8');
++    const out = ts.transpileModule(source, {
++        fileName: path.basename(absPath),
++        reportDiagnostics: true,
++        compilerOptions: {
++            module: ts.ModuleKind.CommonJS,
++            target: ts.ScriptTarget.ES2022,
++            useDefineForClassFields: true,
++            experimentalDecorators: false,
++            isolatedModules: true,
++        },
++    });
++    const errors = (out.diagnostics ?? []).filter((d) => d.category === 1);
++    if (errors.length) {
++        throw new Error(
++            `${path.basename(absPath)} does not compile: ` +
++                errors.map((d) => ts.flattenDiagnosticMessageText(d.messageText, ' ')).join(' | '),
++        );
++    }
++    TRANSPILED.set(absPath, out.outputText);
++    return out.outputText;
++}
++
++/**
++ * Real-module policy: a DIRECTORY prefix for src/module/types/template/ (16 files at base_commit
++ * -- Armor.ts, Attributes.ts, Base.ts, Condition.ts, ConditionMonitors.ts, Description.ts,
++ * ImportFlags.ts, Initiative.ts, Limits.ts, Matrix.ts, MatrixNetwork.ts, Movement.ts, Skills.ts,
++ * Technology.ts, Visibility.ts, Weapon.ts -- every one a small, pure schema-fragment factory with
++ * no cross-cutting side effects) PLUS one specific FILE, src/module/types/item/Action.ts. Using a
++ * directory prefix for template/ is what lets an off-file alternative fix add a brand-new sibling
++ * file there that Base.ts delegates to and still have it load and execute for real, instead of
++ * being silently auto-stubbed by name. Adding Action.ts as an exact file (not a directory prefix
++ * over src/module/types/item/) is the minimal extension needed so a legitimate alternative fix
++ * scoped to Action.ts's own construction of the ap field is executed for real too, without
++ * pulling in the rest of that directory's side-effect-heavy files.
++ */
++function makeLoader({ realPrefixes, moduleStubs = {} }) {
++    const cache = new Map();
++    const loadErrors = [];
++    function isRealModule(relPath) {
++        return realPrefixes.some((p) => relPath.startsWith(p));
++    }
++    function load(absPath) {
++        if (cache.has(absPath)) return cache.get(absPath);
++        const code = transpile(absPath);
++        const mod = { exports: {} };
++        cache.set(absPath, mod.exports);
++        const dir = path.dirname(absPath);
++        const req = (specifier) => {
++            const spec = String(specifier);
++            const base = spec.split('/').pop();
++            if (Object.prototype.hasOwnProperty.call(moduleStubs, base)) return moduleStubs[base];
++
++            let resolved = null;
++            if (spec.startsWith('.')) resolved = path.resolve(dir, spec);
++            else if (spec.startsWith('@/')) resolved = path.join(APP, 'src', spec.slice(2));
++            else if (spec.startsWith('src/')) resolved = path.join(APP, spec);
++
++            if (resolved) {
++                for (const candidate of [resolved + '.ts', path.join(resolved, 'index.ts')]) {
++                    if (!existsSync(candidate)) continue;
++                    const rel = path.relative(APP, candidate).split(path.sep).join('/');
++                    if (!isRealModule(rel)) break;
++                    try {
++                        return load(candidate);
++                    } catch (e) {
++                        loadErrors.push(`${rel}: ${e.message}`);
++                        return autoStub(spec);
++                    }
++                }
++            }
++            return autoStub(spec);
++        };
++        const factory = new Function('require', 'exports', 'module', '__filename', '__dirname', code);
++        factory(req, mod.exports, mod, absPath, dir);
++        cache.set(absPath, mod.exports);
++        return mod.exports;
++    }
++    const requireReal = (relPath) => load(path.join(APP, relPath));
++    return { requireReal, loadErrors };
++}
++
++function quiet(fn) {
++    const saved = {
++        log: console.log, info: console.info, debug: console.debug,
++        warn: console.warn, error: console.error, table: console.table,
++    };
++    console.log = console.info = console.debug = console.warn = console.error = console.table = () => {};
++    try {
++        return fn();
++    } finally {
++        Object.assign(console, saved);
++    }
++}
++
++const moduleStubs = {
++    config: { SR5: autoStub('SR5') },
++    // Action.ts imports ItemBase and TagifyAltField only for schema shapes this suite never
++    // constructs (BaseItemData; the categories/modifiers TagifyAltField fields on
++    // ActionRollData) -- auto-stubbing them keeps Action.ts's own module-load side effects
++    // harmless without modeling unrelated Foundry Document/UI machinery.
++    ItemBase: autoStub('ItemBase'),
++    TagifyAltField: autoStub('TagifyAltField'),
++    // ModifiableField never overrides clean() (verified by reading ModifiableField.ts at the fix
++    // commit -- it only overrides applyChange(), the ActiveEffect-change-application path this
++    // suite does not exercise), so substituting the harness's own SchemaField for it is
++    // behaviourally identical for every assertion this suite makes, and avoids needing to model
++    // foundry.abstract.DataModel just to satisfy ModifiableField's own class-extends clause.
++    ModifiableField: { ModifiableField: SchemaField },
++};
++// src/module/mods/ModifiableValue.ts and src/module/helpers.ts are added as exact FILES (not
++// directory prefixes): both are small, dependency-free consumers of the same ModifiableValue
++// shape the f2p suite already exercises -- ModifiableValue.ts's only import is the TYPE-only
++// ModifiableValueType (erased at transpile time, never resolved at runtime), and helpers.ts's
++// many other imports (SR5Actor, SR5Item, DeleteConfirmationDialog, constants, DataDefaults) are
++// all auto-stubbed by name since none of them are on this real-module list and this suite only
++// calls Helpers.modifyDamageByHits()/reduceDamageByHits(), which touch none of them.
++const loader = makeLoader({
++    realPrefixes: [
++        'src/module/types/template/',
++        'src/module/types/item/Action.ts',
++        'src/module/mods/ModifiableValue.ts',
++        'src/module/helpers.ts',
++    ],
++    moduleStubs,
++});
++
++let RealBase, RealAction, RealModifiableValue, RealHelpers;
++try {
++    RealBase = quiet(() => loader.requireReal('src/module/types/template/Base.ts'));
++    RealAction = quiet(() => loader.requireReal('src/module/types/item/Action.ts'));
++    RealModifiableValue = quiet(() => loader.requireReal('src/module/mods/ModifiableValue.ts'));
++    RealHelpers = quiet(() => loader.requireReal('src/module/helpers.ts'));
++} catch (e) {
++    fatal(`could not load real modules: ${e && e.stack ? e.stack : e}`);
++}
++if (loader.loadErrors.length) {
++    fatal(`module load errors: ${loader.loadErrors.join(' || ')}`);
++}
++if (typeof RealBase.BaseValuePair !== 'function') fatal('BaseValuePair did not load as a function');
++if (typeof RealBase.ModifiableValueSchema !== 'function') fatal('ModifiableValueSchema did not load as a function');
++if (typeof RealBase.ValueField !== 'function') fatal('ValueField did not load as a function');
++if (typeof RealBase.ValueMaxPair !== 'function') fatal('ValueMaxPair did not load as a function');
++if (typeof RealAction.DamageData !== 'function') fatal('DamageData did not load as a function');
++if (typeof RealModifiableValue.ModifiableValue !== 'function') fatal('ModifiableValue did not load as a function');
++if (typeof RealHelpers.Helpers !== 'function') fatal('Helpers did not load as a function');
++
++// -- f2p ---------------------------------------------------------------------
++// All three drive the real, transpiled Action.ts's own construction of the "ap" field -- the
++// literal AP field on every damage-dealing Item's action, including the "Elemental Body" Adept
++// Power shown in the issue's own screenshot -- rather than an internal Base.ts factory in
++// isolation. A fix threaded through Base.ts (the historical PR's shape) and a fix scoped locally
++// to Action.ts's own ap construction (leaving Base.ts untouched) are both exercised for real and
++// score identically here, because both are real-loaded and this suite reads the field exactly as
++// the real application uses it, not an implementation detail private to either file.
++
++safe('ap_value_field_survives_fractional_input_unrounded', () => {
++    const damage = quiet(() => RealAction.DamageData());
++    const cleaned = damage.ap.fields.value.clean(0.5);
++    record('ap_value_field_survives_fractional_input_unrounded', cleaned === 0.5, `expected 0.5, got ${JSON.stringify(cleaned)}`);
++});
++
++safe('ap_base_field_survives_fractional_input_unrounded', () => {
++    const damage = quiet(() => RealAction.DamageData());
++    const cleaned = damage.ap.fields.base.clean(0.5);
++    record('ap_base_field_survives_fractional_input_unrounded', cleaned === 0.5, `expected 0.5, got ${JSON.stringify(cleaned)}`);
++});
++
++// [f2p] End-to-end: exactly how Action.ts wires this schema fragment for real -- drive a full
++// damage.ap update payload (as a real actor-sheet edit to the "Elemental Body" Adept Power's
++// Armor Penetration, the issue's own screenshot, would produce) and confirm both numeric halves
++// survive together, with the sibling attribute/base_formula_operator fields untouched.
++safe('linked_ap_schemafield_cleans_fractional_damage_ap_payload_intact', () => {
++    const damage = quiet(() => RealAction.DamageData());
++    const cleaned = damage.ap.clean({ value: 0.5, base: 0.5, changes: [], attribute: 'magic', base_formula_operator: '*' });
++    const ok = cleaned.value === 0.5 && cleaned.base === 0.5 && cleaned.attribute === 'magic' && cleaned.base_formula_operator === '*';
++    record('linked_ap_schemafield_cleans_fractional_damage_ap_payload_intact', ok, `got ${JSON.stringify(cleaned)}`);
++});
++
++// -- p2p ---------------------------------------------------------------------
++
++// [p2p] ValueField() (used for the widely-shared skill/attribute "value" display objects across
++// the codebase) calls ModifiableValueSchema() BARE -- must stay integer-only on both base and fix.
++safe('unrelated_value_field_bare_call_still_rounds_to_integer', () => {
++    const vf = quiet(() => RealBase.ValueField());
++    const cleaned = vf.value.clean(0.5);
++    record('unrelated_value_field_bare_call_still_rounds_to_integer', cleaned !== 0.5, `expected rounding away from 0.5, got ${JSON.stringify(cleaned)}`);
++});
++
++// [p2p] ValueMaxPair() is a WHOLLY SEPARATE, untouched factory (its own hardcoded
++// integer: true, never delegates to BaseValuePair) -- guards against an overly broad fix that
++// changes NumberField's integer behaviour globally instead of scoping it to the AP field.
++safe('value_max_pair_sibling_factory_still_integer_only', () => {
++    const vmp = quiet(() => RealBase.ValueMaxPair());
++    const cleaned = vmp.value.clean(0.5);
++    record('value_max_pair_sibling_factory_still_integer_only', cleaned !== 0.5, `expected rounding, got ${JSON.stringify(cleaned)}`);
++});
++
++// [p2p] The AP field's own changes array (ActiveEffect-change entries) is an unrelated shape,
++// not a stored value/base pair -- must remain integer-only on both base and fix. Reached via the
++// real Action.ts-constructed ap field so it also covers a fix scoped locally to Action.ts.
++safe('change_entry_numeric_fields_still_integer_only', () => {
++    const damage = quiet(() => RealAction.DamageData());
++    const changeSchema = damage.ap.fields.changes.element;
++    const cleaned = changeSchema.clean({ name: 'x', mode: 0.5, value: 0.5, priority: 0.5, effectUuid: null, enabled: true, invalidated: false });
++    const ok = cleaned.mode !== 0.5 && cleaned.value !== 0.5 && cleaned.priority !== 0.5;
++    record('change_entry_numeric_fields_still_integer_only', ok, `expected all rounded, got ${JSON.stringify(cleaned)}`);
++});
++
++// [p2p] A bare BaseValuePair() call (mirroring ActionRollData()'s own
++// threshold: new SchemaField(BaseValuePair())) must default to integer-only on BOTH base and
++// fix -- a fix must not change BaseValuePair's own default behaviour.
++safe('threshold_bare_base_value_pair_call_still_integer_only', () => {
++    const bvp = quiet(() => RealBase.BaseValuePair());
++    const cleaned = bvp.value.clean(0.5);
++    record('threshold_bare_base_value_pair_call_still_integer_only', cleaned !== 0.5, `expected rounding, got ${JSON.stringify(cleaned)}`);
++});
++
++// -- f2p (ModifiableValue.calcTotal / Helpers.modifyDamageByHits) -------------
++// All three drive the real, transpiled computation that every ModifiableValue field (Base
++// Damage, AP, Limit) resolves through to get its final number -- not schema clean(), but the
++// actual arithmetic. Each is latent under the pre-fix, integer-only world (ceil/trunc of an
++// integer are identical; a single change has no "order"; an aliased copy of an already-integral
++// value happens to look fine in a quick manual check) and only becomes observably wrong now
++// that fractional totals are possible.
++
++// [f2p] SR5#78 ("All values are rounded up") is the class's own documented rule. 2.1 has no
++// other correct rounding under that rule; this is FORCED by the stated behaviour, not a choice.
++safe('modifiable_value_total_rounds_up_not_truncated', () => {
++    const field = { base: 2.1, value: 0, changes: [] };
++    const total = RealModifiableValue.ModifiableValue.calcTotal(field);
++    record('modifiable_value_total_rounds_up_not_truncated', total === 3, `expected 3 (round up per SR5#78), got ${JSON.stringify(total)}`);
++});
++
++// [f2p] Two changes of DIFFERENT modes and priorities: a MULTIPLY at the lower priority and an
++// ADD at the higher one. Foundry's own application order is ascending priority, so MULTIPLY must
++// land before ADD: (1*3)+5=8. Both inputs are plain integers, so this is isolated from the
++// rounding test above -- only ordering can move the result away from 8.
++safe('modifiable_value_changes_apply_in_priority_order', () => {
++    const { MULTIPLY, ADD } = CONST.ACTIVE_EFFECT_MODES;
++    const field = {
++        base: 1, value: 0,
++        changes: [
++            { name: 'mult', value: 3, mode: MULTIPLY, priority: 10, enabled: true, invalidated: false, effectUuid: null },
++            { name: 'add', value: 5, mode: ADD, priority: 20, enabled: true, invalidated: false, effectUuid: null },
++        ],
++    };
++    const total = RealModifiableValue.ModifiableValue.calcTotal(field);
++    record('modifiable_value_changes_apply_in_priority_order', total === 8, `expected 8 ((1*3)+5 in ascending-priority order), got ${JSON.stringify(total)}`);
++});
++
++// [f2p] Reducing damage must return an INDEPENDENT modified copy -- the original object handed
++// in must be untouched. A single integer-only change with no sibling changes, so this is
++// isolated from both tests above; only a missing clone can move `original.value` off 10.
++safe('reduce_damage_by_hits_does_not_mutate_original', () => {
++    const original = { base: 10, value: 10, changes: [] };
++    const { modified } = RealHelpers.Helpers.reduceDamageByHits(original, 3, 'test');
++    const ok = !!modified && modified.value === 7 && original.value === 10;
++    record('reduce_damage_by_hits_does_not_mutate_original', ok,
++        `expected modified.value=7 and original.value unchanged at 10, got modified=${JSON.stringify(modified && modified.value)} original=${JSON.stringify(original.value)}`);
++});
++
++// -- p2p (ModifiableValue.calcTotal / Helpers.modifyDamageByHits) -------------
++
++// [p2p] min/max enforcement is untouched code -- no changes array to sort, an integral clamp
++// target, so neither the rounding fix nor the ordering fix can move this result.
++safe('modifiable_value_min_max_enforcement_still_applies', () => {
++    const field = { base: 10, value: 0, changes: [] };
++    const total = RealModifiableValue.ModifiableValue.calcTotal(field, { max: 5 });
++    record('modifiable_value_min_max_enforcement_still_applies', total === 5, `expected clamped to max 5, got ${JSON.stringify(total)}`);
++});
++
++// [p2p] Two SAME-mode changes at the SAME priority: addition commutes and Array#sort is stable
++// on ties, so this totals 10 whichever way the comparator runs -- guards that the ordering fix
++// does not somehow break plain accumulation.
++safe('modifiable_value_same_mode_changes_still_accumulate', () => {
++    const { ADD } = CONST.ACTIVE_EFFECT_MODES;
++    const field = {
++        base: 5, value: 0,
++        changes: [
++            { name: 'a', value: 2, mode: ADD, priority: 20, enabled: true, invalidated: false, effectUuid: null },
++            { name: 'b', value: 3, mode: ADD, priority: 20, enabled: true, invalidated: false, effectUuid: null },
++        ],
++    };
++    const total = RealModifiableValue.ModifiableValue.calcTotal(field);
++    record('modifiable_value_same_mode_changes_still_accumulate', total === 10, `expected 5+2+3=10 regardless of application order, got ${JSON.stringify(total)}`);
++});
++
++// [p2p] The RAISING path (positive hits, used directly rather than through reduceDamageByHits)
++// only checks the computed value, never independence -- unaffected by the clone fix either way,
++// so this guards the arithmetic itself keeps working.
++safe('modify_damage_by_hits_raising_path_still_adds_correctly', () => {
++    const original = { base: 5, value: 0, changes: [] };
++    const { modified } = RealHelpers.Helpers.modifyDamageByHits(original, 3, 'test');
++    record('modify_damage_by_hits_raising_path_still_adds_correctly', !!modified && modified.value === 8,
++        `expected 5+3=8, got ${JSON.stringify(modified && modified.value)}`);
++});
++
++// -- Report --------------------------------------------------------------------
++
++writeReport(results);
++for (const r of results) {
++    console.log(`${r.passed ? 'PASS' : 'FAIL'} ${r.name}${r.passed ? '' : ` - ${r.msg}`}`);
++}
++const failed = results.filter((r) => !r.passed);
++process.exit(failed.length ? 1 : 0);
++
++// -- Utilities -------------------------------------------------------------------
++
++function writeReport(cases) {
++    const failures = cases.filter((c) => !c.passed).length;
++    const rows = cases.map((c) => {
++        const inner = c.passed ? '' : `\n    <failure message="${esc(c.msg)}">${esc(c.msg)}</failure>`;
++        return `  <testcase classname="${SUITE}" name="${esc(c.name)}" time="0">` + inner + `\n  </testcase>`;
++    });
++    const xml =
++        `<?xml version="1.0" encoding="utf-8"?>\n` +
++        `<testsuite name="${SUITE}" tests="${cases.length}" ` +
++        `failures="${failures}" errors="0" time="1">\n` +
++        rows.join('\n') +
++        '\n</testsuite>\n';
++    mkdirSync(REPORT_DIR, { recursive: true });
++    writeFileSync(REPORT, xml, 'utf8');
++}
++
++function esc(s) {
++    return String(s ?? '')
++        .replace(/&/g, '&amp;')
++        .replace(/</g, '&lt;')
++        .replace(/>/g, '&gt;')
++        .replace(/"/g, '&quot;');
++}
++
++function fatal(msg) {
++    const rows = CASE_NAMES.map(
++        (name) =>
++            `  <testcase classname="${SUITE}" name="${esc(name)}" time="0">\n` +
++            `    <error message="${esc(msg)}">${esc(msg)}</error>\n` +
++            `  </testcase>`,
++    );
++    const xml =
++        `<?xml version="1.0" encoding="utf-8"?>\n` +
++        `<testsuite name="${SUITE}" tests="${CASE_NAMES.length}" ` +
++        `failures="${CASE_NAMES.length}" errors="${CASE_NAMES.length}" time="0">\n` +
++        rows.join('\n') +
++        '\n</testsuite>\n';
++    mkdirSync(REPORT_DIR, { recursive: true });
++    writeFileSync(REPORT, xml, 'utf8');
++    console.error('FATAL:', msg);
++    process.exit(2);
++}

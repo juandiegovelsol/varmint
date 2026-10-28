@@ -1,0 +1,46 @@
+{
+  "behavior_in_task_description": {
+    "outcome": "pass",
+    "explanation": "instruction.md states the exact behavior the tests enforce: render the app as in before.png (covered by the f2p snapshot test_auto_in_auto), and explicitly calls out that 'containers that set an explicit minimum or maximum size must go on placing their contents exactly as they do now' — which is precisely what the p2p test_align_center_respects_min_height/min_width tests check. The remaining p2p tests (test_arrange::*, test_box_model::*) are covered by the general 'everything the layout engine gets right today must keep working' statement, which is the intended framing for a visual-regression task where the before/after screenshots are the spec."
+  },
+  "behavior_in_tests": {
+    "outcome": "pass",
+    "explanation": "Every behavior instruction.md calls for is exercised: the visual regression fix is graded by the f2p snapshot test (test_auto_in_auto), and the 'must not break existing min/max sizing behavior' requirement is graded by the p2p tests (test_align_center_respects_min_height/width plus the pre-existing arrange/box-model suites). No described behavior is left untested."
+  },
+  "informative_test_structure": {
+    "outcome": "pass",
+    "explanation": "tests/test.sh is broken into clearly labeled, commented stages (resetting test files, applying test.patch, installing pinned deps, running tests, computing reward). tests/verifier.py and tests/judge.py have detailed docstrings explaining the reward policy and two-phase judge contract. tests/test_align_min.py has a docstring explaining exactly what invariant each of its two tests checks."
+  },
+  "anti_cheating_measures": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile clones the real repo, checks out the base commit, then strips .git and re-inits a single-commit history so the agent cannot inspect the future fix commit or PR. Test-only tooling (pytest, pytest-textual-snapshot, syrupy) is staged as wheels but deliberately not installed in the image, so its mere presence doesn't hint at how grading works. test.sh resets tests/ from harbor_base and cleans untracked files before applying test.patch, so a submission cannot neuter the harness. judge.py explicitly withholds the task instruction, the golden fix.patch, and the test.patch from the LLM judge to avoid turning it into a similarity checker. tests/ and solution/ are not baked into the image."
+  },
+  "structured_data_schema": {
+    "outcome": "not_applicable",
+    "explanation": "This is a source-code bug-fix task (a layout-engine regression in src/textual/_arrange.py); the agent is not expected to produce any structured JSON/CSV/API output, so no schema documentation is required."
+  },
+  "pinned_dependencies": {
+    "outcome": "pass",
+    "explanation": "environment/Dockerfile pins rich==15.0.0 (the runtime renderer whose output the snapshot baseline depends on) and downloads pinned wheels for pytest==8.4.2, pytest-asyncio==1.4.0, pytest-textual-snapshot==1.1.0, syrupy==4.8.0, jinja2==3.1.6; tests/test.sh installs those exact pinned versions at verify time via --no-index."
+  },
+  "typos": {
+    "outcome": "pass",
+    "explanation": "Checked commit hashes (base_commit/fix_commit are valid 40-character hex strings and match between task.toml and the Dockerfile's checkout), file paths (asset manifest container_path matches instruction.md image references and Dockerfile COPY destination), task_id (matches between task.toml and tests/config.json), and test file names (match between tests/config.json and tests/test.sh's pytest invocation). No typos found."
+  },
+  "tests_or_solution_in_image": {
+    "outcome": "pass",
+    "explanation": "environment/Dockerfile only COPYs assets/ into /app/.harbor_assets/; a comment explicitly notes 'tests/ and solution/ are intentionally NOT copied into the image — the harness supplies them at verify time.'"
+  },
+  "test_deps_in_image": {
+    "outcome": "pass",
+    "explanation": "pytest, pytest-asyncio, pytest-textual-snapshot, syrupy, and jinja2 are only downloaded as wheels to /opt/verifier-deps during image build (not installed/importable), with a comment explaining this is to avoid tipping off the agent that grading uses a snapshot-comparison plugin. tests/test.sh installs them from the local wheel cache with --no-index at verify time."
+  },
+  "hardcoded_solution": {
+    "outcome": "pass",
+    "explanation": "solution/fix.patch is a real code change to src/textual/_arrange.py that resolves the minimum size for auto dimensions before alignment (not a stub or answer dump), and solution/solve.sh applies that patch via git apply/patch rather than echoing a precomputed result."
+  },
+  "file_reference_mentioned": {
+    "outcome": "not_applicable",
+    "explanation": "The task requires a source-code fix (src/textual/_arrange.py per task.toml files_edited), not the creation of new output files the agent must name; grading runs pytest against pre-existing/patched test files, so there is no agent-produced filename that instruction.md would need to disclose."
+  }
+}

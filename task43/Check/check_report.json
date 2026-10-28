@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "checks": {
+        "behavior_in_task_description": {
+          "explanation": "instruction.md states the governing rule precisely: a chart's readout must always match the currently-focused chart (nothing survives a focus loss), while a reader-initiated dismissal is distinct from a focus loss and must persist through a blur/focus round trip but clear on the next move. Every f2p behavior tested (tooltip clears on blur, tooltip restores to the same point on refocus, tooltip clears when tabbing to another chart, a dismissed readout reappears on the next arrow-key move) is a direct instance of that stated rule, and the screenshot supplies the concrete violation. The task is intentionally abstract (no file names, no key names, no repro steps, per difficulty_explanation) but the rule itself fully determines the tested behavior rather than requiring guesses beyond it.",
+          "outcome": "pass"
+        },
+        "behavior_in_tests": {
+          "explanation": "The two behaviors instruction.md describes (readout must not survive a focus change; a reader's deliberate dismissal must survive a focus round trip but clear on the next move) are both covered: f2p tests check blur-clears-tooltip, refocus-restores-same-point, cross-chart tab clears the old chart's tooltip, and dismiss-then-move restores; p2p tests check dismiss-survives-round-trip and that arrow navigation continues from the restored index. No behavior stated in the instruction is left unchecked.",
+          "outcome": "pass"
+        },
+        "informative_test_structure": {
+          "explanation": "test.patch adds clearly named test cases ('Tooltip closes when chart loses focus', 'A readout put away by the reader comes back as soon as they move on', etc.) with inline comments marking each step of the interaction being asserted. test.sh is broken into commented, numbered steps (restore test files, apply patch, select tests, run vitest, compute reward), and verifier.py has a module docstring plus a comment explaining the exact-match resolution policy and why substring matching was rejected. Overall organization is easy to follow and maintain.",
+          "outcome": "pass"
+        },
+        "anti_cheating_measures": {
+          "explanation": "The Dockerfile clones the repo, checks out the pre-fix base_commit, then strips .git and re-inits a single-commit repo tagged harbor_base — so the agent has no way to browse the real fix commit or PR history from within the container, and network_mode is 'no-network' for the agent. tests/ and solution/ are explicitly not COPYed into the image (only environment/assets/ is), and are supplied by the harness at verify time. The verifier resets test files to harbor_base before applying test.patch (so an agent that edited the test file to force a pass gets overwritten) and resolves test identifiers by exact ID rather than substring matching to avoid one test's result leaking onto another. Reward is computed purely from the vitest JUnit report, not by grepping source for the fix.",
+          "outcome": "pass"
+        },
+        "structured_data_schema": {
+          "explanation": "This is a source-code bug-fix task (React/TypeScript state-management fix) verified via unit test execution, not a task that requires the agent to emit structured data (JSON/CSV/API output), so no output schema is expected in instruction.md.",
+          "outcome": "not_applicable"
+        },
+        "pinned_dependencies": {
+          "explanation": "The Dockerfile uses `npm ci`, which installs exactly the versions recorded in package-lock.json and fails if the lockfile and package.json disagree, and the comment explains this was chosen over pnpm specifically because pnpm re-resolved semver ranges (vitest, jsdom, testing-library) unpinned on each build. apt packages (git, chromium, etc.) are unpinned, which is acceptable per guidance.",
+          "outcome": "pass"
+        },
+        "typos": {
+          "explanation": "No introduced typos were found in filenames, paths, or commands across the Dockerfile, task.toml, tests/*, and solution/*; asset paths (/app/.harbor_assets/bug_screenshot_1.png) are consistent across instruction.md, the Dockerfile, ASSET_MANIFEST.json, and evidence_bundle.json. One test name ('does not tabindex and role to the svg element') is missing the word 'add', but this reproduces an existing upstream recharts test title verbatim (needed for exact-ID matching against the real suite), not an error introduced by the task author.",
+          "outcome": "pass"
+        },
+        "tests_or_solution_in_image": {
+          "explanation": "The Dockerfile only COPYs environment/assets/ into the image; tests/ and solution/ are never referenced or copied in the Dockerfile, and an explicit comment confirms they are supplied by the harness at verify time, not baked in.",
+          "outcome": "pass"
+        },
+        "test_deps_in_image": {
+          "explanation": "The only 'test' dependencies present at build time (vitest, jsdom, @testing-library/react) are the repository's own devDependencies, installed via `npm ci` for the whole project so verification does not depend on network access at verify time — this is the project's standard dependency set, not extra grading-only tooling. python3, used only by test.sh/verifier.py, is part of the node:22-bookworm base image (built on buildpack-deps) rather than something separately installed for tests.",
+          "outcome": "pass"
+        },
+        "hardcoded_solution": {
+          "explanation": "solve.sh applies solution/fix.patch via git apply/patch — i.e., it reproduces the actual multi-file source diff the upstream PR made (RechartsWrapper.tsx, TooltipBoundingBox.tsx, keyboardEventsMiddleware.ts) rather than echoing or cat-ing a final answer file. This mirrors the process an agent would perform (editing source to add blur handling, switch to setState, and distinguish blur-caused vs. reader-ended interactions).",
+          "outcome": "pass"
+        },
+        "file_reference_mentioned": {
+          "explanation": "The task requires editing existing source files to fix behavior verified by running the test suite; it does not require the agent to produce new named output files (e.g., output.csv) for the verifier to check, so there is no file reference that instruction.md would need to call out.",
+          "outcome": "not_applicable"
+        }
+      },
+      "cost_usd": 0.4239775499999999,
+      "task_name": "Tasks",
+      "error": null
+    }
+  ]
+}

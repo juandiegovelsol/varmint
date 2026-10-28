@@ -1,0 +1,37 @@
+version = "1.0"
+
+[metadata]
+task_id = "fabricjs__fabric.js-10640-mm"
+title = "Text decorations render at one immutable weight"
+repository_name = "fabricjs/fabric.js"
+repo_url = "https://github.com/fabricjs/fabric.js"
+issue_number = 10640
+pr_number = 10643
+base_commit = "bf5c66dc89474b441942eceafb5fb3b6f9c68913"
+fix_commit = "986f9b131612e067c380e535514f92be9e74857a"
+task_type = "design_reference"
+language = "TypeScript"
+framework = "fabricjs"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "medium"
+difficulty_explanation = "The instruction asks for every behaviour the tests measure and names the reference renders as normative for the scope of the change; the renders are where that scope is quantified. design_ref_5 and design_ref_6 show a line above, a line through and a line below coexisting on one object, each run of characters carrying its own weight, and the heaviest runs spilling past the bounding box — the last being an accepted trade-off the agent must not 'correct'. Reading the pixels is what separates a passing fix from an object-level, single-decoration control, which is why the renders are required rather than corroborating. The engineering is non-trivial independently of the perception: the weight has to be threaded through the canvas render path, the SVG export path, the SVG import/parser path, the per-character style serialization and the cache-property metadata across six source files, and the decoration offsets have to be re-centred so heavier lines stay anchored. A change confined to one path (canvas only, SVG only, or object-level only) does not clear the suite."
+files_edited = [ "src/parser/constants.ts", "src/parser/normalizeValue.ts", "src/shapes/Text/Text.ts", "src/shapes/Text/TextSVGExportMixin.ts", "src/shapes/Text/constants.ts", "src/util/misc/textStyles.ts",]
+f2p = [ "decoration weight is configurable and scales the emitted SVG", "decoration weight applies to underline, overline and linethrough", "decoration weight varies per character inside one text object", "decoration weight survives object round-trip serialization", "default decoration weight is exposed and left unchanged",]
+p2p = [ "getSvgTextDecoration with overline true produces correct output", "getSvgTextDecoration with overline underline true produces correct output", "getSvgTextDecoration with overline underline linethrough true produces correct output", "getSvgSpanStyles produces correct output", "exports text background color correctly", "exports text background color opacity correctly",]
+tags = [ "multimodal", "design_reference", "fabricjs", "cross_file", "visual_required",]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "no-network"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

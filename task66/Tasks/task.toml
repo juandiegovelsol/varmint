@@ -1,0 +1,53 @@
+version = "1.0"
+
+[metadata]
+task_id = "radix-ui__primitives-2049-mm"
+title = "Select: prevent item horizontal offset to be lower than 0"
+repository_name = "radix-ui/primitives"
+repo_url = "https://github.com/radix-ui/primitives"
+issue_number = 2049
+pr_number = 3149
+base_commit = "53287e0d9df330657297a0d15ec333663cf7ca09"
+fix_commit = "a555a40478ec3e804b644461cdda49513f44f5d8"
+task_type = "visual_bug_fix"
+language = "TypeScript"
+framework = "React"
+cross_file = false
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = """The screenshots carry the diagnosis. The text says only that the pop-up list is drawn partly outside the window on a narrow screen; it never names the control, the file, or the mechanism. The first screenshot is what identifies the widget (a grouped option list with a check indicator on the selected row, opened over its trigger), shows which edge it escapes from (the starting edge, with the first characters of every row clipped off the screen), and shows that it is the whole panel that is displaced, not the text inside it. The second shows the corrected panel sitting inside the screen with the same small gutter it already keeps from the other edges. Localizing the defect means recognising the widget from the render, finding the item-aligned positioning path among several positioning strategies, and working out that the clamp range inverts (upper bound falls below the lower bound) once the content is wider than the available width, which silently returns a negative offset. A one-line change does not pass: the same inversion has to be handled in the right-to-left branch, which sets a right offset instead, and the option list must stop scrolling sideways while still scrolling vertically, which is a separate change in a different component of the same file. Two pass-to-pass guards additionally reject the shortcuts, so pinning the panel to the gutter unconditionally or shrinking it below the trigger width scores 0.5 rather than 1.0."""
+files_edited = [
+  "packages/react/select/src/Select.tsx"
+]
+f2p = [
+  "positions content within viewport in LTR mode when content exceeds available width",
+  "positions content within viewport in RTL mode when content exceeds available width",
+  "scrolls the option list vertically only when an option overflows"
+]
+p2p = [
+  "renders trigger element with placeholder visible",
+  "renders dropdown with item text when open",
+  "keeps the trigger-aligned offset when the content fits on screen",
+  "keeps the content at least as wide as the trigger when an option overflows"
+]
+tags = ["multimodal", "visual_bug_fix", "React", "TypeScript", "viewport-overflow", "clamping", "rtl", "synthetic-tests"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"
+
+[verifier.env]
+EVAL_API_KEY = "${OPENAI_API_KEY}"
+EVAL_BASE_URL = "${OPENAI_API_BASE}"
+EVAL_MODEL = "${EVAL_MODEL:-anthropic/claude-opus-4-5-20251101}"

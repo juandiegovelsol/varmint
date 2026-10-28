@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "checks": {
+        "behavior_in_task_description": {
+          "explanation": "The instruction relies on captioned images by design. Together they define both scenarios exactly: A (Tab, Right Arrow, remove Italic, Shift+Tab lands on 'Before') and B (first button disabled, the second Tab skips the toolbar), plus Expected frames with focus inside the toolbar. The instruction says any button in the group is acceptable, which matches the tests' flexible checks. The tests' follow-up checks (later Tab/Shift+Tab round-trips, arrow navigation still working) are covered by 'Keep all other behavior unchanged, including ... whatever the same keys do afterwards.'",
+          "outcome": "pass"
+        },
+        "behavior_in_tests": {
+          "explanation": "Each scenario has its own f2p test: a stale activeId after the active item is removed, and a disabled activeId. Both reproduce the pictured key sequences. The p2p tests (composite, toolbar, tab, radio keyboard navigation) check that other behavior is preserved, as the instruction asks.",
+          "outcome": "pass"
+        },
+        "informative_test_structure": {
+          "explanation": "The vitest tests are short and have descriptive names, with comments marking each step (entering the toolbar, arrow navigation skipping the removed button). test.sh and verifier.py are well commented and clearly split into stages (capture, restore, apply tests, run, reward). A few comments are leftover boilerplate (mentions of wx) but do not hurt readability.",
+          "outcome": "pass"
+        },
+        "anti_cheating_measures": {
+          "explanation": "The Dockerfile removes the upstream git history so the fix commit can't be reached, and the agent runs with no network. Tests and solution are not copied into the image; only the PNG evidence is. test.sh restores protected test and config files and applies the hidden tests before running them. The tests accept any button in the group, so the reward depends on real behavior, not on matching a specific implementation.",
+          "outcome": "pass"
+        },
+        "structured_data_schema": {
+          "explanation": "The task is a behavioral code fix and produces no structured output.",
+          "outcome": "not_applicable"
+        },
+        "pinned_dependencies": {
+          "explanation": "The repo is checked out at a fixed base commit, and dependencies are installed with npm ci from the lockfile. The base image is node:20-bookworm. No unpinned pip installs are used.",
+          "outcome": "pass"
+        },
+        "typos": {
+          "explanation": "No typos in paths, test names, or commands. The test ids in config.json match the test names in test.patch, and the asset paths in the instruction match the Dockerfile COPY destination. ${REPORTS[@]} is never defined, but under set -u in bash 5.2 an unset array expands to nothing, so it is harmless.",
+          "outcome": "pass"
+        },
+        "tests_or_solution_in_image": {
+          "explanation": "The Dockerfile copies only assets/*.png into /app/.harbor_assets. Neither tests/ nor solution/ is copied.",
+          "outcome": "pass"
+        },
+        "test_deps_in_image": {
+          "explanation": "The image installs only the repo's own dependencies (npm ci), which the project needs anyway. vitest is a project dependency, and no extra test-only tooling is baked in.",
+          "outcome": "pass"
+        },
+        "hardcoded_solution": {
+          "explanation": "solve.sh applies the upstream developer's source fix to composite-item.tsx, which makes items tabbable when activeId points to a disabled or disconnected item. The behavior comes from a real code change, not from echoing outputs.",
+          "outcome": "pass"
+        },
+        "file_reference_mentioned": {
+          "explanation": "The agent fixes existing source code and creates no output files; the hidden tests bring their own example files.",
+          "outcome": "not_applicable"
+        }
+      },
+      "cost_usd": 0.34755440000000004,
+      "task_name": "ariakit__ariakit-4129-mm",
+      "error": null
+    }
+  ]
+}

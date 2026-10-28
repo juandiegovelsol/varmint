@@ -1,0 +1,46 @@
+{
+  "behavior_in_task_description": {
+    "outcome": "pass",
+    "explanation": "instruction.md describes all three symptoms that the f2p tests check: the tooltip's first line (readout), second line (label), and its highlight all freeze at first-render instead of continuing to track live values while the tooltip stays open, and it explicitly calls out that sliding to a new point must show that point's values immediately (matching the p2p 'follows newly hovered milestone without tick' guard). The instruction intentionally withholds file/component names as part of the intended difficulty (per task.toml's difficulty_explanation), but the observable behavior under test is fully covered in prose."
+  },
+  "behavior_in_tests": {
+    "outcome": "pass",
+    "explanation": "Every behavior called out in instruction.md (two frozen text lines, frozen highlight, and immediate hover-switch without waiting for a tick) maps onto a concrete test: the three f2p tests cover the cycling description, resource text, and highlight tracking across ticks, and the p2p tests guard the immediate-hover-switch behavior plus baseline rendering. No described behavior is left untested."
+  },
+  "informative_test_structure": {
+    "outcome": "pass",
+    "explanation": "tests/test.sh is divided into clearly commented steps (reset test.patch paths, apply test.patch, install pinned deps, run jest, compute reward). The spec file in test.patch has a large header comment explaining the bug mechanism and test philosophy, and each test has a descriptive name and inline comments explaining BASE vs FIX expectations. verifier.py documents the jest JSON schema and reward policy clearly."
+  },
+  "anti_cheating_measures": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile clones the repo, checks out only the base commit, then strips .git and re-inits a single-commit history so the agent cannot inspect the fix commit/PR or future history. tests/ and solution/ are not copied into the image (only environment/assets/ is). Agent and verifier run with network_mode = no-network, preventing the agent from fetching the upstream fix at runtime. The verifier resets any test.patch-covered paths from the harbor_base tag before reapplying test.patch, so agent edits to test files can't influence scoring. Test fixtures deliberately avoid making the frozen state Vue-reactive (WeakMap-backed prototype getters) so a naive/incorrect fix can't pass by accident, and assertions check only rendered output, not internal names."
+  },
+  "structured_data_schema": {
+    "outcome": "not_applicable",
+    "explanation": "This is a UI/reactivity bug fix task; the deliverable is a code change in an existing Vue component, not a structured data output (API/JSON/CSV/DB schema), so this criterion does not apply."
+  },
+  "pinned_dependencies": {
+    "outcome": "pass",
+    "explanation": "Test-only dependencies installed at verify time are explicitly pinned (jest@27.5.1, babel-jest@27.5.1, @babel/preset-env@7.23.5). The base image uses node:18-bookworm (pinned major/distro tag) and repo dependencies are installed via `npm ci` from the lockfile for reproducibility. apt packages are unpinned but that is acceptable per the stated guidance."
+  },
+  "typos": {
+    "outcome": "pass",
+    "explanation": "Commit hashes (base_commit, fix_commit) are valid 40-character hex SHAs, file paths referenced across task.toml, Dockerfile, config.json, and test.patch are internally consistent (e.g. PelleRiftBar.vue, PelleRiftBar.reactivity.spec.js, vue-script-transformer.js), and test identifiers match exactly between task.toml, tests/config.json, and the jest test names in test.patch. tests/.s is an empty, unreferenced 0-byte file that appears to be a stray artifact, but it is inert and does not affect any command, path, or behavior."
+  },
+  "tests_or_solution_in_image": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile only COPYs environment/assets/ into the image; it explicitly comments that tests/ and solution/ are NOT copied and are supplied by the harness at verify time, which matches the actual file tree/build instructions observed."
+  },
+  "test_deps_in_image": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile's `npm ci` step only installs the repository's own dependencies from its lockfile. Test-only dependencies (jest, babel-jest, @babel/preset-env) are installed later in tests/test.sh via `npm install --no-save --no-package-lock`, keeping them isolated from the image build."
+  },
+  "hardcoded_solution": {
+    "outcome": "pass",
+    "explanation": "solution/solve.sh applies solution/fix.patch via `git apply`/`patch`, which is a genuine multi-hunk code change (new data fields, a refreshSelectedMilestone method, tick and hover call sites, and template updates) mirroring the actual upstream fix commit's mechanism — it is not simply echoing/printing a final answer string."
+  },
+  "file_reference_mentioned": {
+    "outcome": "not_applicable",
+    "explanation": "The task does not require the agent to produce a new named output artifact (e.g. output.csv) for the tests to check; the deliverable is a fix applied directly to the existing source file within the repository, and finding that file is intentionally part of the task's difficulty per task.toml's difficulty_explanation."
+  }
+}

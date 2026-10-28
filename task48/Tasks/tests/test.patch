@@ -1,0 +1,281 @@
+diff --git a/tests/test_focus_matrix.py b/tests/test_focus_matrix.py
+new file mode 100644
+index 000000000..83c87d628
+--- /dev/null
++++ b/tests/test_focus_matrix.py
+@@ -0,0 +1,275 @@
++"""Behavioural regression tests for the keyboard-focus matrix.
++
++Issue #5225: the game crashed on startup for anyone running at a screen scale
++above 1 (i.e. fullscreen).  ``focus_matrix.adjust_row`` allocated every empty
++row with a hard-coded 800px-wide screen, but indexed into that row using the
++element's *absolute* x coordinate, which on a scaled/offset display is far
++larger than 800 logical pixels.  ``row.pop(index + 1)`` then walked off the end
++of the list and raised ``IndexError: pop index out of range`` while the first
++screen was being built, taking the whole game down before it ever drew.
++
++These tests drive the real ``scripts.ui.focus_matrix`` functions with the real
++``scripts.game_structure.screen_settings`` display state produced by the real
++``determine_screen_scale`` routine.  Nothing here inspects source text.
++"""
++
++import os
++import unittest
++
++os.environ["SDL_VIDEODRIVER"] = "dummy"
++os.environ["SDL_AUDIODRIVER"] = "dummy"
++
++import pygame
++
++# ``scripts.game_structure.game`` and ``scripts.game_structure.screen_settings``
++# import each other; importing the package first resolves the cycle.
++import scripts.game_structure.game  # noqa: F401  (import-order dependency)
++import scripts.game_structure.screen_settings as screen_settings
++from scripts.game_input import Action
++from scripts.ui import focus_matrix
++from scripts.ui.scale import ui_scale_value
++
++
++class FakeFocusable:
++    """A minimal stand-in for a ``pygame_gui`` UIElement.
++
++    ``focus_matrix`` only ever asks an element for its absolute rect, its
++    enabled/visible flags, and to (un)focus itself, so a real themed UIElement
++    (which would need a live display + UIManager) is unnecessary.
++    """
++
++    def __init__(self, name, abs_x, abs_y, width=60, height=30):
++        self.name = name
++        self._abs_rect = pygame.Rect(abs_x, abs_y, width, height)
++        self.visible = 1
++        self.is_enabled = True
++        self.focused = False
++
++    def get_abs_rect(self):
++        return self._abs_rect.copy()
++
++    def focus(self):
++        self.focused = True
++
++    def unfocus(self):
++        self.focused = False
++
++    def __repr__(self):  # pragma: no cover - debugging aid only
++        return f"<FakeFocusable {self.name} @ {self._abs_rect.topleft}>"
++
++
++class FocusMatrixDisplayCase(unittest.TestCase):
++    """Base class that saves/restores the module-level display globals."""
++
++    def setUp(self):
++        self._saved = {
++            key: getattr(screen_settings, key)
++            for key in (
++                "screen_scale",
++                "screen_x",
++                "screen_y",
++                "offset",
++                "game_screen_size",
++            )
++        }
++
++    def tearDown(self):
++        for key, value in self._saved.items():
++            setattr(screen_settings, key, value)
++
++    @staticmethod
++    def use_windowed_display():
++        """The default 800x700 windowed display: scale 1, no letterbox offset."""
++        screen_settings.screen_scale = 1
++        screen_settings.screen_x = 800
++        screen_settings.screen_y = 700
++        screen_settings.offset = (0, 0)
++        screen_settings.game_screen_size = (800, 700)
++
++    @staticmethod
++    def use_fullscreen_display(display_width, display_height):
++        """Drive the real scaling routine for a fullscreen desktop resolution."""
++        screen_settings.determine_screen_scale(display_width, display_height)
++
++    @staticmethod
++    def element_at_logical_x(name, logical_x, logical_y=100):
++        """Build an element whose *absolute* rect matches the current display.
++
++        Screens lay elements out in the 800x700 logical space; the UI manager
++        scales the root container and shifts it by the letterbox offset, so an
++        element's absolute rect is ``offset + logical * screen_scale``.
++        """
++        scale = screen_settings.screen_scale
++        offset_x, offset_y = screen_settings.offset
++        return FakeFocusable(
++            name,
++            int(offset_x + logical_x * scale),
++            int(offset_y + logical_y * scale),
++        )
++
++
++class AdjustRowAtScale(FocusMatrixDisplayCase):
++    """f2p: a fresh row must be able to hold every on-screen element."""
++
++    def _assert_row_holds_element(self, element):
++        row = focus_matrix.adjust_row([], element)
++
++        index = int(element.get_abs_rect().x / ui_scale_value(10))
++        self.assertGreater(
++            len(row),
++            index,
++            "the freshly allocated row is too short to address an element that "
++            "is on screen",
++        )
++        self.assertIs(
++            row[index],
++            element,
++            "the element was not stored at the index the module computed for it",
++        )
++        self.assertEqual(
++            1,
++            sum(1 for slot in row if slot is element),
++            "the element should occupy exactly one slot in the row",
++        )
++
++    def test_new_row_fits_rightmost_element_1080p_fullscreen(self):
++        self.use_fullscreen_display(1920, 1080)
++        self.assertGreater(screen_settings.screen_scale, 1)
++        self._assert_row_holds_element(
++            self.element_at_logical_x("rightmost_button", 780)
++        )
++
++    def test_new_row_fits_rightmost_element_1440p_fullscreen(self):
++        self.use_fullscreen_display(2560, 1440)
++        self.assertGreater(screen_settings.screen_scale, 1)
++        self._assert_row_holds_element(
++            self.element_at_logical_x("rightmost_button", 780)
++        )
++
++    def test_new_row_fits_mid_right_element_1080p_fullscreen(self):
++        self.use_fullscreen_display(1920, 1080)
++        self._assert_row_holds_element(self.element_at_logical_x("save_button", 700))
++
++
++class BuildMapAtScale(FocusMatrixDisplayCase):
++    """f2p: building a screen's focus map must not blow up when scaled up."""
++
++    def _assert_map_contains_all(self, elements):
++        current_map = focus_matrix.add_to_map([], elements)
++
++        flat = [slot for row in current_map for slot in row if slot is not None]
++        for element in elements:
++            self.assertIn(
++                element,
++                flat,
++                f"{element.name} went missing from the focus map",
++            )
++        return current_map
++
++    def test_add_to_map_across_a_scaled_screen(self):
++        self.use_fullscreen_display(1920, 1080)
++        elements = [
++            self.element_at_logical_x("left", 30, logical_y=120),
++            self.element_at_logical_x("middle", 380, logical_y=120),
++            self.element_at_logical_x("right", 720, logical_y=120),
++        ]
++        current_map = self._assert_map_contains_all(elements)
++
++        # everything shares a y coordinate, so it must all land in one row,
++        # ordered left to right
++        self.assertEqual(1, len(current_map))
++        ordered = [slot for slot in current_map[0] if slot is not None]
++        self.assertEqual(["left", "middle", "right"], [e.name for e in ordered])
++
++    def test_add_to_map_across_a_4k_screen(self):
++        self.use_fullscreen_display(3840, 2160)
++        elements = [
++            self.element_at_logical_x("top_left", 40, logical_y=100),
++            self.element_at_logical_x("top_right", 740, logical_y=100),
++            self.element_at_logical_x("bottom_left", 40, logical_y=500),
++        ]
++        self._assert_map_contains_all(elements)
++
++
++class WindowedBehaviourUnchanged(FocusMatrixDisplayCase):
++    """p2p: the default windowed display must keep working exactly as before."""
++
++    def test_row_indexing_in_a_window(self):
++        self.use_windowed_display()
++
++        first = self.element_at_logical_x("first", 40)
++        second = self.element_at_logical_x("second", 400)
++
++        row = focus_matrix.adjust_row([], first)
++        original_length = len(row)
++        row = focus_matrix.adjust_row(row, second)
++
++        self.assertEqual(
++            original_length,
++            len(row),
++            "adding to an existing row must not change its length",
++        )
++        self.assertIs(row[int(40 / ui_scale_value(10))], first)
++        self.assertIs(row[int(400 / ui_scale_value(10))], second)
++
++        ordered = [slot for slot in row if slot is not None]
++        self.assertEqual(["first", "second"], [e.name for e in ordered])
++
++    def test_map_rows_are_grouped_by_y_in_a_window(self):
++        self.use_windowed_display()
++
++        top_left = self.element_at_logical_x("top_left", 50, logical_y=100)
++        top_right = self.element_at_logical_x("top_right", 500, logical_y=100)
++        bottom = self.element_at_logical_x("bottom", 50, logical_y=400)
++
++        current_map = focus_matrix.add_to_map([], [top_left, top_right, bottom])
++
++        self.assertEqual(2, len(current_map))
++        self.assertEqual(
++            ["top_left", "top_right"],
++            [e.name for e in current_map[0] if e is not None],
++        )
++        self.assertEqual(
++            ["bottom"], [e.name for e in current_map[1] if e is not None]
++        )
++
++    def test_navigation_between_elements_in_a_window(self):
++        self.use_windowed_display()
++
++        top_left = self.element_at_logical_x("top_left", 50, logical_y=100)
++        top_right = self.element_at_logical_x("top_right", 500, logical_y=100)
++        bottom_left = self.element_at_logical_x("bottom_left", 50, logical_y=400)
++
++        current_map = focus_matrix.add_to_map(
++            [], [top_left, top_right, bottom_left]
++        )
++
++        self.assertIs(
++            focus_matrix.find_next_focus(current_map, Action.RIGHT, top_left),
++            top_right,
++        )
++        self.assertIs(
++            focus_matrix.find_next_focus(current_map, Action.DOWN, top_left),
++            bottom_left,
++        )
++        self.assertIs(
++            focus_matrix.find_next_focus(current_map, Action.UP, bottom_left),
++            top_left,
++        )
++
++    def test_removing_an_element_clears_its_slot(self):
++        self.use_windowed_display()
++
++        first = self.element_at_logical_x("first", 50)
++        second = self.element_at_logical_x("second", 500)
++
++        current_map = focus_matrix.add_to_map([], [first, second])
++        current_map = focus_matrix.remove_from_map(current_map, [first])
++
++        flat = [slot for row in current_map for slot in row if slot is not None]
++        self.assertNotIn(first, flat)
++        self.assertIn(second, flat)
++
++
++if __name__ == "__main__":
++    unittest.main()

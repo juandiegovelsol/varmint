@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "checks": {
+        "behavior_in_task_description": {
+          "explanation": "instruction.md only shows a bug screenshot and an expected screenshot ('two multi-line text objects... only one is visible'); it never mentions lineHeight, the height calculation, or any repro recipe. Yet the tests (and task.toml's own difficulty_explanation, which explicitly states 'the corrected render looks like exists only in the expected screenshot... the agent must read that from the pixels') check very specific behavior: that calcTextHeight() stays finite when lineHeight=0, and that lines pile onto the first row rather than spreading. These specifics are only implied by the images, not stated in the instruction, which matches the FAIL condition of 'tests require details not specified or only implied by examples.'",
+          "outcome": "fail"
+        },
+        "behavior_in_tests": {
+          "explanation": "The two f2p tests in test.patch directly exercise the underlying rendering defect described in the instruction (a text object failing to render/appear correctly due to height miscalculation), verifying both a numeric property (finite height) and the actual painted pixels (lines collapsing onto the first row instead of vanishing or spreading). The p2p tests ('lineHeight with multi line'/'lineHeight with single line') guard existing lineHeight behavior from regressing. Together these cover the rendering behavior at the heart of the bug report, even though they use a single/four-line setup rather than literally two separate objects on one canvas.",
+          "outcome": "pass"
+        },
+        "informative_test_structure": {
+          "explanation": "tests/test.sh is broken into clearly labeled steps (reset test files, apply test.patch, run vitest, compute reward) with echoed section headers. tests/verifier.py has a clear docstring explaining the reward scheme and well-named helper functions. The added spec tests in test.patch have descriptive test names and inline comments explaining what each assertion checks (e.g. 'every line piles onto the first row, so the box stays one line tall').",
+          "outcome": "pass"
+        },
+        "anti_cheating_measures": {
+          "explanation": "The Dockerfile clones the repo, checks out the base commit, then strips .git and scrubs package.json repository metadata before creating a fresh harbor_base commit, preventing the agent from reading commit history or the real GitHub issue/PR. Network access is cut at multiple layers (removed git-remote helpers, removed curl/wget, blackholed npm registry, proxy env vars) in addition to the no-network policy. tests/ and solution/ are not copied into the image. The behavioral tests assert on computed/painted output rather than grepping source for the fix, and judge.py explicitly withholds the task instruction, golden patch, and tests from the rubric judge to avoid turning it into a similarity checker.",
+          "outcome": "pass"
+        },
+        "structured_data_schema": {
+          "explanation": "This is a visual/code bug-fix task (fixing a rendering defect in fabric.js source); it does not require the agent to produce structured output like JSON/CSV/API responses, so no schema documentation is expected.",
+          "outcome": "not_applicable"
+        },
+        "pinned_dependencies": {
+          "explanation": "Node dependencies are installed via `npm ci`, which is fully reproducible against package-lock.json. apt packages (ca-certificates, curl, git, python3) are unpinned, which is acceptable per the guidance. No Python/pip packages are used by the test harness (judge.py/verifier.py rely solely on the standard library). The global `npm install -g @anthropic-ai/claude-code` is unpinned but is agent tooling, not a task/test dependency affecting grading.",
+          "outcome": "pass"
+        },
+        "typos": {
+          "explanation": "No typos were found in task-authored files (instruction.md, task.toml, tests/*, Dockerfile, JSON files) that would cause confusion or failures; asset paths and filenames are consistent between Dockerfile, ASSET_MANIFEST.json, evidence_bundle.json, and instruction.md. The one 'lineHeigth' typo found is inside solution/fix.patch's reproduced upstream code comment (from the real fabric.js commit), not a task-authoring error, and has no functional impact.",
+          "outcome": "pass"
+        },
+        "tests_or_solution_in_image": {
+          "explanation": "The Dockerfile only COPYs environment/assets/ (the bug/expected screenshots) into the image; it never copies tests/ or solution/, so the agent cannot read the test patch, verifier, judge, or oracle fix from the running container.",
+          "outcome": "pass"
+        },
+        "test_deps_in_image": {
+          "explanation": "The only test-time dependency is vitest, which is already part of fabric.js's own devDependencies and gets installed during the image build via `npm ci` (the same install any developer working on this repo would need). tests/test.sh does not install any additional packages at test time, and judge.py/verifier.py use only Python's standard library.",
+          "outcome": "pass"
+        },
+        "hardcoded_solution": {
+          "explanation": "solution/solve.sh applies solution/fix.patch, which is the actual multi-part upstream code fix (refactoring getHeightOfLine into getHeightOfLineImpl plus call-site updates across rendering, height calculation, and text-background drawing). This reflects the real multi-step code change a developer made, not a trivial echo of a final answer string.",
+          "outcome": "pass"
+        },
+        "file_reference_mentioned": {
+          "explanation": "The task requires a source-code fix inside the existing repository (src/shapes/Text/Text.ts) rather than production of new named output files for the tests to check, so there is no output filename that instruction.md would need to reference.",
+          "outcome": "not_applicable"
+        }
+      },
+      "cost_usd": 0.47492804999999993,
+      "task_name": "Tasks",
+      "error": null
+    }
+  ]
+}

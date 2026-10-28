@@ -1,0 +1,117 @@
+diff --git a/src/module/migrator/Migrator.ts b/src/module/migrator/Migrator.ts
+index 955db72..0a7de84 100644
+--- a/src/module/migrator/Migrator.ts
++++ b/src/module/migrator/Migrator.ts
+@@ -13,6 +13,7 @@ import { Version0_32_0 } from './versions/Version0_32_0';
+ import { Version0_32_1 } from './versions/Version0_32_1';
+ import { Version0_32_4 } from './versions/Version0_32_4';
+ import { Version0_33_0 } from './versions/Version0_33_0';
++import { Version0_33_1 } from './versions/Version0_33_1';
+ import { VersionMigration, MigratableDocument, MigratableDocumentName } from "./VersionMigration";
+ const { deepClone } = foundry.utils;
+ 
+@@ -52,6 +53,7 @@ export class Migrator {
+         new Version0_32_1(),
+         new Version0_32_4(),
+         new Version0_33_0(),
++        new Version0_33_1(),
+     ] as const;
+ 
+     private static documentsToBeMigrated = 0;
+diff --git a/src/module/migrator/versions/Version0_33_1.ts b/src/module/migrator/versions/Version0_33_1.ts
+new file mode 100644
+index 0000000..d64132a
+--- /dev/null
++++ b/src/module/migrator/versions/Version0_33_1.ts
+@@ -0,0 +1,91 @@
++import { VersionMigration } from "../VersionMigration";
++
++type MigratingActiveEffectChange = {
++    key: string;
++};
++
++type MigratingActiveEffectSystem = {
++    applyTo?: string;
++};
++
++type MigratingActiveEffect = {
++    changes?: MigratingActiveEffectChange[];
++    system?: MigratingActiveEffectSystem;
++};
++
++/**
++ * Migrations for 0.33.0 missing schema changes:
++ * - A) change keys using legacy ModifiableValue .mod to .changes
++ * - B) test effect keys targeting anything outside the current test data schema are normalized
++ *      to data.pool, the field this class of effect grants its bonus to
++ */
++export class Version0_33_1 extends VersionMigration {
++    private static readonly LegacyModifiableValueKeyPattern = /\.mod$/;
++    // The only fields the current test data schema exposes as modifiable pool-style values.
++    // A test-scoped Custom effect targeting anything outside this set predates a schema change
++    // and no longer resolves to anything real, so it is normalized to the pool field below.
++    private static readonly CanonicalTestKeys = new Set(['data.pool', 'data.threshold', 'data.limit']);
++    private static readonly ModernTestPoolKey = 'data.pool';
++
++    readonly TargetVersion = "0.33.1";
++    override handlesActiveEffect(_effect: Readonly<unknown>): boolean {
++        const effect = _effect as MigratingActiveEffect;
++
++        // A) Some changes referenced a legacy ModifiableValue schema suffix.
++        if (effect.changes?.some(change => Version0_33_1.LegacyModifiableValueKeyPattern.test(change.key))) return true;
++
++        // B) Some test effects referenced a key outside the current test data schema.
++        if (Version0_33_1.EffectHasNonCanonicalTestKey(effect)) return true;
++
++        return false;
++    }
++
++    override migrateActiveEffect(effect: unknown): void {
++        // Migration Case B)
++        Version0_33_1.MigrateNonCanonicalTestKeyToPool(effect);
++
++        // Migration Case A)
++        Version0_33_1.MigrateEffectKeysFromModToChanges(effect);
++    }
++
++    /**
++        * 0.32.x used .mod for ModifiableValue data.
++     */
++    static MigrateEffectKeysFromModToChanges(effect: unknown): void {
++        const migratingEffect = effect as MigratingActiveEffect;
++
++        for (const change of migratingEffect.changes ?? []) {
++            if (Version0_33_1.LegacyModifiableValueKeyPattern.test(change.key)) {
++                change.key = change.key.replace(Version0_33_1.LegacyModifiableValueKeyPattern, '.changes');
++            }
++        }
++    }
++
++    /**
++        * Earlier test-targeted effects wrote to whatever key the pool bonus field used to be
++        * called (e.g. data.modifiers or data.modifiers.mod); today only data.pool, data.threshold
++        * and data.limit are real fields on test data. Anything else on a test-scoped effect is
++        * stale and is normalized to data.pool, since that's the field this bug is about.
++     */
++    static MigrateNonCanonicalTestKeyToPool(effect: unknown): void {
++        const migratingEffect = effect as MigratingActiveEffect;
++
++        if (!Version0_33_1.isTestScopedEffect(migratingEffect)) return;
++
++        for (const change of migratingEffect.changes ?? []) {
++            if (!Version0_33_1.CanonicalTestKeys.has(change.key)) {
++                change.key = Version0_33_1.ModernTestPoolKey;
++            }
++        }
++    }
++
++    private static EffectHasNonCanonicalTestKey(effect: MigratingActiveEffect): boolean {
++        if (!Version0_33_1.isTestScopedEffect(effect)) return false;
++
++        return effect.changes?.some(change => !Version0_33_1.CanonicalTestKeys.has(change.key)) ?? false;
++    }
++
++    private static isTestScopedEffect(effect: MigratingActiveEffect): boolean {
++        return effect.system?.applyTo === 'test_all' || effect.system?.applyTo === 'test_item';
++    }
++}

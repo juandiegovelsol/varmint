@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "checks": {
+        "behavior_in_task_description": {
+          "explanation": "instruction.md describes the reported regression (cylinder Bounds/Clipping height and angle fields swapped) in prose plus two screenshots, and its 'Other things noticed while investigating' section names the observable symptom of each of the four injected regressions (inverted checkboxes, wrong shape's Bounds/Clipping editor shown, sliders rotating the wrong axis, stale shader status after switching primitives) -- one plain sentence per defect the tests hold the fix to. This is a bug-fix task in the SWE-bench style, where instructions are expected to describe symptoms (as a real bug report would) rather than name the exact property/line/component to change; every f2p behavior category is represented by some described symptom, so nothing tested is entirely absent from the instructions.",
+          "outcome": "pass"
+        },
+        "behavior_in_tests": {
+          "explanation": "Each symptom named in instruction.md maps to a corresponding block of f2p tests in tests/test.patch: the cylinder height/angle mislabeling (Bounds+Clipping, 16 tests), inverted checkbox coercion (3 tests), swapped Cylinder/Ellipsoid detection (2 tests), wrong rotation axis (3 tests), and stale shader-listener cleanup (2 tests). p2p tests also guard adjacent behavior (Box/Ellipsoid properties, radius components, translation, numeric properties, heading rotation, shape-is-box) that must remain unaffected. No behavior described in the instruction is left untested.",
+          "outcome": "pass"
+        },
+        "informative_test_structure": {
+          "explanation": "tests/test.patch is organized into clearly labeled sections via comments (e.g. '--- f2p: the reported regression, \"Bounds\" panel ---', '--- p2p: adjacent code that must NOT be touched ---', '--- f2p: boolean/number coercion ---', etc.), each with descriptive `it(...)` names explaining exactly what is being verified and why. verifier.py and test.sh are also heavily commented explaining each step's purpose (e.g. the corrupted-JUnit-report guard, the spec-isolation logic).",
+          "outcome": "pass"
+        },
+        "anti_cheating_measures": {
+          "explanation": "The Dockerfile applies bug patches into harbor_base, then strips .git entirely and re-inits a single 'base' commit so the agent cannot inspect original history or the fix commit; the bug patch files themselves are deleted from the agent-visible assets directory (rm -rf /app/.harbor_assets/bugs) so their reverse (the fix) can't be read directly; tests/ and solution/ are never copied into the image. test.sh further hardens against tampering by restoring test.patch's target paths and the entire Specs tree from harbor_base before applying test.patch (preventing a planted or weakened spec file), and isolates the run to only the intended spec file. Screenshots describe only visual symptoms, not which fields/components are swapped, preserving the intended difficulty.",
+          "outcome": "pass"
+        },
+        "structured_data_schema": {
+          "explanation": "This is a source-code bug-fix task (editing VoxelInspectorViewModel.js); the agent does not need to produce structured data output (JSON/CSV/API schema), so this criterion does not apply.",
+          "outcome": "not_applicable"
+        },
+        "pinned_dependencies": {
+          "explanation": "Key dependencies affecting build/test reproducibility are pinned: base image node:22-bookworm, @zip.js/zip.js overridden to the exact 2.7.73 release (documented reasoning for why 2.8.x breaks the build), and karma-junit-reporter pinned to 2.0.1 in tests/test.sh. The repo's own package.json has no committed lockfile upstream (documented in Dockerfile comments), so `npm install` resolving a range is an accepted, explained limitation matching the repo's own CI practice rather than an oversight; apt packages are left unpinned, which is acceptable per guidance.",
+          "outcome": "pass"
+        },
+        "typos": {
+          "explanation": "Cross-checked file paths and identifiers (e.g. packages/widgets/Specs/VoxelInspector/__tests__/VoxelInspectorViewModelSpec.js, karma-junit-reporter@2.0.1, @zip.js/zip.js@2.7.73, commit hashes) across task.toml, Dockerfile, test.sh, run_karma.mjs, config.json, and test.patch; they are all consistent. No spelling or path typos found in instruction.md, task.toml, or the tests/environment scripts.",
+          "outcome": "pass"
+        },
+        "tests_or_solution_in_image": {
+          "explanation": "The Dockerfile only COPYs assets/ (screenshots, with the bugs/ subfolder subsequently deleted) into the image; tests/ and solution/ directories are never referenced or copied, and the Dockerfile explicitly comments that they are 'intentionally NOT copied into the image -- the harness supplies them at verify time.'",
+          "outcome": "pass"
+        },
+        "test_deps_in_image": {
+          "explanation": "karma-junit-reporter, the only test-only dependency (a JUnit reporter not used by the repo's own karma.conf.cjs), is explicitly NOT installed in the Dockerfile (documented with a comment explaining the exclusion) and is instead installed at verify time inside tests/test.sh via `npm install --no-audit --no-fund --no-save karma-junit-reporter@2.0.1`.",
+          "outcome": "pass"
+        },
+        "hardcoded_solution": {
+          "explanation": "solution/solve.sh applies solution/fix.patch, the real developer-style source diff (8 component-swap fixes plus the 4 injected-bug fixes) to VoxelInspectorViewModel.js -- a genuine code fix that must then pass behavioral Karma/Jasmine tests, not a shortcut that special-cases test identifiers or prints an answer string.",
+          "outcome": "pass"
+        },
+        "file_reference_mentioned": {
+          "explanation": "This task does not require the agent to produce a specifically-named output file for tests to check; it requires fixing behavior in the existing source file packages/widgets/Source/VoxelInspector/VoxelInspectorViewModel.js, which the agent must locate itself as part of normal bug-fixing investigation (a legitimate part of task difficulty for this SWE-bench-style task), so this file-naming criterion does not apply the way it would for a generated-artifact task.",
+          "outcome": "not_applicable"
+        }
+      },
+      "cost_usd": 0.3409059,
+      "task_name": "Tasks",
+      "error": null
+    }
+  ]
+}

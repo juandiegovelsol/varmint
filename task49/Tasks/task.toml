@@ -1,0 +1,124 @@
+version = "1.0"
+
+[metadata]
+task_id = "OpenCTI-Platform__opencti-16540-mm"
+title = "Mislabelled field in a summary panel"
+repository_name = "OpenCTI-Platform/opencti"
+repo_url = "https://github.com/OpenCTI-Platform/opencti"
+issue_number = 16540
+pr_number = 16739
+base_commit = "23bec28c6c3d1c5a2c165a76c504746f2b6fc503"
+fix_commit = "192ab99d54243c7a516267431e7d4e7b41aae2b3"
+task_type = "visual_bug_fix"
+language = "TypeScript"
+framework = "React / MUI"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "medium"
+difficulty_explanation = """
+The instruction states only the perceived symptom: the field reporting on a draft's
+validation carries the platform's generic state wording. It names no file, no component,
+no mechanism and no target wording, so the screenshot is the only reliable trail to which
+field of which panel is at fault — the agent must read the rendered value next to its
+label to see that a work state is being presented under the wording the platform reserves
+for the draft workflow status.
+
+The fix is not a one-line edit. The block that renders that field is shared with a second
+screen, where the generic wording is correct, so changing the label in place regresses the
+other call site. The agent has to discover that the block is shared and turn the label into
+a per-call-site decision. This is not hypothetical: the human PR itself first shipped the
+in-place rename and needed a code review before a second commit made the label dynamic.
+(Verified against the upstream PR: commit dfd6074 is the in-place rename, touching only
+ConnectorWorkLine.tsx; commit 06e2a2a introduces the statusLabel prop and reverts it. The
+task's p2p guards would reject dfd6074, since it relabels the connectors screen too.)
+
+MEASURED — the hardening above did NOT hold up, across TWO trials on
+claude-code @ anthropic/claude-opus-4-8, each scoring reward 1.0 on its FIRST attempt
+with f2p 4/4 and p2p 6/6. QC records this as trial_not_hard_enough.
+
+  trial 1 (original instruction.md):  2m53s, 21 tool calls
+  trial 2 (instruction.md rewritten vaguer: user-voice report, no field enumeration,
+           non-descriptive title):    2m22s, 15 tool calls
+
+Rewriting the prose vaguer made it FASTER, not harder, and the trajectories show why:
+
+  - The image IS load-bearing, and worked as designed. In BOTH trials the agent's first
+    action was reading bug_screenshot_1.png, and its next was grepping for field labels
+    it read OFF that screenshot ("Operations Completed", "Work Start Time", ...) to
+    locate the component. The prose was never the source of those labels, so removing
+    them from it changed nothing. This is strong evidence that
+    visual_essentiality = "required" is correct.
+  - The shared-component trap did not catch it. In both trials the agent grepped for
+    every ConnectorWorkLine call site BEFORE editing, found DraftRoot.tsx, and went
+    straight to the per-call-site fix; trial 2 also read ConnectorWorks.tsx first. The
+    mistake that got past human code review was not a mistake for this model.
+
+  trial 3 (instruction.md rewritten again, this time to a pure symptom report: no page,
+           field, current caption or target wording in the prose at all, so the
+           screenshot is the ONLY source of every locating fact):
+           reward 0.0, f2p 0/4, p2p 4/6 — trial_hard_enough
+
+Trial 3 is the first failure, and it fell into exactly the trap the PR's own review
+caught. From the agent's transcript: it read the screenshot, grepped the labels off it,
+landed on ConnectorWorkLine.tsx:99, and correctly diagnosed the collision ("'Status' is
+the caption OpenCTI uses product-wide for the workflow-status concept — en.json maps both
+workflow_id and x_opencti_workflow_id to 'Status'"). It then renamed that one literal in
+place to t_i18n('State') and never grepped for the component's other call sites, while
+asserting the no-side-effects constraint was met: "No shared i18n key was modified, so
+the 'Status' label ... is unchanged elsewhere in the product." That reasoning conflates
+leaving an i18n KEY alone with leaving the other CALL SITE alone, so the connectors
+screen was relabelled too — 2 p2p guards caught it, and all 4 f2p failed since no
+draft-specific caption was ever introduced.
+
+Note what trial 3 does NOT show: it is not evidence that the /validation/i wording bar is
+unreachable. That fix scores 0.0 on the architecture alone — even if the bar accepted
+'State', f2p 1/2/4 and both p2p guards would still fail on the in-place rename. The
+wording bar was, however, the near-miss worth hardening: an agent that got the
+per-call-site structure right and still captioned the field 'State' would have lost the
+whole reward on f2p3 alone. instruction.md now rules that out in the report's own voice
+("Restating what kind of value sits in the field would not help either — the caption has
+to name the run this panel is about") without naming the run, which the screenshot's own
+Name field does ("Draft validation Bug repro incident - ...").
+
+Conclusion: the difficulty is real for a frontier model once the prose stops doing the
+locating. The target is still one string literal in one grep hop from the poster's
+labels, and the f2p contract still constrains only that the caption matches
+/validation/i and differs from the generic word — but the fix is cross-file by
+construction, and trial 3 is a measured 0.0 on precisely that. difficulty stays
+"medium": one trial each way at this instruction revision, and the earlier 1.0 pair ran
+against prose that named the page and the panel's subject outright.
+"""
+files_edited = [
+  "opencti-platform/opencti-front/src/private/components/data/connectors/ConnectorWorkLine.tsx",
+  "opencti-platform/opencti-front/src/private/components/drafts/DraftRoot.tsx",
+]
+f2p = [
+  "Draft validation work status > labels the validation work state of a draft differently from a plain connector work",
+  "Draft validation work status > uses one and the same label for the validation work state whatever the state is",
+  "Draft validation work status > names the validation work state after the validation it reports on",
+  "Draft validation work status > labels the validation work state the same way for an unrelated draft",
+]
+p2p = [
+  "Draft validation work status (p2p guards) > reads at least the wait, progress and complete work states from the platform schema",
+  "Draft validation work status (p2p guards) > keeps the generic connector work line labelled with the platform status wording",
+  "Draft validation work status (p2p guards) > leaves every other field label of the work line untouched in the draft context",
+  "Draft validation work status (p2p guards) > still shows the work state itself in both contexts",
+  "Draft validation work status (p2p guards) > still shows the name, timings and counters of the draft validation work",
+  "Draft validation work status (p2p guards) > renders one generic work line per work of the connectors screen",
+]
+tags = ["multimodal", "visual_bug_fix"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+network_mode = "public"
+timeout_sec = 2400.0
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

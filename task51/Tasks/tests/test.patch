@@ -1,0 +1,412 @@
+diff --git a/src/__tests__/game-stubs.js b/src/__tests__/game-stubs.js
+new file mode 100644
+index 000000000..5cc21bca9
+--- /dev/null
++++ b/src/__tests__/game-stubs.js
+@@ -0,0 +1,231 @@
++// Minimal, deterministic stand-in for the running game.
++//
++// The real game exposes its state as globals (`player`, `Tickspeed`, `format`,
++// ...) and drives every component by calling its `update()` once per frame.
++// These helpers reproduce just enough of that so a component can be mounted and
++// asked what it renders for a given game state. They say nothing about how any
++// component is implemented.
++import Vue from "vue";
++
++const d = v => new Decimal(v);
++
++const num = v => (v && typeof v.toNumber === "function" ? v.toNumber() : Number(v));
++
++// Number formatters mirroring the shapes the game's own helpers produce, so
++// rendered text is readable and stable.
++const format = (v, places = 0, placesUnder1000 = 0) => num(v).toFixed(Math.max(places, placesUnder1000));
++const formatInt = v => String(Math.round(num(v)));
++const formatFloat = (v, places = 0) => num(v).toFixed(places);
++const formatX = (v, places = 0, placesUnder1000 = 0) => `×${format(v, places, placesUnder1000)}`;
++const formatPercents = (v, places = 0) => `${(num(v) * 100).toFixed(places)}%`;
++const formatPow = (v, places = 0, placesUnder1000 = 0) => `^${format(v, places, placesUnder1000)}`;
++const pluralize = (word, amount, plural) => (num(amount) === 1 ? word : plural ?? `${word}s`);
++const quantify = (word, amount, places = 0) => `${format(amount, places)} ${pluralize(word, amount)}`;
++const quantifyInt = (word, amount) => `${formatInt(amount)} ${pluralize(word, amount)}`;
++
++// Distinctive readings so assertions can tell "the component was fed real game
++// state" apart from "the component rendered its zeroed defaults".
++export const TICKSPEED_PER_SECOND = 7;
++export const TICKSPEED_MULT_PER_UPGRADE = 8;
++
++/**
++ * Publish a whole game state as globals.
++ *
++ * @param {object} opts
++ * @param {boolean} opts.newUI            true = Modern UI theme, false = Classic
++ * @param {boolean} opts.realityUnlocked  has the player unlocked Reality yet
++ * @param {boolean} opts.tickspeedUnlocked has Tickspeed become relevant yet
++ */
++export function installGameGlobals(opts = {}) {
++  const {
++    newUI = false,
++    realityUnlocked = false,
++    tickspeedUnlocked = false,
++  } = opts;
++
++  const antimatter = d(10);
++  antimatter.value = d(10);
++  antimatter.productionPerSecond = d(0);
++
++  const eternityChallenge = () => ({ isRunning: false, completions: 0, isFullyCompleted: true });
++  eternityChallenge.isRunning = false;
++
++  const dimension = tier => ({
++    tier,
++    displayName: `Dim${tier}`,
++    shortDisplayName: `D${tier}`,
++    amount: d(0),
++    bought: 0,
++    boughtBefore10: 0,
++    isUnlocked: false,
++    isAvailableForPurchase: false,
++    multiplier: d(1),
++    rateOfChange: d(0),
++    cost: d(10),
++    isAffordable: false,
++    isAffordableUntil10: false,
++    continuumValue: 0,
++    productionForDiplay: d(0),
++  });
++
++  const globals = {
++    format,
++    formatInt,
++    formatFloat,
++    formatX,
++    formatPercents,
++    formatPow,
++    pluralize,
++    quantify,
++    quantifyInt,
++
++    player: {
++      options: { newUI },
++      galaxies: 0,
++      totalTickBought: 0,
++      dimensionBoosts: 0,
++      buyUntil10: true,
++      dilation: { active: false, lastEP: d(0) },
++      records: { totalAntimatter: d(10) },
++    },
++    Player: {
++      isInAntimatterChallenge: false,
++      antimatterChallenge: { isQuickResettable: false, goal: d(100) },
++      eternityGoal: d(100),
++    },
++    PlayerProgress: { realityUnlocked: () => realityUnlocked },
++    TimeStudy: { reality: { isBought: false } },
++    Currency: { antimatter, infinityPoints: { value: d(0) } },
++    Pelle: { isDoomed: false },
++
++    Tickspeed: {
++      isUnlocked: tickspeedUnlocked,
++      multiplier: d(1 / TICKSPEED_MULT_PER_UPGRADE),
++      perSecond: d(TICKSPEED_PER_SECOND),
++      cost: d(1000),
++      continuumValue: 0,
++    },
++    FreeTickspeed: { amount: 0 },
++    Laitela: { continuumActive: false, continuumUnlocked: false, isRunning: false },
++    Tutorial: { isActive: () => false, turnOffEffect: () => undefined },
++    TUTORIAL_STATE: { TICKSPEED: 1, DIMBOOST: 2, GALAXY: 3 },
++
++    InfinityChallenge: () => ({ isRunning: false }),
++    EternityChallenge: eternityChallenge,
++    AntimatterDimension: dimension,
++    AntimatterDimensions: { buyTenMultiplier: d(2), all: [1, 2, 3, 4, 5, 6, 7, 8].map(dimension) },
++    DimBoost: {
++      requirement: { tier: 1, amount: 20, isSatisfied: false },
++      canBeBought: false,
++      purchasedBoosts: 0,
++      imaginaryBoosts: 0,
++      lockText: null,
++      unlockedByBoost: "",
++      bulkRequirement: () => ({ tier: 1, amount: 20 }),
++    },
++    Galaxy: {
++      requirement: { tier: 8, amount: 80 },
++      canBeBought: false,
++      remoteStart: 800,
++      lockText: null,
++      nextType: () => "Antimatter Galaxy",
++    },
++    Sacrifice: {
++      isVisible: false,
++      canSacrifice: false,
++      totalBoost: d(1),
++      nextBoost: d(1),
++      disabledCondition: "",
++    },
++    Enslaved: { isStoringRealTime: false, canRelease: () => false },
++    GameEnd: { creditsClosed: false, endState: 0 },
++    Perk: { studyECBulk: { isBought: false } },
++    RealityUpgrade: () => ({ isBought: false, canBeApplied: false }),
++    GALAXY_TYPE: { NORMAL: 0, DISTANT: 1, REMOTE: 2 },
++    SHOP_BUY_TYPE: {},
++
++    getGameSpeedupFactor: () => 1,
++    getGameSpeedupForDisplay: () => 1,
++    getTachyonReq: () => d(100),
++    canAfford: () => true,
++    buyTickSpeed: () => true,
++    buyMaxTickSpeed: () => true,
++    buyOneDimension: () => true,
++    buyManyDimension: () => true,
++    buyAsManyAsYouCanBuy: () => true,
++    buyMaxDimension: () => true,
++    infinityUnlocked: () => false,
++    maxAll: () => undefined,
++    softReset: () => undefined,
++    sacrificeBtnClick: () => undefined,
++    requestDimensionBoost: () => undefined,
++    requestGalaxyReset: () => undefined,
++  };
++
++  for (const [key, value] of Object.entries(globals)) {
++    globalThis[key] = value;
++    // Inline `onclick="..."` attributes are evaluated in the document's own
++    // scope, which is not always the same object as globalThis.
++    if (typeof window !== "undefined") window[key] = value;
++    // Vue 2 templates resolve bare identifiers against the component instance,
++    // so the same names have to be reachable from the prototype chain too.
++    Vue.prototype[key] = value;
++  }
++
++  return globals;
++}
++
++/** Publish (or replace) a single game global everywhere a component can see it. */
++export function setGameGlobal(name, value) {
++  globalThis[name] = value;
++  if (typeof window !== "undefined") window[name] = value;
++  Vue.prototype[name] = value;
++  return value;
++}
++
++// A handful of prototype helpers the game installs at boot and some components
++// reach for while rendering.
++export function installPrototypeHelpers() {
++  if (!Math.clampMax) Math.clampMax = (value, max) => Math.min(value, max);
++  if (!Math.clampMin) Math.clampMin = (value, min) => Math.max(value, min);
++  if (!Math.clamp) Math.clamp = (value, min, max) => Math.min(Math.max(value, min), max);
++  if (!Array.prototype.sum) {
++    // eslint-disable-next-line no-extend-native
++    Object.defineProperty(Array.prototype, "sum", {
++      value() { return this.reduce((a, b) => a + b, 0); },
++      enumerable: false,
++    });
++  }
++  if (!Decimal.prototype.pLog10) {
++    Decimal.prototype.pLog10 = function pLog10() { return Math.max(this.log10(), 0); };
++  }
++}
++
++/**
++ * Run one frame of the game loop over a mounted tree: every component that
++ * exposes an `update()` gets it called, parents first, then the DOM is flushed.
++ * Peripheral components that the stubbed state cannot fully satisfy are allowed
++ * to bail out — anything the test actually asserts on has to render anyway.
++ */
++export async function runGameLoop(wrapper, frames = 2) {
++  for (let frame = 0; frame < frames; frame++) {
++    const visit = vm => {
++      if (typeof vm.update === "function") {
++        try {
++          vm.update();
++        } catch (e) {
++          // peripheral component, not under test
++        }
++      }
++      vm.$children.forEach(visit);
++    };
++    visit(wrapper.vm);
++    // eslint-disable-next-line no-await-in-loop
++    await wrapper.vm.$nextTick();
++  }
++}
++
++/** Rendered text of a mounted tree, whitespace-normalised. */
++export function renderedText(wrapper) {
++  return wrapper.text().replace(/\s+/gu, " ").trim();
++}
+diff --git a/src/__tests__/setup.js b/src/__tests__/setup.js
+new file mode 100644
+index 000000000..33552457b
+--- /dev/null
++++ b/src/__tests__/setup.js
+@@ -0,0 +1,21 @@
++// Runs BEFORE any test module is imported, so `Decimal` exists by the time a
++// component module executes its top-level `new Decimal(...)` calls.
++import Decimal from "break_infinity.js";
++import Vue from "vue";
++
++globalThis.Decimal = Decimal;
++
++// The game patches this onto Decimal at boot (javascripts/core/extensions.js).
++if (!Decimal.prototype.copyFrom) {
++  Decimal.prototype.copyFrom = function copyFrom(other) {
++    this.mantissa = other.mantissa;
++    this.exponent = other.exponent;
++    return this;
++  };
++}
++
++Vue.config.productionTip = false;
++Vue.config.devtools = false;
++
++// The app registers v-tooltip globally at boot; a no-op keeps mounts quiet.
++Vue.directive("tooltip", {});
+diff --git a/src/__tests__/tickspeed-visibility.test.js b/src/__tests__/tickspeed-visibility.test.js
+new file mode 100644
+index 000000000..f2c58d257
+--- /dev/null
++++ b/src/__tests__/tickspeed-visibility.test.js
+@@ -0,0 +1,113 @@
++// Behavioural tests for the reported UI-theme inconsistency.
++//
++// Every assertion is about what a player sees or can click for a given game
++// state. No test names a component, file, CSS class, prop or data field that a
++// fix is expected to introduce, so any implementation producing the required
++// on-screen behaviour passes and any implementation that does not, fails.
++
++import { mount } from "@vue/test-utils";
++
++import ClassicAntimatterDimensionsTab from "@/components/tabs/antimatter-dimensions/ClassicAntimatterDimensionsTab";
++import ModernAntimatterDimensionsTab from "@/components/tabs/antimatter-dimensions/ModernAntimatterDimensionsTab";
++import HeaderCenterContainer from "@/components/ui-modes/prestige-header/HeaderCenterContainer";
++
++import {
++  installGameGlobals,
++  installPrototypeHelpers,
++  renderedText,
++  runGameLoop,
++  setGameGlobal,
++  TICKSPEED_MULT_PER_UPGRADE,
++  TICKSPEED_PER_SECOND,
++} from "./game-stubs";
++
++installPrototypeHelpers();
++
++// The state both screenshots were taken in: a save that has just been started.
++const FRESH_SAVE = { realityUnlocked: false, tickspeedUnlocked: false };
++
++async function renderHeader(opts) {
++  installGameGlobals(opts);
++  const wrapper = mount(HeaderCenterContainer);
++  await runGameLoop(wrapper);
++  const text = renderedText(wrapper);
++  wrapper.destroy();
++  return text;
++}
++
++// Press every button the tab offers and report how many there were.
++async function pressEveryButton(wrapper) {
++  const buttons = wrapper.findAll("button").wrappers;
++
++  // jsdom compiles inline `onclick="..."` attributes inside its own realm,
++  // where the stubbed game globals are not reachable. Detach them and run the
++  // very same source here instead, which is where the globals live.
++  const inlineHandlers = [];
++  for (const button of buttons) {
++    const source = button.element.getAttribute("onclick");
++    if (source === null) continue;
++    button.element.removeAttribute("onclick");
++    inlineHandlers.push(source);
++  }
++
++  for (const button of buttons) {
++    // eslint-disable-next-line no-await-in-loop
++    await button.trigger("click");
++  }
++  for (const source of inlineHandlers) {
++    // eslint-disable-next-line no-new-func
++    new Function(source)();
++  }
++
++  return buttons.length;
++}
++
++async function countTickspeedPurchases(TabComponent) {
++  installGameGlobals({ newUI: TabComponent !== ClassicAntimatterDimensionsTab,
++    realityUnlocked: false,
++    tickspeedUnlocked: true });
++  const buyTickSpeed = setGameGlobal("buyTickSpeed", vi.fn(() => true));
++
++  // Mount the header alongside the tab, exactly as the real app composes
++  // them, so this does not assume which of the two regions the purchase
++  // control ends up living in - only that a player looking at both can
++  // reach it.
++  const Screen = {
++    name: "TickspeedPurchaseScreen",
++    components: { HeaderCenterContainer, Tab: TabComponent },
++    template: "<div><HeaderCenterContainer /><Tab /></div>",
++  };
++
++  const wrapper = mount(Screen);
++  await runGameLoop(wrapper);
++  const pressed = await pressEveryButton(wrapper);
++  wrapper.destroy();
++
++  expect(pressed).toBeGreaterThan(0);
++  return buyTickSpeed.mock.calls.length;
++}
++
++describe("tickspeed-visibility", () => {
++  it("both UI themes show the same header information on a fresh save", async () => {
++    const modern = await renderHeader({ ...FRESH_SAVE, newUI: true });
++    const classic = await renderHeader({ ...FRESH_SAVE, newUI: false });
++
++    // Guard against agreeing by showing nothing: the reading has to keep
++    // reporting the live Tickspeed figures.
++    expect(modern).toMatch(/tickspeed/iu);
++    expect(modern).toContain(String(TICKSPEED_PER_SECOND));
++    expect(modern).toContain(String(TICKSPEED_MULT_PER_UPGRADE));
++
++    // Both screenshots frame the same region of the screen, so it has to read
++    // the same whichever theme is selected.
++    expect(classic).toBe(modern);
++  });
++
++  it("Classic players can buy Tickspeed before Reality is unlocked", async () => {
++    expect(await countTickspeedPurchases(ClassicAntimatterDimensionsTab)).toBeGreaterThan(0);
++  });
++
++  it("Modern players can buy Tickspeed before Reality is unlocked", async () => {
++    expect(await countTickspeedPurchases(ModernAntimatterDimensionsTab)).toBeGreaterThan(0);
++  });
++});
+diff --git a/vitest.config.js b/vitest.config.js
+new file mode 100644
+index 000000000..3af7b0a9c
+--- /dev/null
++++ b/vitest.config.js
+@@ -0,0 +1,23 @@
++import path from "path";
++import { fileURLToPath } from "url";
++
++import vue2 from "@vitejs/plugin-vue2";
++import { defineConfig } from "vitest/config";
++
++const __dirname = fileURLToPath(new URL(".", import.meta.url));
++
++export default defineConfig({
++  plugins: [vue2()],
++  test: {
++    environment: "jsdom",
++    globals: true,
++    setupFiles: ["./src/__tests__/setup.js"],
++    reporters: ["default", "junit"],
++    outputFile: { junit: "/logs/verifier/report.xml" },
++    include: ["src/__tests__/**/*.test.js"],
++  },
++  resolve: {
++    extensions: [".js", ".vue", ".json"],
++    alias: { "@": path.resolve(__dirname, "./src") },
++  },
++});

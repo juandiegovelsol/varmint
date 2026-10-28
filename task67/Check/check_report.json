@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "checks": {
+        "behavior_in_task_description": {
+          "explanation": "instruction.md describes the exact behavior later checked: icon-column right-clicks must stop showing the wrong file-location/map-type popup, that popup must remain reachable by right-clicking elsewhere on the row, other right-click areas of the dialog must keep working as before, and the 'Map difficulty' label position relative to the panel must match the screenshots. These map directly onto the f2p tests (IconAreaRightClickDoesNotShowPopup, DifficultyLabelAlignsWithPanelEdge) and the rubric criteria (icon_columns_show_own_tooltip, map_name_area_shows_location_popup, sibling_detail_panel_tooltips_unaffected, difficulty_label_offset_is_a_general_constant). As a visual_bug_fix task, relying on the provided screenshots rather than stating exact pixel offsets is appropriate and consistent with task_type/visual_essentiality in task.toml.",
+          "outcome": "pass"
+        },
+        "behavior_in_tests": {
+          "explanation": "Every behavior instructed is covered by either the compiled GoogleTest f2p tests or the rubric.json criteria graded by judge.py, which together check: icon-area right-click no longer pops up the wrong dialog, the map-name area still shows the file-location/map-type popup, sibling tooltips (difficulty/description/victory/loss icons) remain unaffected, and the difficulty-label offset is a general constant rather than a special case. Nothing described in instruction.md is left completely unchecked by this combined test+rubric bundle.",
+          "outcome": "pass"
+        },
+        "informative_test_structure": {
+          "explanation": "test.sh is broken into clearly labeled, commented steps (submission capture, test.patch reset/apply, gtest build, compile/link, run, reward computation). test_actionlistpressright.cpp and stubs.cpp contain descriptive block comments explaining what each stub/test does and why (e.g. why LocalEvent is scripted the way it is, why the intercept only counts showMessage calls). rubrics.json and config.json are concise and self-documenting with named criteria ids.",
+          "outcome": "pass"
+        },
+        "anti_cheating_measures": {
+          "explanation": "The Dockerfile clones the real repo, checks out the base commit, applies the injected bug patch, strips .git, and re-inits a single-commit repo — so the agent cannot see the future fix commit or PR history. tests/ and solution/ are never copied into the image; the bug patches live in a temp path that is deleted before the image is finalized. The judge (judge.py) deliberately withholds the task instruction, the golden fix.patch, the test files, and the screenshots from the grading model/sub-agent to prevent it turning into a similarity checker, and explicitly filters out test-like paths from the graded diff.",
+          "outcome": "pass"
+        },
+        "structured_data_schema": {
+          "explanation": "This is a C++ UI bug-fix task that requires editing existing source files (dialog_selectscenario.cpp/.h); it does not require the agent to produce any structured data output (JSON/CSV/API/DB schema), so this criterion does not apply.",
+          "outcome": "not_applicable"
+        },
+        "pinned_dependencies": {
+          "explanation": "The base repository is pinned to an exact commit SHA (base_commit/fix_commit in task.toml), and GoogleTest is vendored as committed source under tests/vendor/googletest rather than fetched at an unpinned version. Apt packages (cmake, g++, libsdl2-dev, etc.) are unpinned but that is acceptable per guidance since apt packages generally need not be pinned. No unpinned pip/npm packages are used (judge.py uses only the stdlib).",
+          "outcome": "pass"
+        },
+        "typos": {
+          "explanation": "No typos were found in instruction.md, task.toml, the JSON config/manifest files, the shell scripts, or the patch files. Variable/rect renames introduced by the fix (mapTypes, mapNames) are consistently used across the patch and match the rubric wording.",
+          "outcome": "pass"
+        },
+        "tests_or_solution_in_image": {
+          "explanation": "The Dockerfile explicitly copies only environment/assets/ into the image (as /app/.harbor_assets/) and comments that tests/ and solution/ are intentionally NOT copied into the image, being supplied by the harness at verify time instead. Bug patches are copied to a temp path and deleted after being applied, so they don't leak into the final image filesystem either.",
+          "outcome": "pass"
+        },
+        "test_deps_in_image": {
+          "explanation": "GoogleTest is built from vendored source under /tests/vendor/googletest inside test.sh at verify time (cmake build + install to /usr/local/lib), not baked into the Docker image. The Dockerfile only installs generic build/runtime dependencies (cmake, g++, libsdl2-dev, etc.) that are needed to build the actual fheroes2 product itself, not test-only packages.",
+          "outcome": "pass"
+        },
+        "hardcoded_solution": {
+          "explanation": "solution/solve.sh applies solution/fix.patch, which is the actual multi-hunk source-code diff (restructuring event-handler dispatch order, adding a new Rect for the map-name column, making ActionListPressRight a no-op, and correcting the difficulty-label offset) rather than printing or echoing a literal answer string. This is the standard oracle-solution pattern for source-code bug-fix tasks and represents the real fix process.",
+          "outcome": "pass"
+        },
+        "file_reference_mentioned": {
+          "explanation": "The task requires editing existing, well-known source files as part of a code fix rather than producing new output artifacts whose filenames tests must discover; there is no new file the agent must name for the tests to find, so this criterion does not apply.",
+          "outcome": "not_applicable"
+        }
+      },
+      "cost_usd": 0.38785269999999994,
+      "task_name": "Tasks",
+      "error": null
+    }
+  ]
+}

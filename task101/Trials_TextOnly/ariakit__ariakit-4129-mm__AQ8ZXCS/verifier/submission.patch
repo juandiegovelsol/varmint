@@ -1,0 +1,94 @@
+diff --git a/packages/ariakit-core/src/utils/focus.ts b/packages/ariakit-core/src/utils/focus.ts
+index f31b6aa..fdd9d06 100644
+--- a/packages/ariakit-core/src/utils/focus.ts
++++ b/packages/ariakit-core/src/utils/focus.ts
+@@ -206,6 +206,34 @@ export function getLastTabbable(fallbackToFocusable?: boolean) {
+   return getLastTabbableIn(document.body, false, fallbackToFocusable);
+ }
+ 
++/**
++ * Returns the index of the active element in the `elements` array. If the
++ * active element is not in the array (for example, a focused element that
++ * became disabled), returns the index of the last element that comes before it
++ * in the tab order so the navigation continues from the active element's
++ * position. The `elements` array is expected to be in the document order, or
++ * in reverse document order when `reversed` is `true`.
++ */
++function getActiveIndex(
++  elements: HTMLElement[],
++  container: HTMLElement,
++  activeElement: Element | null,
++  reversed = false,
++) {
++  const index = elements.indexOf(activeElement as HTMLElement);
++  if (index !== -1) return index;
++  if (!activeElement) return -1;
++  if (activeElement === container) return -1;
++  if (!contains(container, activeElement)) return -1;
++  const position = reversed
++    ? Node.DOCUMENT_POSITION_PRECEDING
++    : Node.DOCUMENT_POSITION_FOLLOWING;
++  const nextIndex = elements.findIndex(
++    (element) => !!(activeElement.compareDocumentPosition(element) & position),
++  );
++  return nextIndex === -1 ? elements.length - 1 : nextIndex - 1;
++}
++
+ /**
+  * Returns the next tabbable element in `container`.
+  */
+@@ -217,7 +245,7 @@ export function getNextTabbableIn(
+ ) {
+   const activeElement = getActiveElement(container);
+   const allFocusable = getAllFocusableIn(container, includeContainer);
+-  const activeIndex = allFocusable.indexOf(activeElement as HTMLElement);
++  const activeIndex = getActiveIndex(allFocusable, container, activeElement);
+   const nextFocusableElements = allFocusable.slice(activeIndex + 1);
+   return (
+     nextFocusableElements.find(isTabbable) ||
+@@ -254,7 +282,12 @@ export function getPreviousTabbableIn(
+ ) {
+   const activeElement = getActiveElement(container);
+   const allFocusable = getAllFocusableIn(container, includeContainer).reverse();
+-  const activeIndex = allFocusable.indexOf(activeElement as HTMLElement);
++  const activeIndex = getActiveIndex(
++    allFocusable,
++    container,
++    activeElement,
++    true,
++  );
+   const previousFocusableElements = allFocusable.slice(activeIndex + 1);
+   return (
+     previousFocusableElements.find(isTabbable) ||
+diff --git a/packages/ariakit-test/src/press.ts b/packages/ariakit-test/src/press.ts
+index 12b03f3..7fe4361 100644
+--- a/packages/ariakit-test/src/press.ts
++++ b/packages/ariakit-test/src/press.ts
+@@ -201,8 +201,25 @@ export function press(
+ 
+     if (!element) return;
+ 
+-    // We can't press on elements that aren't focusable
+-    if (!isFocusable(element) && element.tagName !== "BODY") return;
++    // We can't press on elements that aren't focusable. However, if the active
++    // element became unfocusable while focused (for example, it got disabled),
++    // browsers dispatch the keyboard events on the body element and sequential
++    // focus navigation continues from the element's position.
++    if (!isFocusable(element) && element.tagName !== "BODY") {
++      const doc = element.ownerDocument;
++      if (key !== "Tab" || doc?.activeElement !== element) return;
++      const defaultAllowed = await dispatch.keyDown(doc.body, {
++        key,
++        ...options,
++      });
++      if (defaultAllowed && !options.metaKey) {
++        await keyDownMap.Tab?.(element, options);
++      }
++      await sleep();
++      await dispatch.keyUp(doc.activeElement || doc.body, { key, ...options });
++      await sleep();
++      return;
++    }
+ 
+     // If it's a printable character, we type it
+     if (isTextField(element)) {

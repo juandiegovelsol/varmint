@@ -1,0 +1,84 @@
+diff --git a/src/state/selectors/axisSelectors.ts b/src/state/selectors/axisSelectors.ts
+index 06b13669e1..3b2c05ae86 100644
+--- a/src/state/selectors/axisSelectors.ts
++++ b/src/state/selectors/axisSelectors.ts
+@@ -2012,9 +2012,15 @@ export const combineAxisTicks = (
+ 
+   let offset = type === 'category' && scale.bandwidth ? scale.bandwidth() / offsetForBand : 0;
+ 
++  /*
++   * A categorical angle axis places its band offset in the same direction as the graphical
++   * items that sit on it, whatever direction the axis itself runs in. Deriving the sign from
++   * the range instead flips the offset for an ascending circle, which drifts the axis ticks
++   * away from the points drawn on them and mislabels every category.
++   */
+   offset =
+     axisType === 'angleAxis' && axisRange != null && axisRange.length >= 2
+-      ? mathSign(axisRange[0] - axisRange[1]) * 2 * offset
++      ? (isCategorical && offset !== 0 ? 1 : mathSign(axisRange[0] - axisRange[1])) * 2 * offset
+       : offset;
+ 
+   // The ticks set by user should only affect the ticks adjacent to axis line
+diff --git a/src/state/selectors/tooltipSelectors.ts b/src/state/selectors/tooltipSelectors.ts
+index 1bc3261bb0..ad0b90cd7d 100644
+--- a/src/state/selectors/tooltipSelectors.ts
++++ b/src/state/selectors/tooltipSelectors.ts
+@@ -363,9 +363,14 @@ const combineTicksOfTooltipAxis = (
+   const offsetForBand = realScaleType === 'scaleBand' && scale.bandwidth ? scale.bandwidth() / 2 : 2;
+   let offset = type === 'category' && scale.bandwidth ? scale.bandwidth() / offsetForBand : 0;
+ 
++  /*
++   * Same rule as the rendered axis ticks: a categorical angle axis carries its band offset in the
++   * direction the graphical items are drawn in, not the direction the axis runs in. Taking the sign
++   * from the range makes the tooltip ticks drift away from the points for an ascending circle.
++   */
+   offset =
+     axisType === 'angleAxis' && range != null && range?.length >= 2
+-      ? mathSign(range[0] - range[1]) * 2 * offset
++      ? (isCategorical && offset !== 0 ? 1 : mathSign(range[0] - range[1])) * 2 * offset
+       : offset;
+ 
+   // When axis is a categorical axis, but the type of axis is number or the scale of axis is not "auto"
+diff --git a/src/util/getActiveCoordinate.ts b/src/util/getActiveCoordinate.ts
+index 81e99bea37..325647e372 100644
+--- a/src/util/getActiveCoordinate.ts
++++ b/src/util/getActiveCoordinate.ts
+@@ -120,6 +120,18 @@ export const calculateActiveTickIndex = (
+ 
+   if (axisType === 'angleAxis' && range != null && Math.abs(Math.abs(range[1] - range[0]) - 360) <= 1e-6) {
+     // ticks are distributed in a circle
++    const span = range[1] - range[0];
++    /*
++     * Tick coordinates can be shifted outside of the range (e.g. by the band offset
++     * that tooltip ticks receive), so both the coordinate and the intervals live
++     * modulo the full circle. Testing the coordinate shifted by a whole turn in both
++     * directions closes the wrap-around gap where no interval matched
++     * and the active index came back as -1.
++     */
++    const isInside = (lowerLimit: number, upperLimit: number, inclusiveLower: boolean): boolean =>
++      [coordinate, coordinate + span, coordinate - span].some(
++        c => (inclusiveLower ? c >= lowerLimit : c > lowerLimit) && c <= upperLimit,
++      );
+     for (let i = 0; i < len; i++) {
+       const before = i > 0 ? unsortedTicks[i - 1]?.coordinate : unsortedTicks[len - 1]?.coordinate;
+       const cur = unsortedTicks[i]?.coordinate;
+@@ -150,17 +162,14 @@ export const calculateActiveTickIndex = (
+           Math.max(cur, (sameDirectionCoord + cur) / 2),
+         ];
+ 
+-        if (
+-          (coordinate > sameInterval[0] && coordinate <= sameInterval[1]) ||
+-          (coordinate >= diffInterval[0] && coordinate <= diffInterval[1])
+-        ) {
++        if (isInside(sameInterval[0], sameInterval[1], false) || isInside(diffInterval[0], diffInterval[1], true)) {
+           return unsortedTicks[i]?.index;
+         }
+       } else {
+         const minValue = Math.min(before, after);
+         const maxValue = Math.max(before, after);
+ 
+-        if (coordinate > (minValue + cur) / 2 && coordinate <= (maxValue + cur) / 2) {
++        if (isInside((minValue + cur) / 2, (maxValue + cur) / 2, false)) {
+           return unsortedTicks[i]?.index;
+         }
+       }

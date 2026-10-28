@@ -1,0 +1,50 @@
+version = "1.0"
+
+[metadata]
+task_id = "tldraw__tldraw-9133-mm"
+title = "Deleting export actions results in empty menu option"
+repository_name = "tldraw/tldraw"
+repo_url = "https://github.com/tldraw/tldraw"
+issue_number = 9133
+pr_number = 9589
+base_commit = "8f498ddb43350989d1741b05a734a0cd4780d46a"
+fix_commit = "b92b9b8495e2c488e3b896e8c4b78002c6532902"
+task_type = "visual_bug_fix"
+language = "TypeScript"
+framework = "React/Vitest (jsdom)"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "medium"
+difficulty_explanation = """After stripping, instruction.md describes only the generic symptom class (a submenu trigger surviving when every one of its actions is removed) and no longer names which submenu family is affected. The poster is what narrows this to the export/copy-as submenu group (it shows the 'Export as' trigger open on a near-empty submenu), so locating the right component now depends on the image, not the text alone. The fix itself is non-trivial in a different way: it requires recognizing the existing per-menu-item action-gating pattern used elsewhere in the same files and extending it to the submenu-trigger level across three files (extracting a reusable gated component, wiring useActions() through, and re-exporting it), rather than a one-line guard."""
+files_edited = [
+  "packages/tldraw/src/lib/ui/components/menu-items.tsx",
+  "packages/tldraw/src/lib/ui/components/MainMenu/DefaultMainMenuContent.tsx",
+  "packages/tldraw/src/index.ts"
+]
+f2p = [
+  "hides the export-as submenu when all export actions are removed",
+  "hides the copy-as submenu when all copy actions are removed",
+  "hides the export-all-as submenu when all export-all actions are removed"
+]
+p2p = [
+  "shows the export-as and copy-as submenus by default",
+  "keeps the export-as submenu when at least one export action remains",
+  "shows the export-all-as submenu by default",
+  "keeps the export-all-as submenu when at least one export-all action remains"
+]
+tags = ["multimodal", "visual_bug_fix", "react", "typescript", "tldraw"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "no-network"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

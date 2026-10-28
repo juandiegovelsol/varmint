@@ -1,0 +1,210 @@
+diff --git a/src/parser/svgClassFills.spec.ts b/src/parser/svgClassFills.spec.ts
+new file mode 100644
+--- /dev/null
++++ b/src/parser/svgClassFills.spec.ts
+@@ -0,0 +1,205 @@
++import { describe, expect, test } from 'vitest';
++import { loadSVGFromString } from './loadSVGFromString';
++// Register Circle so classed <circle> elements parse into objects during SVG load.
++import '../shapes/Circle';
++
++describe('svg class fills', () => {
++  test('can load svgs with style tags with import statement', async () => {
++    const loaded =
++      await loadSVGFromString(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" viewBox="0 0 4439.1 3733" xml:space="preserve"><style>
++  @import url("https://fonts.googleapis.com/css2?family=Black+Ops+One%7Cfamily=Catamaran:wght@400,700%7Cfamily=Caveat+Brush%7Cfamily=Comfortaa:wght@400,500%7Cfamily=Henny+Penny%7Cfamily=Montserrat:wght@400,500,700%7Cfamily=Mulish:wght@400,500%7Cfamily=Oswald:wght@400,500%7Cfamily=PT+Sans%7Cfamily=Poppins:wght@300,500%7Cfamily=Prompt%7Cfamily=Roboto+Slab:wght@400,500%7Cfamily=Roboto:wght@300,400,700%7Cfamily=Rubik:wght@400,500%7Cfamily=Varela%7Cfamily=Viga%7Cfamily=Work+Sans:wght@300,400%7Cfamily=Yesteryear%7Cdisplay");
++
++  </style><defs/><rect x="0" y="0" width="100%" height="100%" fill="transparent"/><g transform="matrix(1 0 0 1 1643 1651.95)" id="COLORZONE-5" fill="#FFC900" style="fill: rgb(255, 201, 0);"><rect style="stroke: rgb(0, 0, 0); stroke-width: 2; stroke-dasharray: none; stroke-linecap: round; stroke-dashoffset: 0; stroke-linejoin: round; stroke-miterlimit: 10; fill: rgb(255, 201, 0); fill-rule: nonzero; opacity: 1;" x="-481.9" y="-141.75" rx="0" ry="0" width="963.8" height="283.5" fill="#FFC900"/></g></svg>`);
++    expect(loaded.objects).toHaveLength(2);
++  });
++
++  test('can load svgs with style tags with nested at-rules', async () => {
++    const loaded = await loadSVGFromString(`
++      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
++        <style>
++          circle { fill: black; }
++          @media (prefers-color-scheme: dark) { circle { fill: white; } }
++          @supports (display: flex) {
++            circle { color: blue; }
++          }
++          @scope (scope root) to (scope limit) {
++            circle { color: green; }
++          }
++        </style>
++        <circle r="10" cx="10" cy="10"/>
++      </svg>
++    `);
++    expect(loaded.objects).toHaveLength(1);
++  });
++
++  test('applies both class fills when rules live in one style element', async () => {
++    const loaded = await loadSVGFromString(`
++      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20">
++        <style>
++          .ink { fill: navy; }
++          .sun { fill: gold; }
++        </style>
++        <circle class="ink" r="9" cx="10" cy="10"></circle>
++        <circle class="sun" r="9" cx="30" cy="10"></circle>
++      </svg>
++    `);
++    expect(loaded.objects).toHaveLength(2);
++    expect(loaded.objects[0]).toMatchObject({ fill: 'navy' });
++    expect(loaded.objects[1]).toMatchObject({ fill: 'gold' });
++  });
++
++  test('can load svgs with multiple style tags', async () => {
++    const loaded = await loadSVGFromString(`
++      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20">
++        <style>
++          .blue { fill: blue; }
++        </style>
++        <style>
++          .red { fill: red; }
++        </style>
++        <circle class="blue" r="9" cx="10" cy="10"></circle>
++        <circle class="red" r="9" cx="30" cy="10"></circle>
++      </svg>
++    `);
++    expect(loaded.objects).toHaveLength(2);
++    expect(loaded.objects[0]).toMatchObject({ fill: 'blue' });
++    expect(loaded.objects[1]).toMatchObject({ fill: 'red' });
++  });
++
++  test('applies hex class fills across separate style elements', async () => {
++    const loaded = await loadSVGFromString(`
++      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20">
++        <style>
++          .p { fill: #314159; }
++        </style>
++        <style>
++          .q { fill: #271828; }
++        </style>
++        <circle class="p" r="9" cx="10" cy="10"></circle>
++        <circle class="q" r="9" cx="30" cy="10"></circle>
++      </svg>
++    `);
++    expect(loaded.objects).toHaveLength(2);
++    expect(loaded.objects[0]).toMatchObject({ fill: '#314159' });
++    expect(loaded.objects[1]).toMatchObject({ fill: '#271828' });
++  });
++
++  test('applies class fills when style element order is reversed', async () => {
++    const loaded = await loadSVGFromString(`
++      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20">
++        <style>
++          .q { fill: #271828; }
++        </style>
++        <style>
++          .p { fill: #314159; }
++        </style>
++        <circle class="p" r="9" cx="10" cy="10"></circle>
++        <circle class="q" r="9" cx="30" cy="10"></circle>
++      </svg>
++    `);
++    expect(loaded.objects).toHaveLength(2);
++    expect(loaded.objects[0]).toMatchObject({ fill: '#314159' });
++    expect(loaded.objects[1]).toMatchObject({ fill: '#271828' });
++  });
++
++  test('applies class fills across three separate style elements', async () => {
++    const loaded = await loadSVGFromString(`
++      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 20">
++        <style>
++          .a { fill: #112233; }
++        </style>
++        <style>
++          .b { fill: #445566; }
++        </style>
++        <style>
++          .c { fill: #778899; }
++        </style>
++        <circle class="a" r="8" cx="10" cy="10"></circle>
++        <circle class="b" r="8" cx="30" cy="10"></circle>
++        <circle class="c" r="8" cx="50" cy="10"></circle>
++      </svg>
++    `);
++    expect(loaded.objects).toHaveLength(3);
++    expect(loaded.objects[0]).toMatchObject({ fill: '#112233' });
++    expect(loaded.objects[1]).toMatchObject({ fill: '#445566' });
++    expect(loaded.objects[2]).toMatchObject({ fill: '#778899' });
++  });
++
++  test('preserves class fill values that contain a colon', async () => {
++    const loaded = await loadSVGFromString(`
++      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20">
++        <style>
++          .plain { fill: teal; }
++        </style>
++        <style>
++          .ref { fill: url(https://cdn.example.com/paint.svg#swatch); }
++        </style>
++        <circle class="plain" r="9" cx="10" cy="10"></circle>
++        <circle class="ref" r="9" cx="30" cy="10"></circle>
++      </svg>
++    `);
++    expect(loaded.objects).toHaveLength(2);
++    expect(loaded.objects[0]).toMatchObject({ fill: 'teal' });
++    expect(loaded.objects[1]).toMatchObject({
++      fill: 'url(https://cdn.example.com/paint.svg#swatch)',
++    });
++  });
++
++  test('applies class fills when one class name is a prefix of another', async () => {
++    const loaded = await loadSVGFromString(`
++      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20">
++        <style>
++          .s1 { fill: red; }
++          .s12 { fill: green; }
++        </style>
++        <circle class="s1" r="9" cx="10" cy="10"></circle>
++        <circle class="s12 s1" r="9" cx="30" cy="10"></circle>
++      </svg>
++    `);
++    expect(loaded.objects).toHaveLength(2);
++    expect(loaded.objects[0]).toMatchObject({ fill: 'red' });
++    expect(loaded.objects[1]).toMatchObject({ fill: 'green' });
++  });
++
++  test('applies fills selected by element id', async () => {
++    const loaded = await loadSVGFromString(`
++      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20">
++        <style>
++          #lagoon { fill: teal; }
++          #dune { fill: khaki; }
++        </style>
++        <circle id="lagoon" r="9" cx="10" cy="10"></circle>
++        <circle id="dune" r="9" cx="30" cy="10"></circle>
++      </svg>
++    `);
++    expect(loaded.objects).toHaveLength(2);
++    expect(loaded.objects[0]).toMatchObject({ fill: 'teal' });
++    expect(loaded.objects[1]).toMatchObject({ fill: 'khaki' });
++  });
++
++  test('applies fills selected by element type', async () => {
++    const loaded = await loadSVGFromString(`
++      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
++        <style>
++          circle { fill: maroon; }
++        </style>
++        <circle r="9" cx="10" cy="10"></circle>
++      </svg>
++    `);
++    expect(loaded.objects).toHaveLength(1);
++    expect(loaded.objects[0]).toMatchObject({ fill: 'maroon' });
++  });
++
++  test('applies fills selected by a type and class compound selector', async () => {
++    const loaded = await loadSVGFromString(`
++      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
++        <style>
++          circle.halo { fill: olive; }
++        </style>
++        <circle class="halo" r="9" cx="10" cy="10"></circle>
++      </svg>
++    `);
++    expect(loaded.objects).toHaveLength(1);
++    expect(loaded.objects[0]).toMatchObject({ fill: 'olive' });
++  });
++});

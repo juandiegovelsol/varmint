@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "checks": {
+        "behavior_in_task_description": {
+          "explanation": "instruction.md deliberately gives only the user-facing symptom (something on the device settings page vanishes after backing out of a dialog partway, stays gone while connected, and the same happens on other devices 'set up differently' so the fix must generalize) and points the solver to two embedded screenshots as the load-bearing spec, per the documented 'poster-bound localization' design. Screenshot 1 (Create multi-share backup dialog, step 4/5) and screenshot 2 (Settings > Device > Wallet backup missing its second row) are part of instruction.md itself and correctly identify which feature and flow is broken. The core fail-to-pass behavior (the option must reappear across more than one backup-type configuration) matches the 'other devices, set up differently' generalization clause. Fine-grained implementation facts (exact backup_availability enum values, the BACKUP_TYPE_EXTENDABILITY table) are not spelled out in prose, but this is consistent with a bug-fix task genre where such details are meant to be discovered by reading the existing source, not handed over verbatim (doing so would give away the fix, which the task's difficulty notes explicitly say was cut from an earlier draft).",
+          "outcome": "pass"
+        },
+        "behavior_in_tests": {
+          "explanation": "The instruction's two behavioral claims -- the option disappears in this specific interrupted-flow state, and the fix must generalize across differently-configured devices -- are directly exercised: the f2p tests show the option reappears when backup_availability is 'Available' across two distinct extendable Slip39 backup types and while the device is locked. The p2p tests guard the surrounding cases (already-working NotAvailable state, N4W1 override, non-extendable/no-Shamir devices, no device/features, and click/analytics/routing behavior) so a fix can't be over-broadened. Nothing described in instruction.md is left untested.",
+          "outcome": "pass"
+        },
+        "informative_test_structure": {
+          "explanation": "test.patch is a single well-organized file: a long header comment explains the bug, the two independent gates under test, and every mock's purpose; the body is split into clearly labeled sections (app-wide plumbing, design-system stand-ins, barrel exports, fixtures) with a top-level describe('...issue #30020') containing two clearly named nested describes -- '...(fail-to-pass)' and '...(pass-to-pass)' -- each with descriptive it() names that state the exact condition and expected outcome.",
+          "outcome": "pass"
+        },
+        "anti_cheating_measures": {
+          "explanation": "The repo's .git history is stripped down to a single synthetic 'harbor_base' commit so the agent cannot read the real fix commit or PR; the injected-bug patch (bugs/bug_01.patch) and its staging directory (/tmp/bugs) are deleted from the final image so the reverse-engineerable fix is never present in the agent-visible filesystem; the agent phase runs with network_mode=no-network so the real GitHub issue/PR cannot be fetched; instruction.md avoids naming the repo, issue number, or any domain terms (backup/share/Shamir/Trezor), forcing localization through the screenshots rather than pattern-matching on identifiers; and the repo's own existing shamir.test.ts is confirmed not to cover the injected defect, so the shipped test suite can't be used as a shortcut. The verifier's own network_mode=public is explained and appears genuinely inert, since test.sh installs nothing at verify time and all test tooling is pre-baked at build time.",
+          "outcome": "pass"
+        },
+        "structured_data_schema": {
+          "explanation": "This is a UI/behavior bug-fix task verified by React component render/interaction assertions (jest + RTL), not a task that produces structured data output (JSON/CSV/API/DB schema), so this criterion does not apply.",
+          "outcome": "not_applicable"
+        },
+        "pinned_dependencies": {
+          "explanation": "The only dependency added purely for the grading harness, jest-junit, is pinned to an exact version (16.0.0) in the Dockerfile. The main workspace dependency set is installed via `yarn install --immutable`, which pins to the repo's own yarn.lock, and yarn itself is pinned via the repo's packageManager field / corepack. apt packages (git, curl, ca-certificates, python3) are left unpinned, which is acceptable per the guidance.",
+          "outcome": "pass"
+        },
+        "typos": {
+          "explanation": "No typos were found in instruction.md, task.toml, the Dockerfile, solve.sh, test.sh, verifier.py, config.json, fix.patch, or test.patch after close reading; file paths, commit SHAs (both 40 hex characters), asset paths, and identifiers referenced across files (e.g. /app/.harbor_assets/bug_screenshot_*.png, MultiShareBackup.tsx, shamir.ts) are consistent everywhere they are used.",
+          "outcome": "pass"
+        },
+        "tests_or_solution_in_image": {
+          "explanation": "The Dockerfile only COPYs environment/assets/bugs (into a temp path, later deleted) and environment/assets (screenshots) into the image; it never COPYs tests/ or solution/, and this is explicitly called out in a comment ('tests/ and solution/ are intentionally NOT copied into the image'). The file tree confirms tests/ and solution/ live only at the task-repo level, outside environment/.",
+          "outcome": "pass"
+        },
+        "test_deps_in_image": {
+          "explanation": "The one dependency added purely for grading (jest-junit) is installed at build time but into an isolated prefix (/opt/test-deps) kept out of /app/node_modules specifically so it never touches the repo's own yarn.lock/--immutable install or becomes visible to the agent through normal module resolution. This is a deliberate, documented tradeoff necessitated by the agent phase being fully offline and the repo's install being lock-immutable; test.sh installs nothing at verify time and only references the isolated path by absolute location, so the isolation is real rather than nominal.",
+          "outcome": "pass"
+        },
+        "hardcoded_solution": {
+          "explanation": "solve.sh applies solution/fix.patch, the actual two-file source code diff (shamir.ts extendability table entry, MultiShareBackup.tsx availability guard) that constitutes the real fix -- it does not print or write a literal answer value. For a source-code bug-fix task, applying the correct code change is the equivalent of 'deriving the answer via a process'; there is no separate output artifact to hardcode.",
+          "outcome": "pass"
+        },
+        "file_reference_mentioned": {
+          "explanation": "This task does not require the agent to produce a specifically-named output file for the verifier to check; it requires editing existing source files within the repo, and the test suite is explicitly written to credit a fix landing in MultiShareBackup.tsx or an alternative location (e.g. the workspace barrel), so no single fixed file path is a hard requirement that instruction.md would need to name.",
+          "outcome": "not_applicable"
+        }
+      },
+      "cost_usd": 0.80083125,
+      "task_name": "Tasks",
+      "error": null
+    }
+  ]
+}

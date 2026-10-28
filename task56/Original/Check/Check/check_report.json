@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "checks": {
+        "behavior_in_task_description": {
+          "explanation": "instruction.md only says that keyboard navigation in manual selection mode produces an 'unexpected outcome' and asks to 'maintain the intended distinction between navigation and selection,' pointing to an embedded GIF. It never names the affected components (cds-tabs / cds-content-switcher), the specific custom event under test (cds-tabs-selected / cds-content-switcher-selected), or the exact keys involved (Arrow keys vs. Enter/Space). The f2p/p2p tests assert on these exact event names and key-specific semantics, which are not stated in the text and can only be inferred by watching the GIF and reverse-engineering the codebase — this is by design per difficulty_explanation, but per the strict criterion it means tested details are only implied by an example (the GIF), not specified.",
+          "outcome": "fail"
+        },
+        "behavior_in_tests": {
+          "explanation": "The behavior described in the instructions (keyboard navigation vs. explicit selection distinction in manual selection mode) is exactly what the f2p tests check: arrow-key navigation must move focus without changing value or firing cds-tabs-selected, while Enter/Space must select and fire the event. p2p tests further ensure existing content-switcher click/keyboard/selectedIndex behavior is not broken, matching the 'without breaking ordinary interactions' concern implied by the instruction.",
+          "outcome": "pass"
+        },
+        "informative_test_structure": {
+          "explanation": "test.patch adds clearly named describe/it blocks (e.g. 'cds-tabs manual selection mode > should move focus without changing selection...') that read as behavioral specs. test.sh and verifier.py are both well-commented with section banners (== applying test.patch ==, == computing reward ==) and docstrings explaining the reward policy and anti-cheat rationale, making the pipeline easy to follow.",
+          "outcome": "pass"
+        },
+        "anti_cheating_measures": {
+          "explanation": "The Dockerfile explicitly strips .git after checkout and re-inits a single 'base' commit so the agent cannot inspect the real fix PR or future history. The agent runs with network_mode = 'no-network' so it cannot browse the GitHub issue/PR to read the human fix directly. test.sh restores test files from the harbor_base tag before applying test.patch so any agent tampering with test files is discarded prior to scoring. Reward is computed purely from real Mocha test results, not from source inspection.",
+          "outcome": "pass"
+        },
+        "structured_data_schema": {
+          "explanation": "This is a source-code bug-fix task verified via existing Mocha/web-test-runner behavioral tests; there is no expected JSON/CSV/API output schema for the agent to produce.",
+          "outcome": "not_applicable"
+        },
+        "pinned_dependencies": {
+          "explanation": "The Dockerfile pins the Node major version (node:24-bookworm) and installs JS dependencies via 'yarn install --immutable', which enforces the checked-in lockfile. apt packages (git, ca-certificates, chromium) are unpinned, which is acceptable per the stated guidance that apt packages generally need not be pinned.",
+          "outcome": "pass"
+        },
+        "typos": {
+          "explanation": "No typos were found in filenames, paths, commands, or variable names across instruction.md, task.toml, Dockerfile, solve.sh, fix.patch, test.patch, test.sh, verifier.py, or config.json; file paths referenced (e.g. /app/.harbor_assets/bug.gif) are consistent between instruction.md, ASSET_MANIFEST.json, and the Dockerfile COPY step.",
+          "outcome": "pass"
+        },
+        "tests_or_solution_in_image": {
+          "explanation": "The Dockerfile only copies environment/assets/ (the bug.gif) into the image; it does not COPY tests/ or solution/ into the build, so the agent's runtime environment does not contain the tests or the reference fix.",
+          "outcome": "pass"
+        },
+        "test_deps_in_image": {
+          "explanation": "Headless Chromium, a test-only dependency, is installed inside tests/test.sh at verification time ('installing headless Chromium (test-only dependency)') rather than baked into the environment Dockerfile, keeping the base image free of test-only packages.",
+          "outcome": "pass"
+        },
+        "hardcoded_solution": {
+          "explanation": "solution/solve.sh applies solution/fix.patch, which is a genuine multi-file source code diff (content-switcher.ts and tabs.ts) implementing the actual upstream fix logic (adding an 'activation' interaction type and gating event dispatch), rather than simply printing or copying a final answer.",
+          "outcome": "pass"
+        },
+        "file_reference_mentioned": {
+          "explanation": "The task does not require the agent to produce a new named output file (e.g. output.csv); it requires fixing existing source files in the repository, and correctness is verified purely through behavioral test execution rather than checking for a specific deliverable file.",
+          "outcome": "not_applicable"
+        }
+      },
+      "cost_usd": 0.282672,
+      "task_name": "Tasks",
+      "error": null
+    }
+  ]
+}

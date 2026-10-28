@@ -1,0 +1,260 @@
+== applying test.patch ==
+== starting in-image postgres ==
+== checking pinned test deps (no install) ==
+pytest 9.1.1 | django 5.2.16
+== running f2p + p2p tests ==
+(tests exited non-zero; parsing report)
+== computing reward ==
+{"reward": 0.0, "f2p": {"tests.tickets.base.test_event_team_listing::test_each_concerned_team_is_listed_once_palette_alpha": "fail", "tests.tickets.base.test_event_team_listing::test_each_concerned_team_is_listed_once_palette_bravo": "fail", "tests.tickets.base.test_event_team_listing::test_number_of_listed_teams_matches_number_of_concerned_teams": "fail", "tests.tickets.base.test_event_team_listing::test_stale_event_limits_on_an_all_events_team_do_not_multiply_it": "fail", "tests.tickets.base.test_event_team_listing::test_event_dashboard_panel_names_each_team_once": "fail", "app/tests/tickets/base/test_event_team_listing.py::test_event_dashboard_panel_respects_event_team_scope": "fail"}, "p2p": {"tests.tickets.base.test_event_team_listing::test_team_limited_to_another_event_is_not_listed": "pass", "tests.tickets.base.test_event_team_listing::test_team_of_a_different_organizer_is_not_listed": "pass", "tests.tickets.base.test_event_team_listing::test_event_specific_team_is_still_listed": "pass", "tests.tickets.base.test_event_team_listing::test_team_scoped_to_nothing_is_not_listed": "pass", "tests.tickets.base.test_event_team_listing::test_no_teams_are_listed_when_the_organizer_has_none": "pass", "tests.tickets.base.test_event_team_listing::test_listed_teams_can_still_be_narrowed_by_permission": "pass", "tests.tickets.base.test_event_team_listing::test_event_permissions_of_a_team_member_are_unchanged": "pass"}}
+reward=0.0
+lette_bravo _____________
+
+    @pytest.mark.django_db
+    def test_each_concerned_team_is_listed_once_palette_bravo():
+        """Same contract over a completely different world (palette bravo)."""
+        with scopes_disabled():
+            world = build_world(PALETTE_BRAVO)
+            event = reload_event(world['target'])
+            listed = listed_team_pks(event)
+            expected = teams_that_concern(event)
+    
+            assert expected, 'fixture built no team that concerns the event'
+    
+            repeated = sorted({pk for pk in listed if listed.count(pk) > 1})
+>           assert repeated == [], (
+                f'teams announced more than once: '
+                f'{sorted(Team.objects.filter(pk__in=repeated).values_list("name", flat=True))}'
+            )
+E           AssertionError: teams announced more than once: ['Bravo Broadcast Unit']
+E           assert [8] == []
+E             
+E             Left contains one more item: 8
+E             Use -v to get more diff
+
+tests/tickets/base/test_event_team_listing.py:239: AssertionError
+________ test_number_of_listed_teams_matches_number_of_concerned_teams _________
+
+    @pytest.mark.django_db
+    def test_number_of_listed_teams_matches_number_of_concerned_teams():
+        """The size reported for the collection must be the real number of teams."""
+        with scopes_disabled():
+            world = build_world(PALETTE_ALPHA)
+            event = reload_event(world['target'])
+            expected = teams_that_concern(event)
+    
+>           assert event.teams.count() == len(expected)
+E           assert 5 == 3
+E            +  where 5 = count()
+E            +    where count = <QuerySet [<Team: Alpha Core Crew on Alpha Collective>, <Team: Alpha Outreach Desk on Alpha Collective>, <Team: Alpha ... on Alpha Collective>, <Team: Alpha Outreach Desk on Alpha Collective>, <Team: Alpha Ticket Desk on Alpha Collective>]>.count
+E            +      where <QuerySet [<Team: Alpha Core Crew on Alpha Collective>, <Team: Alpha Outreach Desk on Alpha Collective>, <Team: Alpha ... on Alpha Collective>, <Team: Alpha Outreach Desk on Alpha Collective>, <Team: Alpha Ticket Desk on Alpha Collective>]> = <Event: Alphacon>.teams
+E            +  and   3 = len({13, 14, 15})
+
+tests/tickets/base/test_event_team_listing.py:254: AssertionError
+_______ test_stale_event_limits_on_an_all_events_team_do_not_multiply_it _______
+
+    @pytest.mark.django_db
+    def test_stale_event_limits_on_an_all_events_team_do_not_multiply_it():
+        """The repetition must not scale with the number of stored limits.
+    
+        Two organizers whose all-events team carries a different number of stale
+        limits must both announce that team exactly once, so a solution that merely
+        trims the list to the length seen in the bug report cannot pass.
+        """
+        with scopes_disabled():
+            alpha = build_world(PALETTE_ALPHA)
+            bravo = build_world(PALETTE_BRAVO)
+    
+            for world in (alpha, bravo):
+                event = reload_event(world['target'])
+                listed = listed_team_pks(event)
+                stale_pk = world['stale_team'].pk
+                # sanity: this team really does carry more than one stored limit
+                assert world['stale_team'].limit_events.count() > 1
+>               assert listed.count(stale_pk) == 1, (
+                    f'{world["stale_team"].name} announced {listed.count(stale_pk)} times '
+                    f'for {event.slug}'
+                )
+E               AssertionError: Alpha Outreach Desk announced 3 times for alphacon
+E               assert 3 == 1
+E                +  where 3 = <built-in method count of list object at 0x7fcd18e7a780>(20)
+E                +    where <built-in method count of list object at 0x7fcd18e7a780> = [19, 20, 20, 20, 21].count
+
+tests/tickets/base/test_event_team_listing.py:275: AssertionError
+_______________ test_event_dashboard_panel_names_each_team_once ________________
+
+rf = <django.test.client.RequestFactory object at 0x7fcd189bb4d0>
+
+    @pytest.mark.django_db
+    def test_event_dashboard_panel_names_each_team_once(rf):
+        """The organizer panel of the event dashboard must not repeat a team name."""
+        from django.contrib.messages.storage.fallback import FallbackStorage
+        from django.contrib.sessions.backends.db import SessionStore
+    
+        from eventyay.eventyay_common.views.dashboards import EventIndexView
+    
+        with scopes_disabled():
+            world = build_world(PALETTE_ALPHA)
+            event = reload_event(world['target'])
+            user = User.objects.create_user(
+                email=PALETTE_ALPHA['member_email'],
+                password='n0t-a-real-password',
+                fullname='Nadia Alpher',
+                locale='en',
+            )
+            world['global_team'].members.add(user)
+    
+            request = rf.get('/')
+            request.session = SessionStore()
+            request.session.create()
+            request._messages = FallbackStorage(request)
+            request.user = user
+            request.organizer = world['organizer']
+            request.event = event
+    
+            view = EventIndexView()
+            view.request = request
+            view.args = ()
+            view.kwargs = {}
+            context = view.get_context_data()
+    
+            panel = list(context['organizer_teams'])
+            names = [name for _pk, name in panel]
+>           assert sorted(names) == sorted(set(names)), f'repeated entries in the panel: {names}'
+E           AssertionError: repeated entries in the panel: ['Alpha Core Crew', 'Alpha Outreach Desk', 'Alpha Outreach Desk', 'Alpha Outreach Desk']
+E           assert ['Alpha Core ...utreach Desk'] == ['Alpha Core ...utreach Desk']
+E             
+E             Left contains 2 more items, first extra item: 'Alpha Outreach Desk'
+E             Use -v to get more diff
+
+tests/tickets/base/test_event_team_listing.py:316: AssertionError
+_____________ test_event_dashboard_panel_respects_event_team_scope _____________
+
+rf = <django.test.client.RequestFactory object at 0x7fcd0cae97c0>
+
+    @pytest.mark.django_db
+    def test_event_dashboard_panel_respects_event_team_scope(rf):
+        """The event dashboard must exclude teams scoped only to another event."""
+        from django.contrib.messages.storage.fallback import FallbackStorage
+        from django.contrib.sessions.backends.db import SessionStore
+    
+        from eventyay.eventyay_common.views.dashboards import EventIndexView
+    
+        with scopes_disabled():
+            world = build_world(PALETTE_ALPHA)
+            event = reload_event(world['target'])
+            user = User.objects.create_user(
+                email=PALETTE_ALPHA['member_email'],
+                password='n0t-a-real-password',
+                fullname='Nadia Alpher',
+                locale='en',
+            )
+            world['global_team'].members.add(user)
+    
+            request = rf.get('/')
+            request.session = SessionStore()
+            request.session.create()
+            request._messages = FallbackStorage(request)
+            request.user = user
+            request.organizer = world['organizer']
+            request.event = event
+    
+            view = EventIndexView()
+            view.request = request
+            view.args = ()
+            view.kwargs = {}
+            context = view.get_context_data()
+    
+            panel_pks = {pk for pk, _name in context['organizer_teams']}
+    
+            assert world['global_team'].pk in panel_pks
+>           assert world['local_team'].pk in panel_pks
+E           assert 39 in {37, 38}
+E            +  where 39 = <Team: Alpha Ticket Desk on Alpha Collective>.pk
+
+tests/tickets/base/test_event_team_listing.py:357: AssertionError
+=============================== warnings summary ===============================
+../../opt/venv/lib/python3.12/site-packages/pydantic_settings/sources/providers/secrets.py:67
+  /opt/venv/lib/python3.12/site-packages/pydantic_settings/sources/providers/secrets.py:67: UserWarning: directory "/app/app/.secrets" does not exist
+    warnings.warn(f'directory "{path}" does not exist')
+
+tests/tickets/conftest.py:10
+  /app/app/tests/tickets/conftest.py:10: PytestRemovedIn10Warning: The hookimpl pytest_configure uses old-style configuration options (marks or attributes).
+  Please use the pytest.hookimpl(trylast=True) decorator instead
+   to configure the hooks.
+   See https://docs.pytest.org/en/latest/deprecations.html#configuring-hook-specs-impls-using-markers
+    @pytest.mark.trylast
+
+tests/tickets/base/test_event_team_listing.py::test_event_dashboard_panel_names_each_team_once
+  /app/app/eventyay/orga/forms/event.py:217: RemovedInDjango60Warning: The default scheme will be changed from 'http' to 'https' in Django 6.0. Pass the forms.URLField.assume_scheme argument to silence this warning, or set the FORMS_URLFIELD_ASSUME_HTTPS transitional setting to True to opt into using 'https' as the new default scheme.
+    html_export_url = forms.URLField(
+
+tests/tickets/base/test_event_team_listing.py: 22 warnings
+  /opt/venv/lib/python3.12/site-packages/django/db/models/fields/__init__.py:1148: RemovedInDjango60Warning: The default scheme will be changed from 'http' to 'https' in Django 6.0. Pass the forms.URLField.assume_scheme argument to silence this warning, or set the FORMS_URLFIELD_ASSUME_HTTPS transitional setting to True to opt into using 'https' as the new default scheme.
+    return form_class(**defaults)
+
+tests/tickets/base/test_event_team_listing.py::test_event_dashboard_panel_names_each_team_once
+tests/tickets/base/test_event_team_listing.py::test_event_dashboard_panel_names_each_team_once
+  /app/app/eventyay/submission/forms/resource.py:90: RemovedInDjango60Warning: The default scheme will be changed from 'http' to 'https' in Django 6.0. Pass the forms.URLField.assume_scheme argument to silence this warning, or set the FORMS_URLFIELD_ASSUME_HTTPS transitional setting to True to opt into using 'https' as the new default scheme.
+    self.link_field = forms.URLField(required=False)
+
+tests/tickets/base/test_event_team_listing.py::test_event_dashboard_panel_names_each_team_once
+  /app/app/eventyay/control/forms/global_settings.py:607: RemovedInDjango60Warning: The default scheme will be changed from 'http' to 'https' in Django 6.0. Pass the forms.URLField.assume_scheme argument to silence this warning, or set the FORMS_URLFIELD_ASSUME_HTTPS transitional setting to True to opt into using 'https' as the new default scheme.
+    telemetry_endpoint = forms.URLField(
+
+tests/tickets/base/test_event_team_listing.py::test_event_dashboard_panel_names_each_team_once
+  /app/app/eventyay/control/forms/global_settings.py:632: RemovedInDjango60Warning: The default scheme will be changed from 'http' to 'https' in Django 6.0. Pass the forms.URLField.assume_scheme argument to silence this warning, or set the FORMS_URLFIELD_ASSUME_HTTPS transitional setting to True to opt into using 'https' as the new default scheme.
+    redirect_url = forms.URLField(
+
+tests/tickets/base/test_event_team_listing.py::test_event_dashboard_panel_names_each_team_once
+  /opt/venv/lib/python3.12/site-packages/exhibition/forms.py:48: RemovedInDjango60Warning: The default scheme will be changed from 'http' to 'https' in Django 6.0. Pass the forms.URLField.assume_scheme argument to silence this warning, or set the FORMS_URLFIELD_ASSUME_HTTPS transitional setting to True to opt into using 'https' as the new default scheme.
+    slides_url = forms.URLField(
+
+tests/tickets/base/test_event_team_listing.py::test_event_dashboard_panel_names_each_team_once
+  /opt/venv/lib/python3.12/site-packages/exhibition/forms.py:53: RemovedInDjango60Warning: The default scheme will be changed from 'http' to 'https' in Django 6.0. Pass the forms.URLField.assume_scheme argument to silence this warning, or set the FORMS_URLFIELD_ASSUME_HTTPS transitional setting to True to opt into using 'https' as the new default scheme.
+    logo_url = forms.URLField(
+
+tests/tickets/base/test_event_team_listing.py::test_event_dashboard_panel_names_each_team_once
+  /opt/venv/lib/python3.12/site-packages/exhibition/forms.py:58: RemovedInDjango60Warning: The default scheme will be changed from 'http' to 'https' in Django 6.0. Pass the forms.URLField.assume_scheme argument to silence this warning, or set the FORMS_URLFIELD_ASSUME_HTTPS transitional setting to True to opt into using 'https' as the new default scheme.
+    header_image_url = forms.URLField(
+
+tests/tickets/base/test_event_team_listing.py::test_event_dashboard_panel_names_each_team_once
+  /opt/venv/lib/python3.12/site-packages/exhibition/forms.py:643: RemovedInDjango60Warning: The default scheme will be changed from 'http' to 'https' in Django 6.0. Pass the forms.URLField.assume_scheme argument to silence this warning, or set the FORMS_URLFIELD_ASSUME_HTTPS transitional setting to True to opt into using 'https' as the new default scheme.
+    slides_url = forms.URLField(
+
+tests/tickets/base/test_event_team_listing.py::test_event_dashboard_panel_names_each_team_once
+  /opt/venv/lib/python3.12/site-packages/exhibition/forms.py:648: RemovedInDjango60Warning: The default scheme will be changed from 'http' to 'https' in Django 6.0. Pass the forms.URLField.assume_scheme argument to silence this warning, or set the FORMS_URLFIELD_ASSUME_HTTPS transitional setting to True to opt into using 'https' as the new default scheme.
+    logo_url = forms.URLField(
+
+tests/tickets/base/test_event_team_listing.py::test_event_dashboard_panel_names_each_team_once
+  /opt/venv/lib/python3.12/site-packages/exhibition/forms.py:653: RemovedInDjango60Warning: The default scheme will be changed from 'http' to 'https' in Django 6.0. Pass the forms.URLField.assume_scheme argument to silence this warning, or set the FORMS_URLFIELD_ASSUME_HTTPS transitional setting to True to opt into using 'https' as the new default scheme.
+    header_image_url = forms.URLField(
+
+tests/tickets/base/test_event_team_listing.py::test_event_dashboard_panel_names_each_team_once
+  /opt/venv/lib/python3.12/site-packages/socialmedia/forms.py:122: RemovedInDjango60Warning: The default scheme will be changed from 'http' to 'https' in Django 6.0. Pass the forms.URLField.assume_scheme argument to silence this warning, or set the FORMS_URLFIELD_ASSUME_HTTPS transitional setting to True to opt into using 'https' as the new default scheme.
+    socialmedia_event_link = forms.URLField(
+
+tests/tickets/base/test_event_team_listing.py::test_event_dashboard_panel_names_each_team_once
+  /opt/venv/lib/python3.12/site-packages/socialmedia/forms.py:508: RemovedInDjango60Warning: The default scheme will be changed from 'http' to 'https' in Django 6.0. Pass the forms.URLField.assume_scheme argument to silence this warning, or set the FORMS_URLFIELD_ASSUME_HTTPS transitional setting to True to opt into using 'https' as the new default scheme.
+    api_base_url = forms.URLField(
+
+tests/tickets/base/test_event_team_listing.py::test_event_dashboard_panel_names_each_team_once
+  /opt/venv/lib/python3.12/site-packages/socialmedia/forms.py:559: RemovedInDjango60Warning: The default scheme will be changed from 'http' to 'https' in Django 6.0. Pass the forms.URLField.assume_scheme argument to silence this warning, or set the FORMS_URLFIELD_ASSUME_HTTPS transitional setting to True to opt into using 'https' as the new default scheme.
+    api_url = forms.URLField(
+
+tests/tickets/base/test_event_team_listing.py::test_event_dashboard_panel_names_each_team_once
+  /app/app/eventyay/plugins/returnurl/views.py:14: RemovedInDjango60Warning: The default scheme will be changed from 'http' to 'https' in Django 6.0. Pass the forms.URLField.assume_scheme argument to silence this warning, or set the FORMS_URLFIELD_ASSUME_HTTPS transitional setting to True to opt into using 'https' as the new default scheme.
+    returnurl_prefix = forms.URLField(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/tickets/base/test_event_team_listing.py::test_each_concerned_team_is_listed_once_palette_alpha
+FAILED tests/tickets/base/test_event_team_listing.py::test_each_concerned_team_is_listed_once_palette_bravo
+FAILED tests/tickets/base/test_event_team_listing.py::test_number_of_listed_teams_matches_number_of_concerned_teams
+FAILED tests/tickets/base/test_event_team_listing.py::test_stale_event_limits_on_an_all_events_team_do_not_multiply_it
+FAILED tests/tickets/base/test_event_team_listing.py::test_event_dashboard_panel_names_each_team_once
+FAILED tests/tickets/base/test_event_team_listing.py::test_event_dashboard_panel_respects_event_team_scope
+6 failed, 7 passed, 39 warnings in 11.54s
+(tests exited non-zero; parsing report)
+== computing reward ==
+{"reward": 0.0, "f2p": {"tests.tickets.base.test_event_team_listing::test_each_concerned_team_is_listed_once_palette_alpha": "fail", "tests.tickets.base.test_event_team_listing::test_each_concerned_team_is_listed_once_palette_bravo": "fail", "tests.tickets.base.test_event_team_listing::test_number_of_listed_teams_matches_number_of_concerned_teams": "fail", "tests.tickets.base.test_event_team_listing::test_stale_event_limits_on_an_all_events_team_do_not_multiply_it": "fail", "tests.tickets.base.test_event_team_listing::test_event_dashboard_panel_names_each_team_once": "fail", "app/tests/tickets/base/test_event_team_listing.py::test_event_dashboard_panel_respects_event_team_scope": "fail"}, "p2p": {"tests.tickets.base.test_event_team_listing::test_team_limited_to_another_event_is_not_listed": "pass", "tests.tickets.base.test_event_team_listing::test_team_of_a_different_organizer_is_not_listed": "pass", "tests.tickets.base.test_event_team_listing::test_event_specific_team_is_still_listed": "pass", "tests.tickets.base.test_event_team_listing::test_team_scoped_to_nothing_is_not_listed": "pass", "tests.tickets.base.test_event_team_listing::test_no_teams_are_listed_when_the_organizer_has_none": "pass", "tests.tickets.base.test_event_team_listing::test_listed_teams_can_still_be_narrowed_by_permission": "pass", "tests.tickets.base.test_event_team_listing::test_event_permissions_of_a_team_member_are_unchanged": "pass"}}
+reward=0.0

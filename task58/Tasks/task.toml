@@ -1,0 +1,130 @@
+version = "1.0"
+
+[metadata]
+task_id = "SR5-FoundryVTT__SR5-FoundryVTT-1831-mm"
+title = "[BUG] Active Effects targeting apply-to test => `data.modifiers` on SuccessTest instances not working anymore"
+repository_name = "SR5-FoundryVTT/SR5-FoundryVTT"
+repo_url = "https://github.com/SR5-FoundryVTT/SR5-FoundryVTT"
+issue_number = 1831
+pr_number = 1835
+base_commit = "074121360c08d8ee9288d1c3ac9ce61bdad8545b"
+fix_commit = "2f4323f4d5158ab0b258804d8ebdaa97a27654db"
+task_type = "visual_bug_fix"
+language = "TypeScript"
+framework = "FoundryVTT data migration pipeline (Shadowrun5e system)"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "medium"
+difficulty_explanation = """
+Why the image is required: the hardened instruction.md deliberately withholds the exact legacy/
+modern data-key spelling, the word "migration", the effect's own configuration (which item, its
+change mode, what it applies to), AND which specific test value the bonus targets -- it only
+says "a bonus" stopped applying "for certain Tests" and that the effect predates a recent
+update. The current TestData schema exposes exactly three ValueFieldType fields a Test-scoped
+Custom effect could plausibly target (pool, threshold, limit); without the poster, nothing in
+the bundle tells a solver WHICH of those three is the one silently failing, so a solver reasoning
+from schema + text alone cannot determine where to point the fix. The poster is the ONLY place
+that resolves this: it shows the Sneaking Test dialog's Pool not reflecting the Catlike effect's
+bonus while a different item's bonus on Limit DOES apply -- singling out pool specifically -- and
+it is also the ONLY place that shows WHICH effect/item is implicated (a "Catlike" quality's
+Changes tab) and its concrete configuration (Custom mode, applied to a Test), which the agent
+needs to actually find the responsible code path across two files rather than reason from the
+bug title alone.
+
+Screenshot-accuracy caveat (read before assuming the image proves the legacy key): the
+Attribute Key field visibly rendered in bug_screenshot_1.png reads `data.pool` (the MODERN
+key), not `data.modifiers` (the legacy key this fix migrates). This is the genuine, correctly-
+sourced GitHub attachment (asset id 89890be5-8e82-4aab-9faf-f9fed89e6d58 verified to match the
+live issue), not a wrong/cropped/mismatched image -- but its visible content does not, by
+itself, evidence the legacy-key mechanism the fix addresses (a `data.pool`-keyed effect would
+not need migrating at all under this fix's logic). The poster's load-bearing contribution is
+therefore narrower than "shows the bug": it localizes WHICH item/effect/field is involved (Custom
+mode, applied to a Test, targeting pool specifically), not the historical key spelling itself.
+That remaining fact -- the exact legacy string -- still has to come from general reasoning over
+the current repo (the schema enumerates the only legitimate targets; anything else on a
+test-scoped Custom effect is presumably stale and should normalize to the one the poster
+identifies), not from the image's pixels or from instruction.md's text.
+
+Why the fix is non-trivial: SR5 renamed the SuccessTest data key that an `apply-to: test`
+Active Effect change writes into from `data.modifiers` to `data.pool`, but shipped no migration
+step rewriting the change key on effects authored (or imported) before that rename -- so any
+such effect (the issue's own reproduction: an "apply-to test" Custom-mode change targeting
+`data.modifiers`) silently stops granting its dice-pool bonus, with no error anywhere.
+The task's fix.patch adds "Case B" logic to the migrator, generalized rather than a literal
+`data.modifiers`/`data.modifiers.mod` string match: for a `test_all`/`test_item`-scoped effect,
+any change key that is NOT one of the three fields the current test data schema actually
+exposes (`data.pool`, `data.threshold`, `data.limit`) is normalized to `data.pool`, reached
+through Migrator.migrate()'s existing, pre-existing entry point. This is a deliberate departure
+from the real upstream PR's literal-string diff -- made because the exact legacy spelling is not
+fairly derivable inside this task's sandbox (no network, `.git` stripped, and the string does not
+appear anywhere in the checked-out tree), so pinning the reference fix and tests to that exact
+string would test a fact nobody could legitimately reach. The whitelist-based version tests the
+same underlying contract with a solvable path: read the current schema, recognize it's closed to
+three fields, and normalize anything else. The scoping matters: only `test_all`/`test_item`-scoped
+effects are rewritten (an actor- or item-targeting effect that happens to also use a
+non-canonical key must be left alone), the three canonical fields are never rewritten (an
+unrelated change key on the same effect must survive untouched -- `tests_overfit_*` scrutiny
+already confirmed a synthetic, non-historical key must ALSO migrate, proving the fix isn't just
+special-casing the two literal legacy strings), and the migration must compose correctly with the
+surrounding version-migration chain (an older effect must still receive migrations from earlier,
+unrelated VersionMigration subclasses already registered in Migrator.s_Versions).
+
+base_commit/fix_commit note: issues #1830 and #1831 were fixed by commits on a since-deleted
+feature branch (taMiF/issue1831) that are NOT reachable via a plain `git clone` now that the
+branch is gone -- confirmed empirically (`git clone` followed by `git checkout <that commit>`
+fails with "fatal: unable to read tree", even though the same commit can still be fetched
+individually by exact SHA via `git fetch origin <sha>`, which GitHub permits for a time after a
+branch deletion but a plain clone never surfaces). The only reachable commit carrying this fix
+is 2f4323f4d5158ab0b258804d8ebdaa97a27654db, the squash-merge of sibling PR #1835 (branch
+taMiF/issue1832), whose own PR body says "Includes changes for PR #1834 in Migrator for 0.33.1,
+that can be ignored here" -- i.e. even that PR's own author treated the Migrator/Version0_33_1
+hunks as inherited baggage from the (separately authored) #1830/#1831 fix, not as #1832's own
+work. This same squash also bundles sibling issue #1832's own fix (SuccessTestEffectsFlow.ts /
+ActionFlow.ts, a distinct skill-selector matching bug, separately tasked as
+SR5-FoundryVTT__SR5-FoundryVTT-1832-mm) plus an untagged skill-naming follow-up commit; this
+task's fix.patch is trimmed to just the two files that implement #1831 (Migrator.ts /
+Version0_33_1.ts) and excludes SuccessTestEffectsFlow.ts/ActionFlow.ts entirely, scoping to only
+this issue. Version0_33_1.ts is a brand-new file at this task's base_commit (it does not exist
+there at all -- confirmed via a 404 on GitHub's raw-content endpoint), so its diff also carries
+the bundled-but-unrelated issue #1830 "Case A" logic (legacy `.mod`-suffixed ModifiableValue
+keys); this task's own f2p/p2p deliberately never assert on Case A, since that is issue #1830's
+concern rather than #1831's.
+"""
+files_edited = [
+  "src/module/migrator/Migrator.ts",
+  "src/module/migrator/versions/Version0_33_1.ts",
+]
+f2p = [
+  "legacy_data_modifiers_key_migrates_to_pool_on_test_all_effect",
+  "legacy_data_modifiers_mod_key_migrates_to_pool_on_test_item_effect",
+  "legacy_test_modifier_migration_matches_full_applyto_and_key_matrix",
+  "migration_preserves_sibling_changes_and_effect_identity",
+  "migration_handles_effect_with_multiple_legacy_test_modifier_changes",
+  "unrecognized_legacy_key_on_test_effect_also_migrates_to_pool",
+]
+p2p = [
+  "non_test_effect_data_modifiers_key_is_left_alone",
+  "effect_with_similar_but_non_matching_applyto_value_is_left_alone",
+  "unrelated_change_key_on_test_effect_is_left_alone",
+  "effect_already_at_current_system_version_is_not_touched_at_all",
+  "older_effect_still_receives_pre_existing_version_migrations",
+  "test_scoped_effect_with_no_changes_is_left_alone_without_erroring",
+  "effect_already_using_modern_pool_key_on_test_effect_is_left_alone",
+  "effect_targeting_canonical_limit_field_on_test_effect_is_left_alone",
+]
+tags = ["multimodal", "visual_bug_fix", "typescript", "foundryvtt"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+network_mode = "public"
+timeout_sec = 2400.0
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

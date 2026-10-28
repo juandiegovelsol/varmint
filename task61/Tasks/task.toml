@@ -1,0 +1,118 @@
+version = "1.0"
+
+[metadata]
+task_id = "SR5-FoundryVTT__SR5-FoundryVTT-1746-mm"
+title = "[FEATURE] Fractional Value For Adept Power AP"
+repository_name = "SR5-FoundryVTT/SR5-FoundryVTT"
+repo_url = "https://github.com/SR5-FoundryVTT/SR5-FoundryVTT"
+issue_number = 1746
+pr_number = 1824
+base_commit = "7d19e38d49e38d9851c4b0b25d8240c448a1c24b"
+fix_commit = "ac79d4dfa1b7280210a34f1d8c5e92f820ce533c"
+task_type = "visual_bug_fix"
+language = "TypeScript"
+framework = "FoundryVTT DataModel schema field factories (Shadowrun5e system)"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = """
+src/module/types/template/Base.ts defines a small tree of shared schema-fragment factories used
+across every Actor/Item DataModel in the system: `BaseValuePair()` builds a `{value, base}` pair
+of `NumberField`s (both hardcoded `integer: true`), `ModifiableValueSchema()` spreads
+`BaseValuePair()` and adds a `changes` array (for ActiveEffect-style modifiers), and
+`ModifiableValueLinked()` spreads `ModifiableValueSchema()` and adds `attribute` /
+`base_formula_operator` (a value "linked" to an attribute via a formula, e.g. Base Damage
+"2 * Magic"). `ModifiableValueLinked()` backs both `MinimalActionData().limit` and, critically,
+`DamageData().ap` in src/module/types/item/Action.ts -- the literal "AP" field on every
+damage-dealing Item's action, including the "Elemental Body" Adept Power shown in the issue's
+own screenshot. Because every factory in the chain hardcoded `integer: true` with no way to opt
+out, entering a fractional AP (e.g. 0.5) was silently rounded away by Foundry's own
+NumberField#clean() at schema-update time -- no validation error, just silent data loss. The fix
+threads an optional `{ integer = true }` parameter through `BaseValuePair` into
+`ModifiableValueSchema`, defaulting to the OLD (integer-only) behaviour everywhere except
+`ModifiableValueLinked()`'s own call, which now explicitly opts in with `{ integer: false }`.
+Getting this right (rather than, e.g., deleting `integer: true` outright, or widening the wrong
+sibling factory) requires noticing that `BaseValuePair`/`ModifiableValueSchema` have OTHER bare
+call sites (`ValueField()`, `ActionRollData()`'s `threshold`) that must stay integer-only, and
+that `ValueMaxPair()` and `ChangeEntry()`'s own numeric fields are separate, untouched factories
+textually nearby in the same file. The f2p suite drives the AP field exactly as
+src/module/types/item/Action.ts's DamageData().ap constructs it in the real application (the
+literal field the issue's screenshot shows), not an internal Base.ts factory in isolation, so a
+fix threaded through Base.ts's factory chain and a structurally different fix scoped locally to
+Action.ts's own ap construction are both exercised for real and score identically; the p2p suite
+still drives the untouched sibling factories directly through Base.ts to guard against a fix that
+widens NumberField#integer behaviour more broadly than this one field needs.
+
+HARDENING (3 additional, independently-required bugs, injected via environment/assets/bugs/ per
+the standard bug-patch process -- each is a `good -> buggy` regression against real base_commit
+code, reversed in solution/fix.patch). All three sit in the pure, dependency-free computation
+that every ModifiableValue field (Base Damage, AP, Limit) resolves through to get its final
+number -- src/module/mods/ModifiableValue.calcTotal() and src/module/helpers.ts's
+Helpers.modifyDamageByHits() -- and all three were LATENT under the pre-hardening, integer-only
+world: each is invisible for the kind of single-change, integer-only, single-object usage the
+original 3 f2p tests exercise, and only becomes a live, observable defect now that fractional
+totals are possible. None can be fixed by re-touching Base.ts; a full solve requires locating and
+correcting all three independently (verified: applying only the original Base.ts fix leaves all
+3 new f2p failing, and reversing only the 3 hardening bugs while leaving Base.ts unfixed leaves
+the original 3 f2p failing -- confirmed in a live container both directions).
+
+  1. calcTotal()'s final rounding step changes `Math.ceil` (the class's own documented "SR5#78 -
+     All values are rounded up" rule) to `Math.trunc`. For any historical integer-only total
+     these are identical; only a genuinely fractional total (base=2.1, no changes) reveals it.
+  2. calcTotal()'s change-application sort comparator is reversed (`(a,b)=>a.priority-b.priority`
+     to `(b,a)=>...`), breaking Foundry's own Custom -> Multiply -> Add -> Upgrade/Downgrade ->
+     Override precedence whenever 2+ changes of DIFFERENT modes/priorities are stacked on one
+     field -- invisible for a single change or same-mode changes (which is everything the
+     original suite constructs).
+  3. Helpers.modifyDamageByHits() drops its `foundry.utils.duplicate()` call, aliasing its
+     `modified` return value directly to the `incoming` parameter instead of an independent copy,
+     so calcTotal()'s in-place mutations leak back into the caller's original damage object.
+
+Testable with the existing lightweight harness (transpile + real-load, no Foundry
+Actor/DataModel machinery): ModifiableValue.ts's only import is a TYPE-only reference (erased at
+transpile time), and helpers.ts's many other imports (SR5Actor, SR5Item,
+DeleteConfirmationDialog, constants, DataDefaults) all auto-stub harmlessly since the harness
+only calls modifyDamageByHits()/reduceDamageByHits(). Two small additions to the harness's
+existing stub globals cover both: `CONST.ACTIVE_EFFECT_MODES` (Foundry's own published enum:
+CUSTOM=0, MULTIPLY=1, ADD=2, DOWNGRADE=3, UPGRADE=4, OVERRIDE=5) and
+`foundry.utils.duplicate` (a JSON round-trip clone, behaviourally identical to Foundry's own for
+this plain-data shape).
+"""
+files_edited = [
+  "src/module/types/template/Base.ts",
+  "src/module/mods/ModifiableValue.ts",
+  "src/module/helpers.ts",
+]
+f2p = [
+  "ap_value_field_survives_fractional_input_unrounded",
+  "ap_base_field_survives_fractional_input_unrounded",
+  "linked_ap_schemafield_cleans_fractional_damage_ap_payload_intact",
+  "modifiable_value_total_rounds_up_not_truncated",
+  "modifiable_value_changes_apply_in_priority_order",
+  "reduce_damage_by_hits_does_not_mutate_original",
+]
+p2p = [
+  "unrelated_value_field_bare_call_still_rounds_to_integer",
+  "value_max_pair_sibling_factory_still_integer_only",
+  "change_entry_numeric_fields_still_integer_only",
+  "threshold_bare_base_value_pair_call_still_integer_only",
+  "modifiable_value_min_max_enforcement_still_applies",
+  "modifiable_value_same_mode_changes_still_accumulate",
+  "modify_damage_by_hits_raising_path_still_adds_correctly",
+]
+tags = ["multimodal", "visual_bug_fix", "foundryvtt-datamodel-schema-field-factories-shadowrun5e-system"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+network_mode = "public"
+timeout_sec = 2400.0
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

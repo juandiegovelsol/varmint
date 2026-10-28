@@ -1,0 +1,431 @@
+diff --git a/tests/test_key_panel_tooltip_alignment.py b/tests/test_key_panel_tooltip_alignment.py
+new file mode 100644
+index 0000000..77b7d3c
+--- /dev/null
++++ b/tests/test_key_panel_tooltip_alignment.py
+@@ -0,0 +1,425 @@
++"""The key panel must not pad a tooltip that has no description in front of it.
++
++`render_description` in the key panel joins a binding's *description* and its
++*tooltip* with a single space.  When a binding carries **only** a tooltip there
++is nothing to join it to, so the separator must not be emitted: otherwise every
++description-less row is pushed one cell to the right of the description column
++and the panel stops lining up.
++
++Two completely disjoint palettes are exercised:
++
++* an *archive browser* whose bindings live on the **App** and whose panel is
++  raised through ``action_show_help_panel()`` (the ``HelpPanel`` route), at
++  160x40; and
++* a *query pane* whose bindings live on a focused **widget** and whose panel is
++  a directly mounted ``KeyPanel``, at 120x26.
++
++They share no key, no size, no widget tree, no wording and no binding host, so a
++fix keyed on any of those cannot satisfy both.  Every expectation is recomputed
++at run time from the bindings the live application actually reports -- nothing
++is transcribed from a screenshot or a stored baseline, and no snapshot is
++involved.
++
++Both a state view (the Rich table the panel renders) and a behavioural view (the
++text and segments the compositor actually paints) are asserted.
++"""
++
++from __future__ import annotations
++
++from rich.table import Table
++from rich.text import Text
++
++from textual.app import App, ComposeResult
++from textual.binding import Binding
++from textual.containers import Horizontal, Vertical
++from textual.widgets import KeyPanel, Static
++
++# --------------------------------------------------------------------------- #
++# helpers
++# --------------------------------------------------------------------------- #
++
++
++def _bindings_table(app: App) -> Table:
++    """The Rich table the key panel renders for the current bindings."""
++    panel = app.query_one(KeyPanel)
++    for node in panel.walk_children(with_self=True):
++        renderer = getattr(node, "render_bindings_table", None)
++        if renderer is not None:
++            table = renderer()
++            assert isinstance(table, Table), "the key panel must render a Rich table"
++            return table
++    raise AssertionError("the key panel does not contain a bindings table")
++
++
++def _cell_text(cell: object) -> Text:
++    """Normalise a Rich table cell to a `Text`."""
++    return cell if isinstance(cell, Text) else Text(str(cell))
++
++
++def _description_cells(app: App) -> dict[str, Text]:
++    """Map every keyed row of the panel to its description cell.
++
++    Group-title rows (which have an empty key cell) are skipped.
++    """
++    table = _bindings_table(app)
++    assert len(table.columns) == 2, "the bindings table has a key and a description column"
++    rows: dict[str, Text] = {}
++    for key_cell, description_cell in zip(
++        table.columns[0]._cells, table.columns[1]._cells
++    ):
++        key = _cell_text(key_cell).plain
++        if not key:
++            continue
++        assert key not in rows, f"duplicate key row {key!r}"
++        rows[key] = _cell_text(description_cell)
++    return rows
++
++
++def _title_cells(app: App) -> list[str]:
++    """The plain text of every group-title row (rows with no key)."""
++    table = _bindings_table(app)
++    return [
++        _cell_text(description_cell).plain
++        for key_cell, description_cell in zip(
++            table.columns[0]._cells, table.columns[1]._cells
++        )
++        if not _cell_text(key_cell).plain
++    ]
++
++
++def _own_bindings(app: App, action_prefix: str) -> list[Binding]:
++    """The non-system bindings this palette declares, as the app reports them."""
++    bindings = [
++        active.binding
++        for active in app.screen.active_bindings.values()
++        if active.binding.action.startswith(action_prefix) and not active.binding.system
++    ]
++    assert bindings, f"no active bindings for {action_prefix!r}"
++    return bindings
++
++
++def _expected_descriptions(app: App, action_prefix: str) -> dict[str, str]:
++    """Recompute, from the live bindings, what each description cell must read.
++
++    A description and a tooltip are separated by exactly one space; when either
++    is absent the other stands alone with no padding.
++    """
++    expected: dict[str, str] = {}
++    for binding in _own_bindings(app, action_prefix):
++        description = Text.from_markup(binding.description).plain
++        parts = [part for part in (description, binding.tooltip) if part]
++        expected[app.get_key_display(binding)] = " ".join(parts)
++    return expected
++
++
++def _screen_lines(app: App) -> list[str]:
++    """Every line of composited screen output, as plain text."""
++    return [strip.text for strip in app.screen._compositor.render_strips()]
++
++
++def _column_of(app: App, needle: str) -> int:
++    """The screen column at which `needle` is painted (it must appear once)."""
++    hits = [(y, line.index(needle)) for y, line in enumerate(_screen_lines(app)) if needle in line]
++    assert len(hits) == 1, f"expected {needle!r} to be painted exactly once, got {hits}"
++    return hits[0][1]
++
++
++def _style_mask(app: App, needle: str, attribute: str) -> tuple[str, list[bool]]:
++    """The painted row holding `needle`, plus a per-column flag for a style attribute.
++
++    Styling is read back from what the compositor actually paints, so a fix is free
++    to build the cell out of spans, out of a base style, or out of anything else.
++    """
++    for strip in app.screen._compositor.render_strips():
++        if needle not in strip.text:
++            continue
++        mask: list[bool] = []
++        for segment in strip:
++            style = segment.style
++            flag = bool(getattr(style, attribute, False)) if style is not None else False
++            mask.extend([flag] * len(segment.text))
++        return strip.text, mask
++    raise AssertionError(f"no composited row paints {needle!r}")
++
++
++def _painted_flags(app: App, row_needle: str, attribute: str, target: str) -> list[bool]:
++    """The style flags of the columns that paint `target` on `row_needle`'s row."""
++    line, mask = _style_mask(app, row_needle, attribute)
++    start = line.index(target)
++    return mask[start : start + len(target)]
++
++
++async def _settle(pilot) -> None:
++    """Let the panel mount, compose and repaint before anything is read back."""
++    for _ in range(5):
++        await pilot.pause()
++
++
++# --------------------------------------------------------------------------- #
++# palette A -- archive browser, app-level bindings, HelpPanel route, 160 x 40
++# --------------------------------------------------------------------------- #
++
++ARCHIVE_SIZE = (160, 40)
++
++
++class ArchiveApp(App[None]):
++    """Bindings declared on the App; panel raised via the help-panel action."""
++
++    BINDINGS = [
++        Binding("f2", "archive_rename", tooltip="Rename the highlighted entry"),
++        Binding("f5", "archive_refresh", description="Refresh", tooltip="Re-read the archive"),
++        Binding("f8", "archive_delete", description="Delete"),
++        Binding("f9", "archive_hidden", tooltip="Toggle hidden members"),
++        Binding("ctrl+t", "archive_tag", description="[b]Tag[/b] member", tooltip="Mark for extraction"),
++        Binding("ctrl+y", "archive_internal", description="Internal", system=True),
++    ]
++
++    CSS = """
++    #archive-body { width: 1fr; height: 1fr; }
++    #archive-listing { height: 1fr; }
++    #archive-status { height: 3; }
++    """
++
++    def compose(self) -> ComposeResult:
++        with Vertical(id="archive-body"):
++            yield Static("archive listing", id="archive-listing")
++            yield Static("archive status", id="archive-status")
++
++    def on_mount(self) -> None:
++        self.action_show_help_panel()
++
++
++async def test_help_panel_tooltip_only_cell_has_no_leading_space():
++    """A binding with a tooltip and no description gets no separator space."""
++    app = ArchiveApp()
++    async with app.run_test(size=ARCHIVE_SIZE) as pilot:
++        await _settle(pilot)
++        cells = _description_cells(app)
++        for binding in _own_bindings(app, "archive_"):
++            if binding.tooltip and not binding.description:
++                cell = cells[app.get_key_display(binding)]
++                assert cell.plain == binding.tooltip
++
++
++async def test_help_panel_all_description_cells_match_recomputed_text():
++    """Every row of the panel reads exactly as the bindings say it should."""
++    app = ArchiveApp()
++    async with app.run_test(size=ARCHIVE_SIZE) as pilot:
++        await _settle(pilot)
++        expected = _expected_descriptions(app, "archive_")
++        cells = _description_cells(app)
++        actual = {key: cells[key].plain for key in expected}
++        assert actual == expected
++
++
++async def test_help_panel_tooltip_only_row_starts_in_the_description_column():
++    """The painted row for a tooltip-only binding lines up with the others."""
++    app = ArchiveApp()
++    async with app.run_test(size=ARCHIVE_SIZE) as pilot:
++        await _settle(pilot)
++        described = _column_of(app, "Delete")
++        assert _column_of(app, "Rename the highlighted entry") == described
++        assert _column_of(app, "Toggle hidden members") == described
++
++
++# --------------------------------------------------------------------------- #
++# palette B -- query pane, widget-level bindings, direct KeyPanel, 120 x 26
++# --------------------------------------------------------------------------- #
++
++QUERY_SIZE = (120, 26)
++
++
++class QueryPane(Static, can_focus=True):
++    """A focusable pane that owns its own bindings."""
++
++    BINDING_GROUP_TITLE = "Query"
++
++    BINDINGS = [
++        Binding("g", "query_top", tooltip="Jump to first record"),
++        Binding("shift+g", "query_end", description="Bottom", tooltip="Jump to last"),
++        Binding("r", "query_reset", description="Reset filter"),
++        Binding("y", "query_yank", tooltip="Copy record"),
++        Binding("z", "query_secret", description="Secret", system=True),
++    ]
++
++
++class QueryApp(App[None]):
++    """Bindings declared on a focused widget; a KeyPanel mounted directly."""
++
++    CSS = """
++    #query-frame { width: 1fr; height: 1fr; }
++    #query-pane { width: 2fr; height: 1fr; }
++    #query-notes { width: 1fr; height: 1fr; }
++    """
++
++    def compose(self) -> ComposeResult:
++        with Horizontal(id="query-frame"):
++            yield QueryPane("query pane", id="query-pane")
++            yield Static("query notes", id="query-notes")
++
++    def on_mount(self) -> None:
++        self.query_one("#query-pane", QueryPane).focus()
++        self.mount(KeyPanel())
++
++
++async def test_direct_panel_tooltip_only_cell_has_no_leading_space():
++    """The same contract holds for a directly mounted panel and widget keys."""
++    app = QueryApp()
++    async with app.run_test(size=QUERY_SIZE) as pilot:
++        await _settle(pilot)
++        cells = _description_cells(app)
++        for binding in _own_bindings(app, "query_"):
++            if binding.tooltip and not binding.description:
++                cell = cells[app.get_key_display(binding)]
++                assert cell.plain == binding.tooltip
++
++
++async def test_direct_panel_cells_match_recomputed_text():
++    """Every row of the directly mounted panel reads as the bindings say."""
++    app = QueryApp()
++    async with app.run_test(size=QUERY_SIZE) as pilot:
++        await _settle(pilot)
++        expected = _expected_descriptions(app, "query_")
++        cells = _description_cells(app)
++        actual = {key: cells[key].plain for key in expected}
++        assert actual == expected
++
++
++async def test_direct_panel_dim_tooltip_begins_at_the_description_column():
++    """The dimmed tooltip of a description-less row starts where text starts."""
++    app = QueryApp()
++    async with app.run_test(size=QUERY_SIZE) as pilot:
++        await _settle(pilot)
++        described = _column_of(app, "Reset filter")
++        line, dim = _style_mask(app, "Jump to first record", "dim")
++        assert any(dim), "the tooltip must still be painted dim"
++        assert dim.index(True) == described
++        tooltip_start = line.index("Jump to first record")
++        assert all(dim[tooltip_start : tooltip_start + len("Jump to first record")])
++
++
++async def test_direct_panel_tooltip_only_row_starts_in_the_description_column():
++    """The painted rows of the query palette all share one description column."""
++    app = QueryApp()
++    async with app.run_test(size=QUERY_SIZE) as pilot:
++        await _settle(pilot)
++        described = _column_of(app, "Reset filter")
++        assert _column_of(app, "Jump to first record") == described
++        assert _column_of(app, "Copy record") == described
++
++
++# --------------------------------------------------------------------------- #
++# negative half -- everything the panel already gets right must stay right
++# --------------------------------------------------------------------------- #
++
++
++async def test_help_panel_described_binding_keeps_one_space_before_its_tooltip():
++    """Removing the separator altogether is not the fix."""
++    app = ArchiveApp()
++    async with app.run_test(size=ARCHIVE_SIZE) as pilot:
++        await _settle(pilot)
++        cells = _description_cells(app)
++        for binding in _own_bindings(app, "archive_"):
++            if binding.description and binding.tooltip:
++                description = Text.from_markup(binding.description).plain
++                cell = cells[app.get_key_display(binding)]
++                assert cell.plain == f"{description} {binding.tooltip}"
++
++
++async def test_help_panel_description_without_a_tooltip_is_unpadded():
++    """A description that stands alone is neither padded nor trimmed."""
++    app = ArchiveApp()
++    async with app.run_test(size=ARCHIVE_SIZE) as pilot:
++        await _settle(pilot)
++        cells = _description_cells(app)
++        for binding in _own_bindings(app, "archive_"):
++            if binding.description and not binding.tooltip:
++                description = Text.from_markup(binding.description).plain
++                assert cells[app.get_key_display(binding)].plain == description
++
++
++async def test_help_panel_markup_in_a_description_is_still_rendered():
++    """Descriptions keep going through console markup, styles and all."""
++    app = ArchiveApp()
++    async with app.run_test(size=ARCHIVE_SIZE) as pilot:
++        await _settle(pilot)
++        cells = _description_cells(app)
++        cell = cells[app.get_key_display(_binding_for(app, "archive_tag"))]
++        assert cell.plain == "Tag member Mark for extraction"
++        # the markup tag itself is consumed, and the emphasis it asked for is painted
++        assert all(_painted_flags(app, "Tag member", "bold", "Tag"))
++        assert not any(_painted_flags(app, "Tag member", "bold", "member"))
++
++
++async def test_help_panel_tooltip_text_is_still_dimmed():
++    """The tooltip is painted dim; a description next to it is not."""
++    app = ArchiveApp()
++    async with app.run_test(size=ARCHIVE_SIZE) as pilot:
++        await _settle(pilot)
++        for binding in _own_bindings(app, "archive_"):
++            if not (binding.tooltip and binding.description):
++                continue
++            description = Text.from_markup(binding.description).plain
++            assert all(_painted_flags(app, description, "dim", binding.tooltip))
++            assert not any(_painted_flags(app, description, "dim", description))
++
++
++async def test_help_panel_described_rows_keep_their_painted_columns():
++    """Rows that already lined up are not moved by the fix."""
++    app = ArchiveApp()
++    async with app.run_test(size=ARCHIVE_SIZE) as pilot:
++        await _settle(pilot)
++        assert _column_of(app, "Refresh") == _column_of(app, "Delete")
++        assert _column_of(app, "Re-read the archive") == _column_of(app, "Refresh") + len("Refresh ")
++
++
++async def test_direct_panel_described_binding_keeps_one_space_before_its_tooltip():
++    """The join for a fully described binding survives in the second palette."""
++    app = QueryApp()
++    async with app.run_test(size=QUERY_SIZE) as pilot:
++        await _settle(pilot)
++        cells = _description_cells(app)
++        for binding in _own_bindings(app, "query_"):
++            if binding.description and binding.tooltip:
++                assert cells[app.get_key_display(binding)].plain == (
++                    f"{binding.description} {binding.tooltip}"
++                )
++
++
++async def test_direct_panel_key_column_is_unchanged():
++    """The key column still shows exactly the displays the app computes."""
++    app = QueryApp()
++    async with app.run_test(size=QUERY_SIZE) as pilot:
++        await _settle(pilot)
++        cells = _description_cells(app)
++        expected = {app.get_key_display(b) for b in _own_bindings(app, "query_")}
++        assert expected <= set(cells)
++
++
++async def test_direct_panel_still_hides_system_bindings():
++    """System bindings stay out of the panel."""
++    app = QueryApp()
++    async with app.run_test(size=QUERY_SIZE) as pilot:
++        await _settle(pilot)
++        cells = _description_cells(app)
++        assert "z" not in cells
++        assert all("Secret" not in cell.plain for cell in cells.values())
++        assert all("Secret" not in line for line in _screen_lines(app))
++
++
++async def test_direct_panel_group_title_row_survives():
++    """The binding-group heading is still emitted as a key-less row."""
++    app = QueryApp()
++    async with app.run_test(size=QUERY_SIZE) as pilot:
++        await _settle(pilot)
++        assert QueryPane.BINDING_GROUP_TITLE in _title_cells(app)
++
++
++# --------------------------------------------------------------------------- #
++
++
++def _binding_for(app: App, action: str) -> Binding:
++    for active in app.screen.active_bindings.values():
++        if active.binding.action == action:
++            return active.binding
++    raise AssertionError(f"no active binding for {action!r}")

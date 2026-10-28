@@ -1,0 +1,116 @@
+version = "1.0"
+
+[metadata]
+task_id = "wxWidgets__wxWidgets-23046-mm"
+title = "Invalid clipping region after call to wxPaintDC::DestroyClippingRegion() on wxGTK3"
+repository_name = "wxWidgets/wxWidgets"
+repo_url = "https://github.com/wxWidgets/wxWidgets"
+issue_number = 23046
+pr_number = 23052
+base_commit = "08104d819e2b50c2500ce8ff02ac4e73b0ece258"
+fix_commit = "e7a2786352c62eae06da81bdc33d7efbea862921"
+task_type = "visual_bug_fix"
+language = "C++"
+framework = "wxWidgets (wxGTK/GTK3 port, Cairo graphics context)"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = """
+instruction.md deliberately withholds every internal term (clip, reset, transform,
+matrix) and describes only what is visible: the same paint code renders correctly
+with one coordinate-remapping technique and incorrectly with the other. The image
+pair is the only place the actual defect (rendering confined to a small, offset area
+instead of the full client area) is stated at all, so an agent that skips the
+screenshots has no way to know what "renders differently" even means here - it must
+look, characterize the visual difference, and only then go hunting for a rendering
+bug that is conditioned on which coordinate-remapping technique is active.
+
+The agent must find FOUR independent defects, spread over three files and two layers
+(the wxGTK3 port and the shared wxGCDCImpl graphics-context DC), before any reward is
+paid - scoring is binary, so fixing three of four still scores 0.0:
+
+  1. (upstream, at base_commit) wxPaintDCImpl::DestroyClippingRegion() in src/gtk/dc.cpp
+     re-establishes the paint-update clip a second time from device-space coordinates
+     cached at DC construction, ignoring the DC's active coordinate transform. It is both
+     redundant with and inconsistent with the generic base-class clip reset; recognizing
+     that requires reading across include/wx/gtk/dc.h and src/gtk/dc.cpp and reasoning
+     about Cairo clip semantics under an active cairo_matrix.
+  2. (injected) wxGCDCImpl::DoSetDeviceClippingRegion() refreshes its cached clipping box
+     while the temporary identity transform is still installed, so the box is cached in
+     device units and then reported as if it were logical. The reordering is three lines
+     and carries a plausible-sounding comment justifying it.
+  3. (injected) wxGCDCImpl::DestroyClippingRegion() guards its cache invalidation on
+     m_clipping - which the wxDCImpl::DestroyClippingRegion() call on the line above has
+     just cleared - so the invalidation is dead code and a destroyed clip keeps reporting
+     the (zeroed) box left behind by ResetClipping().
+  4. (injected) wxGCDCImpl::ComputeScaleAndOrigin() no longer invalidates the cached box,
+     so changing the coordinate mapping while a region is in effect leaves the previously
+     computed box, expressed in the OLD mapping, being handed back to callers.
+
+Defects 2-4 are cache-coherence bugs in a 1300-line shared file the images give no reason
+to suspect, and they interact: 2 and 4 both corrupt the *AndDCTransformation sections, and
+3 masks 2 on the *AndReset sections, so a partial fix moves no f2p test to green. There is
+also no feedback loop - xvfb is installed by tests/test.sh at verify time only and the agent
+phase is offline (network_mode="no-network"), so the GUI test binary cannot be run during
+the attempt and every defect has to be found by reading code.
+
+Anti-cheat: at base_commit, upstream's own tests/graphics/clippingbox.cpp already
+carried one f2p SECTION this task's tests/test.patch adds, but disabled behind a
+"#ifdef __WXGTK3__ / WARN(Skipping test known to fail in wxGTK 3)" guard - reading
+it would have handed an agent the exact platform, the exact repro call and
+parameters, and the fact that this is a known failure, entirely independent of
+instruction.md or the screenshots. environment/Dockerfile deletes that disabled
+SECTION from the baked harbor_base checkout (agent-visible), and tests/test.patch
+regenerates it as a genuine, non-empty add-only diff applied at verify time only -
+same call, same assertions, same pass/fail behavior for every correct or incorrect
+fix; only the timing of when the SECTION exists moved from "always, disabled" to
+"verify-time only". The injected-bug diffs are copied to /tmp/bugs/, applied before the
+harbor_base tag, and deleted from /app/.harbor_assets/ so their reverse (i.e. the fix)
+never reaches the agent.
+
+Every f2p and p2p identifier is an unmodified upstream SECTION of
+ClippingBoxTestCase::wxPaintDC asserting documented wxDC clipping semantics through the
+public API (SetDeviceClippingRegion / SetClippingRegion / DestroyClippingRegion /
+GetClippingBox / DeviceToLogical*), so the grading is behavioural and any correct
+implementation passes; no test asserts anything about how the fix is written.
+"""
+files_edited = ["include/wx/gtk/dc.h", "src/gtk/dc.cpp", "src/common/dcgraph.cpp"]
+f2p = [
+  "OneRegionAndReset",
+  "OneDevRegionAndReset 1",
+  "OneDevRegionAndReset 2",
+  "OneDevRegionAndReset Transform Matrix",
+  "OneDevRegion 1",
+  "OneDevRegion 2",
+  "OneDevRegion Transform Matrix",
+  "OneRegionAndDCTransformation Transform Matrix",
+  "OneDevRegionAndDCTransformation Transform Matrix",
+]
+p2p = [
+  "InitialState",
+  "InitialStateWithTransformedDC Transform Matrix",
+  "OneRegion",
+  "OneDevRegionAndEmpty",
+  "OneDevRegionAndEmpty Transform Matrix",
+]
+tags = ["multimodal", "visual_bug_fix", "wxwidgets", "gtk3", "cairo", "c++"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"
+
+[verifier.env]
+EVAL_API_KEY = "${OPENAI_API_KEY}"
+EVAL_BASE_URL = "${OPENAI_API_BASE}"
+EVAL_MODEL = "${EVAL_MODEL:-anthropic/claude-opus-4-5-20251101}"

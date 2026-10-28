@@ -1,0 +1,272 @@
+== applying test.patch ==
+== installing test-only deps ==
+== environment ==
+pytest 8.4.2
+== running f2p + p2p tests ==
+(tests exited non-zero; parsing report)
+== computing reward ==
+Rubric verdict: pending (judge request written; rescore after grading)
+{
+  "reward": 0.0,
+  "f2p": {
+    "tests_harbor_leader_den_border.test_other_clan_box_border.AStandingThatTheHoverBorderCannotReach::test_a_neighbour_whose_name_needs_two_lines_keeps_its_standing_inside_the_tile": "fail",
+    "tests_harbor_leader_den_border.test_other_clan_box_border.AStandingThatTheHoverBorderCannotReach::test_a_neighbour_whose_name_needs_two_lines_keeps_its_standing_out_from_under_the_border": "fail",
+    "tests_harbor_leader_den_border.test_other_clan_box_border.AStandingThatTheHoverBorderCannotReach::test_a_neighbour_whose_temperament_needs_two_lines_keeps_its_standing_inside_the_tile": "fail",
+    "tests_harbor_leader_den_border.test_other_clan_box_border.AStandingThatTheHoverBorderCannotReach::test_a_neighbour_whose_temperament_needs_two_lines_keeps_its_standing_out_from_under_the_border": "fail",
+    "tests_harbor_leader_den_border.test_other_clan_box_border.AStandingThatTheHoverBorderCannotReach::test_a_whole_row_of_awkward_neighbours_stays_readable": "fail",
+    "tests_harbor_leader_den_border.test_other_clan_box_border.ATemperamentThatIsReadInTheOrderTheGameRecordedIt::test_the_first_recorded_temperament_word_is_read_before_the_second": "fail",
+    "tests_harbor_leader_den_border.test_other_clan_box_border.ATemperamentThatIsReadInTheOrderTheGameRecordedIt::test_a_different_pairs_first_word_is_still_read_before_its_second": "fail",
+    "tests_harbor_leader_den_border.test_other_clan_box_border.AStandingThatMatchesHowFriendlyTheClanActuallyIs::test_the_lowest_relations_score_that_still_counts_as_neutral_reads_neutral": "fail",
+    "tests_harbor_leader_den_border.test_other_clan_box_border.AClanNameThatReadsTheWayEveryOtherClanNameDoes::test_the_clan_name_is_the_neighbours_name_followed_by_the_word_clan": "fail"
+  },
+  "p2p": {
+    "tests_harbor_leader_den_border.test_other_clan_box_border.TheRestOfTheNeighbourRowIsUntouched::test_a_neighbour_with_short_writing_already_kept_its_standing_clear_of_the_border": "pass",
+    "tests_harbor_leader_den_border.test_other_clan_box_border.TheRestOfTheNeighbourRowIsUntouched::test_every_neighbour_tile_names_its_clan_and_both_temperament_words": "pass",
+    "tests_harbor_leader_den_border.test_other_clan_box_border.TheRestOfTheNeighbourRowIsUntouched::test_every_neighbour_tile_retains_visible_hover_feedback": "pass",
+    "tests_harbor_leader_den_border.test_other_clan_box_border.AStandingThatMatchesHowFriendlyTheClanActuallyIs::test_the_highest_relations_score_that_still_counts_as_neutral_reads_neutral": "pass"
+  },
+  "f2p_passing": [],
+  "p2p_passing": [
+    "tests_harbor_leader_den_border.test_other_clan_box_border.TheRestOfTheNeighbourRowIsUntouched::test_a_neighbour_with_short_writing_already_kept_its_standing_clear_of_the_border",
+    "tests_harbor_leader_den_border.test_other_clan_box_border.TheRestOfTheNeighbourRowIsUntouched::test_every_neighbour_tile_names_its_clan_and_both_temperament_words",
+    "tests_harbor_leader_den_border.test_other_clan_box_border.TheRestOfTheNeighbourRowIsUntouched::test_every_neighbour_tile_retains_visible_hover_feedback",
+    "tests_harbor_leader_den_border.test_other_clan_box_border.AStandingThatMatchesHowFriendlyTheClanActuallyIs::test_the_highest_relations_score_that_still_counts_as_neutral_reads_neutral"
+  ]
+}
+reward=0.0
+_other_clan_box_border.py::TheRestOfTheNeighbourRowIsUntouched::test_a_neighbour_with_short_writing_already_kept_its_standing_clear_of_the_border PASSED [ 84%]
+tests_harbor_leader_den_border/test_other_clan_box_border.py::TheRestOfTheNeighbourRowIsUntouched::test_every_neighbour_tile_names_its_clan_and_both_temperament_words PASSED [ 92%]
+tests_harbor_leader_den_border/test_other_clan_box_border.py::TheRestOfTheNeighbourRowIsUntouched::test_every_neighbour_tile_retains_visible_hover_feedback PASSED [100%]
+
+=================================== FAILURES ===================================
+_ AStandingThatTheHoverBorderCannotReach.test_a_neighbour_whose_name_needs_two_lines_keeps_its_standing_inside_the_tile _
+
+self = <tests_harbor_leader_den_border.test_other_clan_box_border.AStandingThatTheHoverBorderCannotReach testMethod=test_a_neighbour_whose_name_needs_two_lines_keeps_its_standing_inside_the_tile>
+
+    def test_a_neighbour_whose_name_needs_two_lines_keeps_its_standing_inside_the_tile(
+        self,
+    ):
+        control = den.only_tile([(SHORT_NAME, SHORT_TEMPERAMENT, 12)])
+        tile = den.only_tile([(TWO_LINE_NAME, SHORT_TEMPERAMENT, 3)])
+        short_name = den.writing_that_says(control, SHORT_NAME)
+        long_name = den.writing_that_says(tile, TWO_LINE_NAME)
+        self.assertEqual(len(short_name), 1)
+        self.assertEqual(len(long_name), 1)
+        self.assertGreater(
+            long_name[0]["rect"][3],
+            short_name[0]["rect"][3],
+            "fixture drift: %r no longer needs more than one line" % (TWO_LINE_NAME,),
+        )
+>       self.assert_standing_is_inside_the_tile(tile)
+
+tests_harbor_leader_den_border/test_other_clan_box_border.py:127: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests_harbor_leader_den_border/test_other_clan_box_border.py:47: in assert_standing_is_inside_the_tile
+    self.assertTrue(
+E   AssertionError: False is not true : the standing 'hostile' sits at (75, 629, 133, 15), which runs outside its tile (74, 461, 134, 174)
+----------------------------- Captured stderr call -----------------------------
+libpng warning: iCCP: known incorrect sRGB profile
+libpng warning: iCCP: known incorrect sRGB profile
+libpng warning: iCCP: known incorrect sRGB profile
+libpng warning: iCCP: known incorrect sRGB profile
+libpng warning: iCCP: known incorrect sRGB profile
+libpng warning: iCCP: known incorrect sRGB profile
+_ AStandingThatTheHoverBorderCannotReach.test_a_neighbour_whose_name_needs_two_lines_keeps_its_standing_out_from_under_the_border _
+
+self = <tests_harbor_leader_den_border.test_other_clan_box_border.AStandingThatTheHoverBorderCannotReach testMethod=test_a_neighbour_whose_name_needs_two_lines_keeps_its_standing_out_from_under_the_border>
+
+    def test_a_neighbour_whose_name_needs_two_lines_keeps_its_standing_out_from_under_the_border(
+        self,
+    ):
+        tile = den.only_tile([(OTHER_TWO_LINE_NAME, OTHER_SHORT_TEMPERAMENT, 20)])
+>       self.assert_the_border_leaves_the_standing_alone(tile)
+
+tests_harbor_leader_den_border/test_other_clan_box_border.py:133: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests_harbor_leader_den_border/test_other_clan_box_border.py:70: in assert_the_border_leaves_the_standing_alone
+    self.assertEqual(
+E   AssertionError: 34 != 0 : 34 of the 34 pixels of the standing 'ally' are painted over when the mouse is on the tile
+_ AStandingThatTheHoverBorderCannotReach.test_a_neighbour_whose_temperament_needs_two_lines_keeps_its_standing_inside_the_tile _
+
+self = <tests_harbor_leader_den_border.test_other_clan_box_border.AStandingThatTheHoverBorderCannotReach testMethod=test_a_neighbour_whose_temperament_needs_two_lines_keeps_its_standing_inside_the_tile>
+
+    def test_a_neighbour_whose_temperament_needs_two_lines_keeps_its_standing_inside_the_tile(
+        self,
+    ):
+        tile = den.only_tile([(SHORT_NAME, TWO_LINE_TEMPERAMENT, 12)])
+        self.assert_the_temperament_needs_two_lines(tile, TWO_LINE_TEMPERAMENT)
+>       self.assert_standing_is_inside_the_tile(tile)
+
+tests_harbor_leader_den_border/test_other_clan_box_border.py:104: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests_harbor_leader_den_border/test_other_clan_box_border.py:47: in assert_standing_is_inside_the_tile
+    self.assertTrue(
+E   AssertionError: False is not true : the standing 'neutral' sits at (75, 622, 133, 15), which runs outside its tile (74, 461, 134, 174)
+_ AStandingThatTheHoverBorderCannotReach.test_a_neighbour_whose_temperament_needs_two_lines_keeps_its_standing_out_from_under_the_border _
+
+self = <tests_harbor_leader_den_border.test_other_clan_box_border.AStandingThatTheHoverBorderCannotReach testMethod=test_a_neighbour_whose_temperament_needs_two_lines_keeps_its_standing_out_from_under_the_border>
+
+    def test_a_neighbour_whose_temperament_needs_two_lines_keeps_its_standing_out_from_under_the_border(
+        self,
+    ):
+        tile = den.only_tile([(OTHER_SHORT_NAME, OTHER_TWO_LINE_TEMPERAMENT, 25)])
+        self.assert_the_temperament_needs_two_lines(tile, OTHER_TWO_LINE_TEMPERAMENT)
+>       self.assert_the_border_leaves_the_standing_alone(tile)
+
+tests_harbor_leader_den_border/test_other_clan_box_border.py:111: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests_harbor_leader_den_border/test_other_clan_box_border.py:70: in assert_the_border_leaves_the_standing_alone
+    self.assertEqual(
+E   AssertionError: 39 != 0 : 39 of the 122 pixels of the standing 'ally' are painted over when the mouse is on the tile
+_ AStandingThatTheHoverBorderCannotReach.test_a_whole_row_of_awkward_neighbours_stays_readable _
+
+self = <tests_harbor_leader_den_border.test_other_clan_box_border.AStandingThatTheHoverBorderCannotReach testMethod=test_a_whole_row_of_awkward_neighbours_stays_readable>
+
+    def test_a_whole_row_of_awkward_neighbours_stays_readable(self):
+        tiles = den.observe(
+            [
+                (SHORT_NAME, TWO_LINE_TEMPERAMENT, 25),
+                (OTHER_SHORT_NAME, OTHER_TWO_LINE_TEMPERAMENT, 3),
+                (TWO_LINE_NAME, SHORT_TEMPERAMENT, 12),
+                (OTHER_TWO_LINE_NAME, OTHER_SHORT_TEMPERAMENT, 20),
+            ]
+        )
+        self.assertEqual(len(tiles), 4)
+        for tile in tiles:
+>           self.assert_standing_is_inside_the_tile(tile)
+
+tests_harbor_leader_den_border/test_other_clan_box_border.py:146: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests_harbor_leader_den_border/test_other_clan_box_border.py:47: in assert_standing_is_inside_the_tile
+    self.assertTrue(
+E   AssertionError: False is not true : the standing 'ally' sits at (75, 622, 133, 15), which runs outside its tile (74, 461, 134, 174)
+_ ATemperamentThatIsReadInTheOrderTheGameRecordedIt.test_a_different_pairs_first_word_is_still_read_before_its_second _
+
+self = <tests_harbor_leader_den_border.test_other_clan_box_border.ATemperamentThatIsReadInTheOrderTheGameRecordedIt testMethod=test_a_different_pairs_first_word_is_still_read_before_its_second>
+
+    def test_a_different_pairs_first_word_is_still_read_before_its_second(self):
+        tile = den.only_tile([(OTHER_SHORT_NAME, OTHER_SHORT_TEMPERAMENT, 12)])
+        words = temperament_writing(tile, OTHER_SHORT_TEMPERAMENT)
+        self.assertEqual(len(words), 1, "tile lost its temperament")
+        text = words[0]["says"]
+        first_word = den.squash(
+            i18n.t("screens.leader_den." + OTHER_SHORT_TEMPERAMENT[0])
+        )
+        second_word = den.squash(
+            i18n.t("screens.leader_den." + OTHER_SHORT_TEMPERAMENT[1])
+        )
+>       self.assertLess(
+            text.index(first_word),
+            text.index(second_word),
+            "the temperament is read out of the order the game recorded it in: %r"
+            % (text,),
+        )
+E       AssertionError: 11 not less than 0 : the temperament is read out of the order the game recorded it in: 'decisive & mellow'
+
+tests_harbor_leader_den_border/test_other_clan_box_border.py:181: AssertionError
+_ ATemperamentThatIsReadInTheOrderTheGameRecordedIt.test_the_first_recorded_temperament_word_is_read_before_the_second _
+
+self = <tests_harbor_leader_den_border.test_other_clan_box_border.ATemperamentThatIsReadInTheOrderTheGameRecordedIt testMethod=test_the_first_recorded_temperament_word_is_read_before_the_second>
+
+    def test_the_first_recorded_temperament_word_is_read_before_the_second(self):
+        tile = den.only_tile([(SHORT_NAME, SHORT_TEMPERAMENT, 12)])
+        words = temperament_writing(tile, SHORT_TEMPERAMENT)
+        self.assertEqual(len(words), 1, "tile lost its temperament")
+        text = words[0]["says"]
+        first_word = den.squash(i18n.t("screens.leader_den." + SHORT_TEMPERAMENT[0]))
+        second_word = den.squash(i18n.t("screens.leader_den." + SHORT_TEMPERAMENT[1]))
+>       self.assertLess(
+            text.index(first_word),
+            text.index(second_word),
+            "the temperament is read out of the order the game recorded it in: %r"
+            % (text,),
+        )
+E       AssertionError: 8 not less than 0 : the temperament is read out of the order the game recorded it in: 'eager & proud'
+
+tests_harbor_leader_den_border/test_other_clan_box_border.py:163: AssertionError
+_ AStandingThatMatchesHowFriendlyTheClanActuallyIs.test_the_lowest_relations_score_that_still_counts_as_neutral_reads_neutral _
+
+self = <tests_harbor_leader_den_border.test_other_clan_box_border.AStandingThatMatchesHowFriendlyTheClanActuallyIs testMethod=test_the_lowest_relations_score_that_still_counts_as_neutral_reads_neutral>
+
+    def test_the_lowest_relations_score_that_still_counts_as_neutral_reads_neutral(
+        self,
+    ):
+        tile = den.only_tile([(SHORT_NAME, SHORT_TEMPERAMENT, 7)])
+        self.assertIsNotNone(
+            tile["standing"],
+            "the tile paints no standing at all: " + repr(tile["writing"]),
+        )
+>       self.assertEqual(
+            tile["standing"]["word"],
+            "neutral",
+            "a relations score of 7 should read neutral, but the tile painted %r"
+            % (tile["standing"]["says"],),
+        )
+E       AssertionError: 'hostile' != 'neutral'
+E       - hostile
+E       + neutral
+E        : a relations score of 7 should read neutral, but the tile painted 'hostile'
+
+tests_harbor_leader_den_border/test_other_clan_box_border.py:203: AssertionError
+_ AClanNameThatReadsTheWayEveryOtherClanNameDoes.test_the_clan_name_is_the_neighbours_name_followed_by_the_word_clan _
+
+self = <tests_harbor_leader_den_border.test_other_clan_box_border.AClanNameThatReadsTheWayEveryOtherClanNameDoes testMethod=test_the_clan_name_is_the_neighbours_name_followed_by_the_word_clan>
+
+    def test_the_clan_name_is_the_neighbours_name_followed_by_the_word_clan(self):
+        tile = den.only_tile([(SHORT_NAME, SHORT_TEMPERAMENT, 12)])
+        name = den.writing_that_says(tile, SHORT_NAME)
+        self.assertEqual(len(name), 1, "no single piece of writing names the Clan")
+>       self.assertEqual(
+            name[0]["says"],
+            den.squash(f"{SHORT_NAME}Clan"),
+            "the tile painted %r, which does not read as %r followed by 'Clan'"
+            % (name[0]["says"], SHORT_NAME),
+        )
+E       AssertionError: 'clanreed' != 'reedclan'
+E       - clanreed
+E       + reedclan
+E        : the tile painted 'clanreed', which does not read as 'Reed' followed by 'Clan'
+
+tests_harbor_leader_den_border/test_other_clan_box_border.py:236: AssertionError
+---------------- generated xml file: /logs/verifier/report.xml -----------------
+=========================== short test summary info ============================
+FAILED tests_harbor_leader_den_border/test_other_clan_box_border.py::AStandingThatTheHoverBorderCannotReach::test_a_neighbour_whose_name_needs_two_lines_keeps_its_standing_inside_the_tile
+FAILED tests_harbor_leader_den_border/test_other_clan_box_border.py::AStandingThatTheHoverBorderCannotReach::test_a_neighbour_whose_name_needs_two_lines_keeps_its_standing_out_from_under_the_border
+FAILED tests_harbor_leader_den_border/test_other_clan_box_border.py::AStandingThatTheHoverBorderCannotReach::test_a_neighbour_whose_temperament_needs_two_lines_keeps_its_standing_inside_the_tile
+FAILED tests_harbor_leader_den_border/test_other_clan_box_border.py::AStandingThatTheHoverBorderCannotReach::test_a_neighbour_whose_temperament_needs_two_lines_keeps_its_standing_out_from_under_the_border
+FAILED tests_harbor_leader_den_border/test_other_clan_box_border.py::AStandingThatTheHoverBorderCannotReach::test_a_whole_row_of_awkward_neighbours_stays_readable
+FAILED tests_harbor_leader_den_border/test_other_clan_box_border.py::ATemperamentThatIsReadInTheOrderTheGameRecordedIt::test_a_different_pairs_first_word_is_still_read_before_its_second
+FAILED tests_harbor_leader_den_border/test_other_clan_box_border.py::ATemperamentThatIsReadInTheOrderTheGameRecordedIt::test_the_first_recorded_temperament_word_is_read_before_the_second
+FAILED tests_harbor_leader_den_border/test_other_clan_box_border.py::AStandingThatMatchesHowFriendlyTheClanActuallyIs::test_the_lowest_relations_score_that_still_counts_as_neutral_reads_neutral
+FAILED tests_harbor_leader_den_border/test_other_clan_box_border.py::AClanNameThatReadsTheWayEveryOtherClanNameDoes::test_the_clan_name_is_the_neighbours_name_followed_by_the_word_clan
+========================= 9 failed, 4 passed in 2.62s ==========================
+(tests exited non-zero; parsing report)
+== computing reward ==
+{
+  "reward": 0.0,
+  "f2p": {
+    "tests_harbor_leader_den_border.test_other_clan_box_border.AStandingThatTheHoverBorderCannotReach::test_a_neighbour_whose_name_needs_two_lines_keeps_its_standing_inside_the_tile": "fail",
+    "tests_harbor_leader_den_border.test_other_clan_box_border.AStandingThatTheHoverBorderCannotReach::test_a_neighbour_whose_name_needs_two_lines_keeps_its_standing_out_from_under_the_border": "fail",
+    "tests_harbor_leader_den_border.test_other_clan_box_border.AStandingThatTheHoverBorderCannotReach::test_a_neighbour_whose_temperament_needs_two_lines_keeps_its_standing_inside_the_tile": "fail",
+    "tests_harbor_leader_den_border.test_other_clan_box_border.AStandingThatTheHoverBorderCannotReach::test_a_neighbour_whose_temperament_needs_two_lines_keeps_its_standing_out_from_under_the_border": "fail",
+    "tests_harbor_leader_den_border.test_other_clan_box_border.AStandingThatTheHoverBorderCannotReach::test_a_whole_row_of_awkward_neighbours_stays_readable": "fail",
+    "tests_harbor_leader_den_border.test_other_clan_box_border.ATemperamentThatIsReadInTheOrderTheGameRecordedIt::test_the_first_recorded_temperament_word_is_read_before_the_second": "fail",
+    "tests_harbor_leader_den_border.test_other_clan_box_border.ATemperamentThatIsReadInTheOrderTheGameRecordedIt::test_a_different_pairs_first_word_is_still_read_before_its_second": "fail",
+    "tests_harbor_leader_den_border.test_other_clan_box_border.AStandingThatMatchesHowFriendlyTheClanActuallyIs::test_the_lowest_relations_score_that_still_counts_as_neutral_reads_neutral": "fail",
+    "tests_harbor_leader_den_border.test_other_clan_box_border.AClanNameThatReadsTheWayEveryOtherClanNameDoes::test_the_clan_name_is_the_neighbours_name_followed_by_the_word_clan": "fail"
+  },
+  "p2p": {
+    "tests_harbor_leader_den_border.test_other_clan_box_border.TheRestOfTheNeighbourRowIsUntouched::test_a_neighbour_with_short_writing_already_kept_its_standing_clear_of_the_border": "pass",
+    "tests_harbor_leader_den_border.test_other_clan_box_border.TheRestOfTheNeighbourRowIsUntouched::test_every_neighbour_tile_names_its_clan_and_both_temperament_words": "pass",
+    "tests_harbor_leader_den_border.test_other_clan_box_border.TheRestOfTheNeighbourRowIsUntouched::test_every_neighbour_tile_retains_visible_hover_feedback": "pass",
+    "tests_harbor_leader_den_border.test_other_clan_box_border.AStandingThatMatchesHowFriendlyTheClanActuallyIs::test_the_highest_relations_score_that_still_counts_as_neutral_reads_neutral": "pass"
+  },
+  "f2p_passing": [],
+  "p2p_passing": [
+    "tests_harbor_leader_den_border.test_other_clan_box_border.TheRestOfTheNeighbourRowIsUntouched::test_a_neighbour_with_short_writing_already_kept_its_standing_clear_of_the_border",
+    "tests_harbor_leader_den_border.test_other_clan_box_border.TheRestOfTheNeighbourRowIsUntouched::test_every_neighbour_tile_names_its_clan_and_both_temperament_words",
+    "tests_harbor_leader_den_border.test_other_clan_box_border.TheRestOfTheNeighbourRowIsUntouched::test_every_neighbour_tile_retains_visible_hover_feedback",
+    "tests_harbor_leader_den_border.test_other_clan_box_border.AStandingThatMatchesHowFriendlyTheClanActuallyIs::test_the_highest_relations_score_that_still_counts_as_neutral_reads_neutral"
+  ]
+}
+reward=0.0

@@ -1,0 +1,167 @@
+diff --git a/packages/flutter/test/material/date_range_picker_test.dart b/packages/flutter/test/material/date_range_picker_test.dart
+index 0d3733ef7..725ddc6f7 100644
+--- a/packages/flutter/test/material/date_range_picker_test.dart
++++ b/packages/flutter/test/material/date_range_picker_test.dart
+@@ -2025,6 +2025,162 @@ void main() {
+ 
+     expect(tester.takeException(), null);
+   });
++
++  testWidgets('DateRangePicker respects DatePickerTheme.dayShape', (WidgetTester tester) async {
++    const OutlinedBorder customShape = BeveledRectangleBorder(
++      borderRadius: BorderRadius.all(Radius.circular(10)),
++    );
++
++    await tester.pumpWidget(
++      MaterialApp(
++        theme: ThemeData(
++          datePickerTheme: const DatePickerThemeData(
++            dayShape: WidgetStatePropertyAll<OutlinedBorder>(customShape),
++          ),
++        ),
++        home: Material(
++          child: Builder(
++            builder: (BuildContext context) {
++              return ElevatedButton(
++                onPressed: () => showDateRangePicker(
++                  context: context,
++                  firstDate: DateTime(2023),
++                  lastDate: DateTime(2024),
++                  initialDateRange: DateTimeRange(
++                    start: DateTime(2023, 1, 15),
++                    end: DateTime(2023, 1, 20),
++                  ),
++                ),
++                child: const Text('Open Picker'),
++              );
++            },
++          ),
++        ),
++      ),
++    );
++
++    await tester.tap(find.text('Open Picker'));
++    await tester.pumpAndSettle();
++
++    final Finder selectedDayText = find.text('15');
++
++    final Finder dayContainerFinder = find
++        .ancestor(
++          of: selectedDayText,
++          matching: find.byWidgetPredicate((Widget widget) {
++            return widget is Container && widget.decoration is ShapeDecoration;
++          }),
++        )
++        .first;
++
++    final Container dayContainer = tester.widget<Container>(dayContainerFinder);
++    final decoration = dayContainer.decoration! as ShapeDecoration;
++
++    expect(decoration.shape, customShape);
++  });
++
++  testWidgets('DateRangePicker today respects DatePickerTheme.dayShape', (WidgetTester tester) async {
++    const OutlinedBorder customShape = BeveledRectangleBorder(
++      borderRadius: BorderRadius.all(Radius.circular(10)),
++    );
++
++    await tester.pumpWidget(
++      MaterialApp(
++        theme: ThemeData(
++          datePickerTheme: const DatePickerThemeData(
++            dayShape: WidgetStatePropertyAll<OutlinedBorder>(customShape),
++          ),
++        ),
++        home: Material(
++          child: Builder(
++            builder: (BuildContext context) {
++              return ElevatedButton(
++                onPressed: () => showDateRangePicker(
++                  context: context,
++                  firstDate: DateTime(2020),
++                  lastDate: DateTime(2030),
++                  currentDate: DateTime(2023, 6, 15),
++                  initialDateRange: DateTimeRange(
++                    start: DateTime(2023, 6, 1),
++                    end: DateTime(2023, 6, 10),
++                  ),
++                ),
++                child: const Text('Open Picker'),
++              );
++            },
++          ),
++        ),
++      ),
++    );
++
++    await tester.tap(find.text('Open Picker'));
++    await tester.pumpAndSettle();
++
++    final Finder todayText = find.text('15');
++
++    final Finder dayContainerFinder = find
++        .ancestor(
++          of: todayText,
++          matching: find.byWidgetPredicate((Widget widget) {
++            return widget is Container && widget.decoration is ShapeDecoration;
++          }),
++        )
++        .first;
++
++    final Container dayContainer = tester.widget<Container>(dayContainerFinder);
++    final decoration = dayContainer.decoration! as ShapeDecoration;
++
++    expect(decoration.shape, isNot(isA<CircleBorder>()));
++  });
++
++  testWidgets('DateRangePicker day ink splash uses themed shape', (WidgetTester tester) async {
++    const OutlinedBorder customShape = BeveledRectangleBorder(
++      borderRadius: BorderRadius.all(Radius.circular(10)),
++    );
++
++    await tester.pumpWidget(
++      MaterialApp(
++        theme: ThemeData(
++          datePickerTheme: const DatePickerThemeData(
++            dayShape: WidgetStatePropertyAll<OutlinedBorder>(customShape),
++          ),
++        ),
++        home: Material(
++          child: Builder(
++            builder: (BuildContext context) {
++              return ElevatedButton(
++                onPressed: () => showDateRangePicker(
++                  context: context,
++                  firstDate: DateTime(2023),
++                  lastDate: DateTime(2024),
++                  initialDateRange: DateTimeRange(
++                    start: DateTime(2023, 1, 15),
++                    end: DateTime(2023, 1, 20),
++                  ),
++                ),
++                child: const Text('Open Picker'),
++              );
++            },
++          ),
++        ),
++      ),
++    );
++
++    await tester.tap(find.text('Open Picker'));
++    await tester.pumpAndSettle();
++
++    final InkResponse inkResponse = tester.widget<InkResponse>(
++      find
++          .ancestor(
++            of: find.text('15'),
++            matching: find.byType(InkResponse),
++          )
++          .first,
++    );
++
++    expect(inkResponse.customBorder, customShape);
++    expect(inkResponse.containedInkWell, isTrue);
++  });
+ }
+ 
+ class _RestorableDateRangePickerDialogTestWidget extends StatefulWidget {

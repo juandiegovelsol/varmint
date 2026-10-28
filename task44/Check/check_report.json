@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "checks": {
+        "behavior_in_task_description": {
+          "explanation": "instruction.md describes the bug in behavioral/visual terms consistent with what the f2p tests check: badges losing their colour strip/mark when tiled onto a sheet, more than one sheet arrangement existing, and badges of differing shapes each needing to fit their own slot correctly on every arrangement. This maps to the core f2p checks (artwork retained, marks sit on their own artwork, no overlap, sheet output matches the lone-badge render, and regular grids for the four-up/eight-up arrangements). The task is an exploratory visual-bug-fix (per difficulty_explanation, deliberately naming no file/class/option) so the instruction is not expected to spell out implementation details, and it does not need to describe the p2p regression checks (sheet count, sheet size, PDF attachment, no-product error) since those are pre-existing behaviors that must simply keep working rather than new requirements.",
+          "outcome": "pass"
+        },
+        "behavior_in_tests": {
+          "explanation": "Everything the instruction calls out — every badge slot must show its full artwork/mark rather than only text, more than one sheet arrangement exists, and differing badge shapes must each fit their own slot correctly — is exercised by the test suite across two disjoint fixture palettes (harbourfog landscape badges, nordkap portrait badges) and both four-up/eight-up arrangements, plus a one-per-sheet baseline for comparison.",
+          "outcome": "pass"
+        },
+        "informative_test_structure": {
+          "explanation": "test_badge_sheet_layout.py is organized into clearly commented sections (paper geometry, palettes, fixture construction, shared assertion helpers, then per-palette test functions), each assertion helper has a descriptive name and docstring, and test functions are grouped and labelled by palette (harbourfog/nordkap), making the suite easy to navigate and maintain.",
+          "outcome": "pass"
+        },
+        "anti_cheating_measures": {
+          "explanation": "tests/ and solution/ are not baked into the image (mounted only at verify time per the Dockerfile's comments), the verifier reads only the JUnit report and never inspects source, and all assertions are computed from rasterised pixel output rather than referencing any implementation symbol/constant. The suite additionally plants 'canary' vocabulary (e.g. render_nup, merge_foreground_buffer, badge_default_a6l) inside the fixture data itself specifically to catch a test/solution that was accidentally keyed to implementation names instead of actual rendered output — a deliberate, well-thought-out anti-cheating design.",
+          "outcome": "pass"
+        },
+        "structured_data_schema": {
+          "explanation": "This is a visual PDF rendering bug fix, not a task that asks the agent to produce structured data (JSON/CSV/API) with a documented schema; the agent modifies existing badge-export code and correctness is judged by rendered pixel output, not a data schema.",
+          "outcome": "not_applicable"
+        },
+        "pinned_dependencies": {
+          "explanation": "Python dependencies are installed via `uv sync --frozen` against the repo's own uv.lock, which pins exact versions; apt packages are unpinned but that is acceptable per the guidance. No unpinned test-only dependency is introduced outside the lockfile-driven install.",
+          "outcome": "pass"
+        },
+        "typos": {
+          "explanation": "Checked SHAs (both 40 hex chars, consistent between task.toml and Dockerfile), file paths in files_edited against fix.patch's touched files (exact match), and f2p/p2p test id lists between task.toml and tests/config.json (identical) — no typos or inconsistencies found in the reviewed files.",
+          "outcome": "pass"
+        },
+        "tests_or_solution_in_image": {
+          "explanation": "The Dockerfile only COPYs the assets/ directory (screenshot) into the image; it explicitly states tests/ and solution/ are intentionally not baked in and are mounted by the harness at verify time, and no COPY instruction references either directory.",
+          "outcome": "pass"
+        },
+        "test_deps_in_image": {
+          "explanation": "The Dockerfile runs `uv sync --frozen --all-extras --group test` once (to warm uv's local package cache) and then immediately re-runs `uv sync --frozen --all-extras` without the test group, which prunes pytest/pytest-django/etc. back out of the shipped venv. test.sh then performs the actual test-dependency install offline from that pre-warmed cache at verify time, keeping the agent's own environment free of test tooling.",
+          "outcome": "pass"
+        },
+        "hardcoded_solution": {
+          "explanation": "solve.sh applies solution/fix.patch, which is the actual multi-file upstream code fix (new helper functions for slot-fitting/merging, media-box correction, background-placeholder detection, JS payload fix, etc.) rather than a trivial echoed answer; for this SWE-style code-repair task, applying the real diff across all five edited files is the standard and appropriate oracle solution mechanism.",
+          "outcome": "pass"
+        },
+        "file_reference_mentioned": {
+          "explanation": "The task requires the agent to fix behavior in existing source files within the repository (verified by exercising BadgeExporter.render() in tests), not to produce new output files/artifacts whose names would need to be referenced in the instruction.",
+          "outcome": "not_applicable"
+        }
+      },
+      "cost_usd": 0.43959195,
+      "task_name": "Tasks",
+      "error": null
+    }
+  ]
+}

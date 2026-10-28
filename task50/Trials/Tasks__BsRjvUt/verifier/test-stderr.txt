@@ -1,0 +1,108 @@
+FAIL src/components/earn/yield/__tests__/yieldWithdrawComplete.test.tsx (9.613 s)
+  ● yield withdrawal complete screen › an amount withdrawn in asset units › reports the vault receipt token as what left the account
+
+    expect(received).toMatch(expected)
+
+    Expected pattern: /(?:^|[^0-9.])2(?:\.0+)?\s+trSHETHp/
+    Received string:  "TR_EARN_YIELD_WITHDRAW_COMPLETETR_EARN_YIELD_WITHDRAW_COMPLETE_DESCRIPTION WETHTR_EARN_YIELD_STATUSTR_EARN_YIELD_COMPLETEDTR_EARN_YIELD_AMOUNT_TO_WITHDRAWtoken-icon2.1 WETHTR_RECEIVEDtoken-icon2.1 WETHTR_EARN_YIELD_BACK_TO_OVERVIEWfeedback-card"
+
+      452 |             // Tied to the converted amount, not a bare substring: a fix that names the receipt
+      453 |             // token somewhere decorative without actually reporting what was burned must not pass.
+    > 454 |             expect(screenText()).toMatch(amountOf('2', 'trSHETHp'));
+          |                                  ^
+      455 |         });
+      456 |
+      457 |         it('reports the receipt shares that were burned, not the asset amount entered', () => {
+
+      at Object.toMatch (src/components/earn/yield/__tests__/yieldWithdrawComplete.test.tsx:454:34)
+
+  ● yield withdrawal complete screen › an amount withdrawn in asset units › reports the receipt shares that were burned, not the asset amount entered
+
+    expect(received).toMatch(expected)
+
+    Expected pattern: /(?:^|[^0-9.])2(?:\.0+)?\s+trSHETHp/
+    Received string:  "TR_EARN_YIELD_WITHDRAW_COMPLETETR_EARN_YIELD_WITHDRAW_COMPLETE_DESCRIPTION WETHTR_EARN_YIELD_STATUSTR_EARN_YIELD_COMPLETEDTR_EARN_YIELD_AMOUNT_TO_WITHDRAWtoken-icon2.1 WETHTR_RECEIVEDtoken-icon2.1 WETHTR_EARN_YIELD_BACK_TO_OVERVIEWfeedback-card"
+
+      459 |
+      460 |             // 2.1 WETH withdrawn at 1.05 WETH/share burns 2 trSHETHp.
+    > 461 |             expect(screenText()).toMatch(amountOf('2', 'trSHETHp'));
+          |                                  ^
+      462 |             expect(screenText()).not.toMatch(amountOf('2.1', 'trSHETHp'));
+      463 |         });
+      464 |
+
+      at Object.toMatch (src/components/earn/yield/__tests__/yieldWithdrawComplete.test.tsx:461:34)
+
+  ● yield withdrawal complete screen › an amount withdrawn in asset units › reports the receipt token as what left the account when unwrapping to the native coin
+
+    expect(received).toMatch(expected)
+
+    Expected pattern: /(?:^|[^0-9.])2(?:\.0+)?\s+trSHETHp/
+    Received string:  "TR_EARN_YIELD_WITHDRAW_COMPLETETR_EARN_YIELD_WITHDRAW_COMPLETE_DESCRIPTION ETHTR_EARN_YIELD_STATUSTR_EARN_YIELD_COMPLETEDTR_EARN_YIELD_AMOUNT_TO_WITHDRAWtoken-icon2.1 WETHTR_RECEIVEDtoken-icon2.1 ETHTR_EARN_YIELD_BACK_TO_OVERVIEWfeedback-card"
+
+      466 |             renderFinishedWithdrawal({ unit: 'asset', unwrappedAmount: '2.1' });
+      467 |
+    > 468 |             expect(screenText()).toMatch(amountOf('2', 'trSHETHp'));
+          |                                  ^
+      469 |             expect(screenText()).not.toMatch(amountOf('2.1', 'WETH'));
+      470 |         });
+      471 |
+
+      at Object.toMatch (src/components/earn/yield/__tests__/yieldWithdrawComplete.test.tsx:468:34)
+
+  ● yield withdrawal complete screen › an amount withdrawn in asset units › boundary and error paths › reports zero receipt tokens burned for a zero-amount withdrawal
+
+    expect(received).toMatch(expected)
+
+    Expected pattern: /(?:^|[^0-9.])0(?:\.0+)?\s+trSHETHp/
+    Received string:  "TR_EARN_YIELD_WITHDRAW_COMPLETETR_EARN_YIELD_WITHDRAW_COMPLETE_DESCRIPTION WETHTR_EARN_YIELD_STATUSTR_EARN_YIELD_COMPLETEDTR_EARN_YIELD_AMOUNT_TO_WITHDRAWtoken-icon0 WETHTR_RECEIVEDtoken-icon0 WETHTR_EARN_YIELD_BACK_TO_OVERVIEWfeedback-card"
+
+      474 |                 renderFinishedWithdrawal({ unit: 'asset', completedAmount: '0' });
+      475 |
+    > 476 |                 expect(screenText()).toMatch(amountOf('0', 'trSHETHp'));
+          |                                      ^
+      477 |                 expect(valueLabelled('TR_RECEIVED')).toMatch(amountOf('0', 'WETH'));
+      478 |             });
+      479 |
+
+      at Object.toMatch (src/components/earn/yield/__tests__/yieldWithdrawComplete.test.tsx:476:38)
+
+  ● yield withdrawal complete screen › an amount withdrawn in asset units › boundary and error paths › falls back to the entered amount when no share price is available yet
+
+    expect(received).toMatch(expected)
+
+    Expected pattern: /(?:^|[^0-9.])2\.1(?:\.0+)?\s+trSHETHp/
+    Received string:  "TR_EARN_YIELD_WITHDRAW_COMPLETETR_EARN_YIELD_WITHDRAW_COMPLETE_DESCRIPTION WETHTR_EARN_YIELD_STATUSTR_EARN_YIELD_COMPLETEDTR_EARN_YIELD_AMOUNT_TO_WITHDRAWtoken-icon2.1 WETHTR_RECEIVEDtoken-icon2.1 WETHTR_EARN_YIELD_BACK_TO_OVERVIEWfeedback-card"
+
+      484 |                 renderFinishedWithdrawal({ unit: 'asset', pricePerShareState: null });
+      485 |
+    > 486 |                 expect(screenText()).toMatch(amountOf('2.1', 'trSHETHp'));
+          |                                      ^
+      487 |                 // Guards against a fix that assumes a price is always available and always
+      488 |                 // converts as if it were 1.05, regardless of whether that data actually loaded.
+      489 |                 expect(screenText()).not.toMatch(amountOf('2', 'trSHETHp'));
+
+      at Object.toMatch (src/components/earn/yield/__tests__/yieldWithdrawComplete.test.tsx:486:38)
+
+  ● yield withdrawal complete screen › an amount withdrawn in asset units › boundary and error paths › reports the receipt token burned even when the unwrap produces a dust amount of zero
+
+    expect(received).toMatch(expected)
+
+    Expected pattern: /(?:^|[^0-9.])2(?:\.0+)?\s+trSHETHp/
+    Received string:  "TR_EARN_YIELD_WITHDRAW_COMPLETETR_EARN_YIELD_WITHDRAW_COMPLETE_DESCRIPTION ETHTR_EARN_YIELD_STATUSTR_EARN_YIELD_COMPLETEDTR_EARN_YIELD_AMOUNT_TO_WITHDRAWtoken-icon2.1 WETHTR_RECEIVEDtoken-icon0 ETHTR_EARN_YIELD_BACK_TO_OVERVIEWfeedback-card"
+
+      496 |                 renderFinishedWithdrawal({ unit: 'asset', unwrappedAmount: '0' });
+      497 |
+    > 498 |                 expect(screenText()).toMatch(amountOf('2', 'trSHETHp'));
+          |                                      ^
+      499 |                 expect(valueLabelled('TR_RECEIVED')).toMatch(amountOf('0', 'ETH'));
+      500 |                 expect(screenText()).not.toMatch(amountOf('2.1', 'WETH'));
+      501 |             });
+
+      at Object.toMatch (src/components/earn/yield/__tests__/yieldWithdrawComplete.test.tsx:498:38)
+
+Test Suites: 1 failed, 1 total
+Tests:       6 failed, 8 passed, 14 total
+Snapshots:   0 total
+Time:        11.078 s
+Ran all test suites within paths "src/components/earn/yield/__tests__/yieldWithdrawComplete.test.tsx".

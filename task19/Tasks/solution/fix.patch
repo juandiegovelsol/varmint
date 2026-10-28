@@ -1,0 +1,58 @@
+diff --git a/src/polar/Pie.tsx b/src/polar/Pie.tsx
+index 0ef3d50..84a4e45 100644
+--- a/src/polar/Pie.tsx
++++ b/src/polar/Pie.tsx
+@@ -746,12 +746,43 @@ export function computePieSectors({
+ 
+   const notZeroItemCount = displayedData.filter(entry => getValueByDataKey(entry, dataKey, 0) !== 0).length;
+   const totalPaddingAngle = (absDeltaAngle >= 360 ? notZeroItemCount : notZeroItemCount - 1) * paddingAngle;
+-  const realTotalAngle = absDeltaAngle - notZeroItemCount * minAngle - totalPaddingAngle;
+ 
+   const sum = displayedData.reduce((result: number, entry: any) => {
+     const val = getValueByDataKey(entry, dataKey, 0);
+     return result + (isNumber(val) ? val : 0);
+   }, 0);
++
++  /*
++   * The angle the sectors are actually drawn into. Padding is carved out of the span
++   * before anything is shared, so it is this - and not the full span - that a sector's
++   * natural size has to be measured against.
++   */
++  const distributableAngle = Math.max(absDeltaAngle - totalPaddingAngle, 0);
++
++  /*
++   * minAngle is a floor, not a toll. Reserving it for every sector shrinks the pool the
++   * proportional part is drawn from, which moves every single boundary - so only reserve
++   * it when at least one non-zero sector would otherwise be drawn smaller than the floor.
++   */
++  const needsMinAngleAdjustment =
++    minAngle > 0 &&
++    sum > 0 &&
++    displayedData.some(entry => {
++      const val = getValueByDataKey(entry, dataKey, 0);
++      const percent = (isNumber(val) ? val : 0) / sum;
++      return val !== 0 && percent * distributableAngle < minAngle;
++    });
++
++  /*
++   * Never reserve more than the span can hold, either: with enough sectors,
++   * notZeroItemCount * minAngle can exceed what is available, which drives the remaining
++   * pool negative and draws the sectors backwards, on top of each other.
++   */
++  const effectiveMinAngle = needsMinAngleAdjustment
++    ? Math.min(minAngle, notZeroItemCount > 0 ? distributableAngle / notZeroItemCount : 0)
++    : 0;
++
++  const realTotalAngle = absDeltaAngle - notZeroItemCount * effectiveMinAngle - totalPaddingAngle;
+   let sectors;
+ 
+   if (sum > 0) {
+@@ -777,7 +808,7 @@ export function computePieSectors({
+       }
+ 
+       const tempEndAngle =
+-        tempStartAngle + mathSign(deltaAngle) * ((val !== 0 ? minAngle : 0) + percent * realTotalAngle);
++        tempStartAngle + mathSign(deltaAngle) * ((val !== 0 ? effectiveMinAngle : 0) + percent * realTotalAngle);
+       const midAngle = (tempStartAngle + tempEndAngle) / 2;
+       const middleRadius = (coordinate.innerRadius + coordinate.outerRadius) / 2;
+ 

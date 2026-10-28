@@ -1,0 +1,79 @@
+version = "1.0"
+
+[metadata]
+task_id = "facebook__lexical-8729-mm"
+title = "Part of a selection is left unformatted"
+repository_name = "facebook/lexical"
+repo_url = "https://github.com/facebook/lexical"
+issue_number = 8729
+pr_number = 8737
+base_commit = "51d47b77e852e646091ff5cb7675264fd9aa234e"
+fix_commit = "9c1cbf8caae14505c5fb1c371fed66f49d28bf9f"
+task_type = "visual_bug_fix"
+language = "TypeScript"
+framework = "Lexical / vitest (unit, jsdom)"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "medium"
+difficulty_explanation = """
+The prompt is one sentence: applying a character format to a selection spanning an inline element
+and ordinary text does not give both the same format. There are no reproduction steps, no file, no
+command, no node class, and no mechanism. Everything else the agent has comes from the two frames.
+The original report was far more generous and has been stripped: it carried the responsible class
+and the command in its own title, an explicit statement of which existing mechanism the repair
+should follow, a live reproduction link, the package version, and a fenced code block sketching a
+working implementation.
+
+With the steps gone, the frames carry the whole report. The first shows a single highlighted
+selection in which a bordered inline chip renders in normal weight while the text immediately
+beside it renders bold, with the bold control active. The second shows ordinary text on its own
+taking the same format without trouble. That pairing is what says the fault is a disagreement
+between two things in one selection rather than a format that failed outright, and it is what
+identifies which half is wrong. Cover the frames and the sentence does not even establish that.
+
+The repair is not local to the reported symptom. Two independent handlers respond to the same
+format dispatch at different priorities, and the chip's own handler toggles it in isolation with no
+reference to what the neighbouring text is being set to, so the two arrive at different answers.
+Making them agree means the alignment reference that text nodes already share has to become
+available to the chip, which is why the golden withdraws the chip's private handler entirely, lifts
+the text formatting routine out of the selection class into a standalone function both kinds of
+node go through, and introduces a shared capability contract plus its type guard so a non-text node
+can participate. That spans the core package, its public surface, its flow declarations, the
+rich-text handler and the extension. A repair that only reorders the two handlers or copies the
+reference into the chip's own handler leaves the collapsed-selection and node-selection paths
+inconsistent, which the pass-to-pass set holds in place.
+"""
+files_edited = [
+  "packages/lexical-extension/src/DecoratorTextExtension.ts",
+  "packages/lexical-rich-text/src/index.ts",
+  "packages/lexical/flow/Lexical.js.flow",
+  "packages/lexical/src/LexicalSelection.ts",
+  "packages/lexical/src/index.ts",
+  "packages/lexical/src/nodes/LexicalTextNode.ts",
+]
+f2p = [
+  "packages/lexical-extension/src/__tests__/unit/DecoratorTextExtension.test.ts > DecoratorTextExtension FORMAT_TEXT_COMMAND > aligns DecoratorTextNode to not-bold when TextNode is bold",
+  "packages/lexical-extension/src/__tests__/unit/DecoratorTextExtension.test.ts > DecoratorTextExtension FORMAT_TEXT_COMMAND > aligns DecoratorTextNode to bold when TextNode is not-bold",
+  "packages/lexical-extension/src/__tests__/unit/DecoratorTextExtension.test.ts > DecoratorTextExtension FORMAT_TEXT_COMMAND > aligns multiple DecoratorTextNodes to the TextNode's target format regardless of each decorator's own starting format",
+]
+p2p = [
+  "packages/lexical-extension/src/__tests__/unit/DecoratorTextExtension.test.ts > DecoratorTextExtension FORMAT_TEXT_COMMAND > removes bold from all nodes when every node in selection is already bold",
+  "packages/lexical-extension/src/__tests__/unit/DecoratorTextExtension.test.ts > DecoratorTextExtension FORMAT_TEXT_COMMAND > a NodeSelection over DecoratorTextNodes only (no TextNode) still toggles independently",
+  "packages/lexical-extension/src/__tests__/unit/DecoratorTextExtension.test.ts > DecoratorTextExtension FORMAT_TEXT_COMMAND > a RangeSelection over TextNodes only (no decorator) formats normally",
+]
+tags = ["multimodal", "visual_bug_fix", "lexical", "typescript"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+network_mode = "public"
+timeout_sec = 2400.0
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

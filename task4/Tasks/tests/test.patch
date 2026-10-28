@@ -1,0 +1,544 @@
+diff --git a/test/chart/polarTooltipAttribution.spec.tsx b/test/chart/polarTooltipAttribution.spec.tsx
+new file mode 100644
+index 0000000000..8ed0354cf0
+--- /dev/null
++++ b/test/chart/polarTooltipAttribution.spec.tsx
+@@ -0,0 +1,427 @@
++import React from 'react';
++import { act, cleanup, fireEvent, render } from '@testing-library/react';
++import { beforeEach, describe, expect, it, vi } from 'vitest';
++import { Pie, PieChart, PolarAngleAxis, Radar, RadarChart, Tooltip } from '../../src';
++import { mockGetBoundingClientRect } from '../helper/mockGetBoundingClientRect';
++import { assertNotNull } from '../helper/assertNotNull';
++
++/**
++ * Behavioural coverage for pointer -> series attribution on a full-circle polar chart.
++ *
++ * Everything here goes through the public surface only: render a chart, move the pointer over the
++ * wrapper, then read what the chart reports (the chart-level mouse handler payload and the rendered
++ * tooltip). No module internals are inspected and no expectation is tied to a particular axis
++ * orientation, so any fix that makes the chart behave correctly satisfies these tests regardless of
++ * where it is implemented.
++ */
++
++const SIZE = 400;
++const CX = SIZE / 2;
++const CY = SIZE / 2;
++const NO_MARGIN = { top: 0, right: 0, bottom: 0, left: 0 };
++const PROBE_RADIUS = 110;
++
++/** Client coordinates of a point at `deg` (0 = 3 o'clock, counter-clockwise) and `radius` from the chart centre. */
++function pointAt(deg: number, radius: number): { clientX: number; clientY: number } {
++  return {
++    clientX: CX + radius * Math.cos((deg * Math.PI) / 180),
++    clientY: CY - radius * Math.sin((deg * Math.PI) / 180),
++  };
++}
++
++/** Direction of a reported point, measured from the chart centre in the same convention as `pointAt`. */
++function directionOf(point: { x: number; y: number }): number {
++  return ((((Math.atan2(CY - point.y, point.x - CX) * 180) / Math.PI) % 360) + 360) % 360;
++}
++
++/** Smallest absolute difference between two angles, in degrees. */
++function angularGap(a: number, b: number): number {
++  const d = (Math.abs((a - b) % 360) + 360) % 360;
++  return Math.min(d, 360 - d);
++}
++
++function makeData(count: number): ReadonlyArray<{ name: string; score: number }> {
++  return Array.from({ length: count }, (_, i) => ({ name: `series-${i}`, score: 40 + i * 7 }));
++}
++
++type PolarChartOptions = { count: number; startAngle: number; endAngle: number };
++
++type Reported = {
++  label: string;
++  coordinate: { x: number; y: number } | undefined;
++  direction: number | undefined;
++  distance: number;
++  active: boolean;
++  tooltipText: string;
++};
++
++/**
++ * Renders a full-circle RadarChart, moves the pointer to one polar position and returns what the
++ * chart reported for it. A fresh render per probe keeps probes independent of each other.
++ */
++function probe(options: PolarChartOptions, deg: number): Reported {
++  cleanup();
++  const onMouseMove = vi.fn();
++  mockGetBoundingClientRect({ width: SIZE, height: SIZE, left: 0, top: 0 });
++  const { container } = render(
++    <RadarChart
++      width={SIZE}
++      height={SIZE}
++      data={makeData(options.count)}
++      startAngle={options.startAngle}
++      endAngle={options.endAngle}
++      margin={NO_MARGIN}
++      onMouseMove={onMouseMove}
++    >
++      <PolarAngleAxis dataKey="name" />
++      <Radar dataKey="score" isAnimationActive={false} />
++      <Tooltip isAnimationActive={false} />
++    </RadarChart>,
++  );
++  act(() => {
++    vi.runOnlyPendingTimers();
++  });
++
++  const wrapper = container.querySelector('.recharts-wrapper');
++  assertNotNull(wrapper);
++  fireEvent.mouseMove(wrapper, pointAt(deg, PROBE_RADIUS));
++  act(() => {
++    vi.runOnlyPendingTimers();
++  });
++
++  const state: any = onMouseMove.mock.calls[onMouseMove.mock.calls.length - 1]?.[0];
++  const coordinate = state?.activeCoordinate;
++  return {
++    label: String(state?.activeLabel),
++    coordinate,
++    direction: coordinate ? directionOf(coordinate) : undefined,
++    distance: coordinate ? Math.hypot(coordinate.x - CX, coordinate.y - CY) : Infinity,
++    active: Boolean(state?.isTooltipActive),
++    tooltipText: container.querySelector('.recharts-tooltip-wrapper')?.textContent ?? '',
++  };
++}
++
++/**
++ * The spokes of a full-circle axis are evenly spaced, so the series a pointer belongs to is the one
++ * whose spoke is angularly nearest. Which data index sits on which spoke is the chart's business -
++ * these tests only require that the answer is the nearest spoke and that the mapping is one-to-one.
++ */
++function nearestSpoke(deg: number, count: number, spokeOffset: number): number {
++  const step = 360 / count;
++  const raw = Math.round((deg - spokeOffset) / step) * step + spokeOffset;
++  return ((raw % 360) + 360) % 360;
++}
++
++/** Pointer angles far enough from a spoke boundary that the expected answer is unambiguous. */
++function unambiguousAngles(count: number, spokeOffset: number, stepDeg = 5): number[] {
++  const half = 180 / count;
++  const out: number[] = [];
++  for (let deg = 0; deg < 360; deg += stepDeg) {
++    if (angularGap(deg, nearestSpoke(deg, count, spokeOffset)) < half - 6) {
++      out.push(deg);
++    }
++  }
++  return out;
++}
++
++/**
++ * Measures where the chart actually puts its spokes, using a pointer position that resolves
++ * correctly on every build, so nothing below hard-codes an axis orientation.
++ */
++function measureSpokeOffset(options: PolarChartOptions): number {
++  const step = 360 / options.count;
++  const reference = probe(options, options.startAngle + step / 2 + step);
++  expect(reference.direction, 'the reference pointer position must report a point').not.toBeUndefined();
++  return (((reference.direction as number) % step) + step) % step;
++}
++
++const CONFIGURATIONS: ReadonlyArray<{ title: string } & PolarChartOptions> = [
++  { title: '4 series laid out over 0..360', count: 4, startAngle: 0, endAngle: 360 },
++  { title: '5 series laid out over 0..360', count: 5, startAngle: 0, endAngle: 360 },
++  { title: '6 series laid out over 45..405', count: 6, startAngle: 45, endAngle: 405 },
++  { title: '4 series laid out over 90..450', count: 4, startAngle: 90, endAngle: 450 },
++];
++
++describe('full-circle polar chart pointer attribution', () => {
++  beforeEach(() => {
++    cleanup();
++  });
++
++  CONFIGURATIONS.forEach(({ title, ...options }) => {
++    it(`resolves every pointer angle to the nearest spoke with ${title}`, () => {
++      const spokeOffset = measureSpokeOffset(options);
++      const angles = unambiguousAngles(options.count, spokeOffset);
++      const labelsBySpoke = new Map<number, Set<string>>();
++      const problems: string[] = [];
++
++      angles.forEach(deg => {
++        const reported = probe(options, deg);
++        const spoke = nearestSpoke(deg, options.count, spokeOffset);
++
++        if (!reported.active) {
++          problems.push(`pointer ${deg}deg: tooltip not active`);
++          return;
++        }
++        if (reported.direction === undefined) {
++          problems.push(`pointer ${deg}deg: no highlight position reported`);
++          return;
++        }
++        if (reported.distance > SIZE / 2) {
++          problems.push(
++            `pointer ${deg}deg: highlight sits ${reported.distance.toFixed(0)}px from the centre, ` +
++              `which is off the circle the spokes lie on`,
++          );
++        }
++        if (angularGap(reported.direction, spoke) > 2) {
++          problems.push(
++            `pointer ${deg}deg: expected the highlight on the spoke at ${spoke.toFixed(0)}deg, ` +
++              `got ${reported.direction.toFixed(0)}deg`,
++          );
++        }
++        const seen = labelsBySpoke.get(spoke) ?? new Set<string>();
++        seen.add(reported.label);
++        labelsBySpoke.set(spoke, seen);
++      });
++
++      expect(problems).toEqual([]);
++
++      // one series per spoke, and no series shared between two spokes
++      labelsBySpoke.forEach((labels, spoke) => {
++        expect(Array.from(labels), `spoke at ${spoke}deg must resolve to a single series`).toHaveLength(1);
++      });
++      const labels = Array.from(labelsBySpoke.values()).map(set => Array.from(set)[0]);
++      expect(new Set(labels).size, 'every spoke must own a different series').toBe(labels.length);
++    });
++  });
++
++  it('renders the nearest series in the tooltip for a pointer near where the circle wraps', () => {
++    const options = { count: 4, startAngle: 0, endAngle: 360 };
++    const spokeOffset = measureSpokeOffset(options);
++    const deg = 350;
++    const reported = probe(options, deg);
++
++    expect(reported.active).toBe(true);
++    expect(reported.direction, 'a highlight position must be reported').not.toBeUndefined();
++    expect(angularGap(reported.direction as number, nearestSpoke(deg, options.count, spokeOffset))).toBeLessThanOrEqual(
++      2,
++    );
++    expect(reported.distance).toBeLessThanOrEqual(SIZE / 2);
++    expect(reported.tooltipText).toContain(reported.label);
++    // and it must not be the series that belongs to the opposite side of the circle
++    expect(reported.label).not.toBe(probe(options, (deg + 180) % 360).label);
++  });
++});
++
++/**
++ * Renders a chart and reads back, for every spoke, which axis label is drawn there and how far from
++ * the centre the series point on that spoke is plotted. Purely DOM: no assumption about how the
++ * angles are computed, and the radius is only ever compared by rank, so any radial scale is fine.
++ */
++function readSpokes(
++  values: ReadonlyArray<{ name: string; score: number }>,
++  options: { startAngle?: number; endAngle?: number } = {},
++): Array<{ label: string; radius: number }> {
++  cleanup();
++  mockGetBoundingClientRect({ width: SIZE, height: SIZE, left: 0, top: 0 });
++  const { container } = render(
++    <RadarChart width={SIZE} height={SIZE} data={values} margin={NO_MARGIN} {...options}>
++      <PolarAngleAxis dataKey="name" />
++      <Radar dataKey="score" isAnimationActive={false} dot />
++    </RadarChart>,
++  );
++  act(() => {
++    vi.runOnlyPendingTimers();
++  });
++
++  const labels = Array.from(container.querySelectorAll('.recharts-polar-angle-axis-tick-value')).map(el => ({
++    text: el.textContent ?? '',
++    direction: directionOf({ x: Number(el.getAttribute('x')), y: Number(el.getAttribute('y')) }),
++  }));
++  const points = Array.from(container.querySelectorAll('.recharts-radar-dot')).map(el => {
++    const x = Number(el.getAttribute('cx'));
++    const y = Number(el.getAttribute('cy'));
++    return { direction: directionOf({ x, y }), radius: Math.hypot(x - CX, y - CY) };
++  });
++
++  expect(labels, 'every series should be labelled').toHaveLength(values.length);
++  expect(points, 'every series should be plotted').toHaveLength(values.length);
++
++  return labels.map(label => {
++    const nearest = points
++      .slice()
++      .sort((a, b) => angularGap(a.direction, label.direction) - angularGap(b.direction, label.direction))[0];
++    return { label: label.text, radius: nearest.radius };
++  });
++}
++
++/** Names ordered by how far out they are plotted, and by their own value - these must agree. */
++function rankingsAgree(values: ReadonlyArray<{ name: string; score: number }>, spokes: Array<{ label: string; radius: number }>) {
++  const byPlottedRadius = spokes
++    .slice()
++    .sort((a, b) => a.radius - b.radius)
++    .map(s => s.label);
++  const byValue = values
++    .slice()
++    .sort((a, b) => a.score - b.score)
++    .map(v => v.name);
++  return { byPlottedRadius, byValue };
++}
++
++describe('full-circle polar chart series placement', () => {
++  beforeEach(() => {
++    cleanup();
++  });
++
++  // distinct values so the radius of a plotted point identifies its series unambiguously
++  const distinct = [
++    { name: 'alpha', score: 100 },
++    { name: 'bravo', score: 20 },
++    { name: 'charlie', score: 60 },
++    { name: 'delta', score: 40 },
++    { name: 'echo', score: 80 },
++  ];
++  const distinctSix = [...distinct, { name: 'foxtrot', score: 10 }];
++
++  it('plots each series on the spoke carrying its own axis label over 0..360', () => {
++    const spokes = readSpokes(distinct, { startAngle: 0, endAngle: 360 });
++    const { byPlottedRadius, byValue } = rankingsAgree(distinct, spokes);
++    expect(byPlottedRadius).toEqual(byValue);
++  });
++
++  it('plots each series on the spoke carrying its own axis label over 45..405', () => {
++    const spokes = readSpokes(distinctSix, { startAngle: 45, endAngle: 405 });
++    const { byPlottedRadius, byValue } = rankingsAgree(distinctSix, spokes);
++    expect(byPlottedRadius).toEqual(byValue);
++  });
++
++  it('agrees with the tooltip: hovering a labelled spoke names the series plotted there', () => {
++    const options = { count: 0, startAngle: 0, endAngle: 360 };
++    cleanup();
++    mockGetBoundingClientRect({ width: SIZE, height: SIZE, left: 0, top: 0 });
++    const onMouseMove = vi.fn();
++    const { container } = render(
++      <RadarChart
++        width={SIZE}
++        height={SIZE}
++        data={distinct}
++        startAngle={options.startAngle}
++        endAngle={options.endAngle}
++        margin={NO_MARGIN}
++        onMouseMove={onMouseMove}
++      >
++        <PolarAngleAxis dataKey="name" />
++        <Radar dataKey="score" isAnimationActive={false} dot />
++        <Tooltip isAnimationActive={false} />
++      </RadarChart>,
++    );
++    act(() => {
++      vi.runOnlyPendingTimers();
++    });
++
++    const labels = Array.from(container.querySelectorAll('.recharts-polar-angle-axis-tick-value')).map(el => ({
++      text: el.textContent ?? '',
++      direction: directionOf({ x: Number(el.getAttribute('x')), y: Number(el.getAttribute('y')) }),
++    }));
++    const wrapper = container.querySelector('.recharts-wrapper');
++    assertNotNull(wrapper);
++
++    labels.forEach(label => {
++      fireEvent.mouseMove(wrapper, pointAt(label.direction, PROBE_RADIUS));
++      act(() => {
++        vi.runOnlyPendingTimers();
++      });
++      const state: any = onMouseMove.mock.calls[onMouseMove.mock.calls.length - 1]?.[0];
++      expect(String(state?.activeLabel), `hovering the "${label.text}" spoke must report that series`).toBe(label.text);
++    });
++  });
++});
++
++describe('polar tooltip regressions', () => {
++  beforeEach(() => {
++    cleanup();
++  });
++
++  it('places each series on its own labelled spoke in the default orientation', () => {
++    const values = [
++      { name: 'alpha', score: 100 },
++      { name: 'bravo', score: 20 },
++      { name: 'charlie', score: 60 },
++      { name: 'delta', score: 40 },
++      { name: 'echo', score: 80 },
++    ];
++    const spokes = readSpokes(values);
++    const byPlottedRadius = spokes
++      .slice()
++      .sort((a, b) => a.radius - b.radius)
++      .map(s => s.label);
++    const byValue = values
++      .slice()
++      .sort((a, b) => a.score - b.score)
++      .map(v => v.name);
++    expect(byPlottedRadius).toEqual(byValue);
++  });
++
++  it('sweeps a default-orientation radar and reaches every series', () => {
++    const data = makeData(5);
++    mockGetBoundingClientRect({ width: SIZE, height: SIZE, left: 0, top: 0 });
++    const onMouseMove = vi.fn();
++    const { container } = render(
++      <RadarChart width={SIZE} height={SIZE} data={data} margin={NO_MARGIN} onMouseMove={onMouseMove}>
++        <PolarAngleAxis dataKey="name" />
++        <Radar dataKey="score" isAnimationActive={false} />
++        <Tooltip isAnimationActive={false} />
++      </RadarChart>,
++    );
++    act(() => {
++      vi.runOnlyPendingTimers();
++    });
++    const wrapper = container.querySelector('.recharts-wrapper');
++    assertNotNull(wrapper);
++
++    const seen = new Set<string>();
++    for (let deg = 0; deg < 360; deg += 4) {
++      fireEvent.mouseMove(wrapper, pointAt(deg, PROBE_RADIUS));
++      act(() => {
++        vi.runOnlyPendingTimers();
++      });
++      const state: any = onMouseMove.mock.calls[onMouseMove.mock.calls.length - 1]?.[0];
++      expect(state?.isTooltipActive, `pointer ${deg}deg should keep the tooltip active`).toBe(true);
++      expect(state?.activeCoordinate, `pointer ${deg}deg should report a highlight position`).toBeDefined();
++      seen.add(String(state?.activeLabel));
++    }
++    expect(seen.size, 'a full sweep must visit every series').toBe(data.length);
++  });
++
++  it('keeps per-slice hovering on a pie working', () => {
++    const data = makeData(4);
++    mockGetBoundingClientRect({ width: SIZE, height: SIZE, left: 0, top: 0 });
++    const { container } = render(
++      <PieChart width={SIZE} height={SIZE} margin={NO_MARGIN}>
++        <Pie
++          dataKey="score"
++          nameKey="name"
++          data={data}
++          cx={CX}
++          cy={CY}
++          innerRadius={60}
++          outerRadius={150}
++          isAnimationActive={false}
++        />
++        <Tooltip isAnimationActive={false} />
++      </PieChart>,
++    );
++    act(() => {
++      vi.runOnlyPendingTimers();
++    });
++    const sectors = container.querySelectorAll('.recharts-pie-sector');
++    expect(sectors).toHaveLength(data.length);
++
++    data.forEach((datum, i) => {
++      fireEvent.mouseOver(sectors[i], pointAt(45 + i * 90, PROBE_RADIUS));
++      act(() => {
++        vi.runOnlyPendingTimers();
++      });
++      expect(container.querySelector('.recharts-tooltip-wrapper')?.textContent ?? '').toContain(datum.name);
++    });
++  });
++});
+diff --git a/test/polar/Pie/Pie.spec.tsx b/test/polar/Pie/Pie.spec.tsx
+index faf5b37750..1f6fa2cdd4 100644
+--- a/test/polar/Pie/Pie.spec.tsx
++++ b/test/polar/Pie/Pie.spec.tsx
+@@ -1432,34 +1432,34 @@ describe('<Pie />', () => {
+         const { spy } = renderTestCase(selectTooltipAxisTicks);
+         expectLastCalledWith(spy, [
+           {
+-            coordinate: -72,
++            coordinate: 72,
+             value: 0,
+             index: 0,
+-            offset: -72,
++            offset: 72,
+           },
+           {
+-            coordinate: 0,
++            coordinate: 144,
+             value: 1,
+             index: 1,
+-            offset: -72,
++            offset: 72,
+           },
+           {
+-            coordinate: 72,
++            coordinate: 216,
+             value: 2,
+             index: 2,
+-            offset: -72,
++            offset: 72,
+           },
+           {
+-            coordinate: 144,
++            coordinate: 288,
+             value: 3,
+             index: 3,
+-            offset: -72,
++            offset: 72,
+           },
+           {
+-            coordinate: 216,
++            coordinate: 360,
+             value: 4,
+             index: 4,
+-            offset: -72,
++            offset: 72,
+           },
+         ]);
+         expect(spy).toHaveBeenCalledTimes(2);
+diff --git a/test/polar/PolarAngleAxis/PolarAngleAxis.spec.tsx b/test/polar/PolarAngleAxis/PolarAngleAxis.spec.tsx
+index be2c7c05e0..6a1329a6d7 100644
+--- a/test/polar/PolarAngleAxis/PolarAngleAxis.spec.tsx
++++ b/test/polar/PolarAngleAxis/PolarAngleAxis.spec.tsx
+@@ -1402,43 +1402,43 @@ describe('<PolarAngleAxis />', () => {
+       expectAngleAxisTickLabels(container, [
+         {
+           textContext: '420',
+-          x: '394.24978336205567',
+-          y: '105.75021663794428',
++          x: '105.75021663794428',
++          y: '105.7502166379443',
+         },
+         {
+           textContext: '460',
+-          x: '249.99999999999997',
+-          y: '46',
++          x: '46',
++          y: '250.00000000000003',
+         },
+         {
+           textContext: '999',
+-          x: '105.75021663794428',
+-          y: '105.7502166379443',
++          x: '105.7502166379443',
++          y: '394.2497833620557',
+         },
+         {
+           textContext: '500',
+-          x: '46',
+-          y: '250.00000000000003',
++          x: '250',
++          y: '454',
+         },
+         {
+           textContext: '864',
+-          x: '105.7502166379443',
++          x: '394.2497833620557',
+           y: '394.2497833620557',
+         },
+         {
+           textContext: '650',
+-          x: '250',
+-          y: '454',
++          x: '454',
++          y: '250',
+         },
+         {
+           textContext: '765',
+           x: '394.2497833620557',
+-          y: '394.2497833620557',
++          y: '105.7502166379443',
+         },
+         {
+           textContext: '365',
+-          x: '454',
+-          y: '250',
++          x: '250',
++          y: '46',
+         },
+       ]);
+     });

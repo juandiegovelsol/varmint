@@ -1,0 +1,207 @@
+diff --git a/examples/toolbar-active-id-disabled/index.tsx b/examples/toolbar-active-id-disabled/index.tsx
+new file mode 100644
+index 0000000..559fa68
+--- /dev/null
++++ b/examples/toolbar-active-id-disabled/index.tsx
+@@ -0,0 +1,23 @@
++import * as Ariakit from "@ariakit/react";
++import { useId } from "react";
++import "./style.css";
++
++// https://github.com/ariakit/ariakit/issues/3232
++export default function Example() {
++  const id = useId();
++  return (
++    <Ariakit.ToolbarProvider defaultActiveId={id}>
++      <Ariakit.Toolbar className="toolbar">
++        <Ariakit.ToolbarItem id={id} disabled className="button secondary">
++          Bold
++        </Ariakit.ToolbarItem>
++        <Ariakit.ToolbarItem className="button secondary">
++          Italic
++        </Ariakit.ToolbarItem>
++        <Ariakit.ToolbarItem className="button secondary">
++          Underline
++        </Ariakit.ToolbarItem>
++      </Ariakit.Toolbar>
++    </Ariakit.ToolbarProvider>
++  );
++}
+diff --git a/examples/toolbar-active-id-disabled/style.css b/examples/toolbar-active-id-disabled/style.css
+new file mode 100644
+index 0000000..c430866
+--- /dev/null
++++ b/examples/toolbar-active-id-disabled/style.css
+@@ -0,0 +1 @@
++@import url("../toolbar/style.css");
+diff --git a/examples/toolbar-active-id-disabled/test.ts b/examples/toolbar-active-id-disabled/test.ts
+new file mode 100644
+index 0000000..de52b63
+--- /dev/null
++++ b/examples/toolbar-active-id-disabled/test.ts
+@@ -0,0 +1,52 @@
++// https://github.com/ariakit/ariakit/issues/3232
++import { press, q } from "@ariakit/test";
++
++function setup() {
++  const before = document.createElement("button");
++  before.textContent = "Before";
++  const after = before.cloneNode() as HTMLButtonElement;
++  after.textContent = "After";
++  document.body.prepend(before);
++  document.body.append(after);
++  return () => {
++    before.remove();
++    after.remove();
++  };
++}
++
++// Tabs into the toolbar, out of it and back into it. Returns the toolbar
++// button that received focus.
++async function enterLeaveAndReenter() {
++  await press.Tab();
++  expect(q.button("Before")).toHaveFocus();
++  await press.Tab();
++  // Tabbing forward enters the toolbar on one of its enabled buttons.
++  const entered = document.activeElement as HTMLElement;
++  expect(q.toolbar()).toContainElement(entered);
++  expect(q.button("Bold")).not.toHaveFocus();
++  await press.Tab();
++  expect(q.button("After")).toHaveFocus();
++  await press.ShiftTab();
++  expect(entered).toHaveFocus();
++  return entered;
++}
++
++test("toolbar is still accessible with disabled activeId", async () => {
++  onTestFinished(setup());
++
++  await enterLeaveAndReenter();
++});
++
++test("arrow keys skip the disabled button when wrapping around", async () => {
++  onTestFinished(setup());
++
++  const entered = await enterLeaveAndReenter();
++  // The right arrow cycles through the enabled buttons, wrapping around past
++  // the disabled first button.
++  const other =
++    entered === q.button("Italic") ? q.button("Underline") : q.button("Italic");
++  await press.ArrowRight();
++  expect(other).toHaveFocus();
++  await press.ArrowRight();
++  expect(entered).toHaveFocus();
++});
+diff --git a/examples/toolbar-active-id-stale/index.tsx b/examples/toolbar-active-id-stale/index.tsx
+new file mode 100644
+index 0000000..0ba64e1
+--- /dev/null
++++ b/examples/toolbar-active-id-stale/index.tsx
+@@ -0,0 +1,31 @@
++import * as Ariakit from "@ariakit/react";
++import { useState } from "react";
++import "./style.css";
++
++// https://github.com/ariakit/ariakit/issues/4129
++export default function Example() {
++  const [showItalic, setShowItalic] = useState(true);
++  return (
++    <>
++      <Ariakit.Toolbar className="toolbar">
++        <Ariakit.ToolbarItem className="button secondary">
++          Bold
++        </Ariakit.ToolbarItem>
++        {showItalic && (
++          <Ariakit.ToolbarItem className="button secondary">
++            Italic
++          </Ariakit.ToolbarItem>
++        )}
++        <Ariakit.ToolbarItem className="button secondary">
++          Underline
++        </Ariakit.ToolbarItem>
++      </Ariakit.Toolbar>
++      <Ariakit.Button
++        className="button"
++        onClick={() => setShowItalic(!showItalic)}
++      >
++        Toggle Italic
++      </Ariakit.Button>
++    </>
++  );
++}
+diff --git a/examples/toolbar-active-id-stale/style.css b/examples/toolbar-active-id-stale/style.css
+new file mode 100644
+index 0000000..c430866
+--- /dev/null
++++ b/examples/toolbar-active-id-stale/style.css
+@@ -0,0 +1 @@
++@import url("../toolbar/style.css");
+diff --git a/examples/toolbar-active-id-stale/test.ts b/examples/toolbar-active-id-stale/test.ts
+new file mode 100644
+index 0000000..33f6c1e
+--- /dev/null
++++ b/examples/toolbar-active-id-stale/test.ts
+@@ -0,0 +1,63 @@
++// https://github.com/ariakit/ariakit/issues/4129
++import { click, press, q } from "@ariakit/test";
++
++function setup() {
++  const before = document.createElement("button");
++  before.textContent = "Before";
++  document.body.prepend(before);
++  return () => {
++    before.remove();
++  };
++}
++
++// Moves to "Italic" and removes it, then tabs backward into the toolbar.
++// Returns the toolbar button that received focus.
++async function enterAfterRemovingActiveItem() {
++  await press.Tab();
++  expect(q.button("Before")).toHaveFocus();
++  await press.Tab();
++  expect(q.button("Bold")).toHaveFocus();
++  await press.ArrowRight();
++  expect(q.button("Italic")).toHaveFocus();
++  await click(q.button("Toggle Italic"));
++  expect(q.button("Italic")).not.toBeInTheDocument();
++  // Tabbing backward enters the toolbar on one of its remaining buttons.
++  await press.ShiftTab();
++  const entered = document.activeElement as HTMLElement;
++  expect(q.toolbar()).toContainElement(entered);
++  expect(q.button("Toggle Italic")).not.toHaveFocus();
++  return entered;
++}
++
++test("toolbar is still accessible with stale activeId", async () => {
++  onTestFinished(setup());
++
++  const entered = await enterAfterRemovingActiveItem();
++  await press.ShiftTab();
++  expect(q.button("Before")).toHaveFocus();
++  await press.Tab();
++  expect(entered).toHaveFocus();
++});
++
++test("arrow keys continue from the button focus returned to", async () => {
++  onTestFinished(setup());
++
++  const entered = await enterAfterRemovingActiveItem();
++  await press.ShiftTab();
++  expect(q.button("Before")).toHaveFocus();
++  await press.Tab();
++  expect(entered).toHaveFocus();
++  // The right arrow moves to the other remaining button, wrapping around when
++  // needed, and never back to the removed one.
++  const other =
++    entered === q.button("Bold") ? q.button("Underline") : q.button("Bold");
++  await press.ArrowRight();
++  expect(other).toHaveFocus();
++});
++
++test("focus returned to the toolbar is visible", async () => {
++  onTestFinished(setup());
++
++  const entered = await enterAfterRemovingActiveItem();
++  expect(entered).toHaveAttribute("data-focus-visible");
++});

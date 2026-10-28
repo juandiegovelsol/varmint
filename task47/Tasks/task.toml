@@ -1,0 +1,72 @@
+version = "1.0"
+
+[metadata]
+task_id = "fossasia__eventyay-4158-mm"
+title = "UX/UI Flaws and Missing Validations in Review Score Categories"
+repository_name = "fossasia/eventyay"
+repo_url = "https://github.com/fossasia/eventyay"
+issue_number = 4158
+pr_number = 4344
+base_commit = "6e56dd106ad4a125beb0644dabd4192d01ae0518"
+fix_commit = "47dce62b0a73797cfbf90203c5e35c2686a7b540"
+task_type = "visual_bug_fix"
+language = "Python"
+framework = "pytest + pytest-django (Django test client, in-image PostgreSQL)"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = """
+The instruction deliberately describes the symptoms in general terms and does not enumerate
+the distinct defects or name the missing UI affordances -- the attached screenshots are the
+only place the individual failure modes (which rows lack a way to be removed, which
+half-filled inputs are silently dropped vs. silently kept, what the error banner does and
+doesn't show, which blank entries get persisted) are actually shown, so the fix cannot be
+scoped correctly from the text alone.
+The human fix touches 5 source file(s) (app/eventyay/orga/forms/event.py, app/eventyay/orga/templates/orga/settings/review.html, app/eventyay/orga/views/event.py, app/eventyay/static/orga/css/_layout.css...) and the change is behavioural
+rather than cosmetic-only, so reproducing it requires reading the surrounding code, not
+just the issue text.
+"""
+files_edited = [
+  "app/eventyay/orga/forms/event.py",
+  "app/eventyay/orga/templates/orga/settings/review.html",
+  "app/eventyay/orga/views/event.py",
+  "app/eventyay/static/orga/css/_layout.css",
+  "app/eventyay/static/orga/js/reviewSettings.js",
+]
+f2p = [
+  "tests.harborreviewscores4158.test_review_score_validation::test_clearing_the_number_of_a_saved_row_is_refused_and_flagged",
+  "tests.harborreviewscores4158.test_review_score_validation::test_clearing_the_label_of_a_saved_row_is_refused_and_flagged",
+  "tests.harborreviewscores4158.test_review_score_validation::test_clearing_the_number_in_a_second_category_is_refused_and_flagged",
+  "tests.harborreviewscores4158.test_review_score_validation::test_added_row_without_a_number_survives_and_is_flagged",
+  "tests.harborreviewscores4158.test_review_score_validation::test_added_row_without_a_label_survives_and_is_flagged",
+  "tests.harborreviewscores4158.test_review_score_validation::test_an_empty_added_row_does_not_block_an_unrelated_edit",
+  "tests.harborreviewscores4158.test_review_score_validation::test_an_empty_added_category_is_not_stored_as_a_nameless_one",
+  "tests.harborreviewscores4158.test_review_score_validation::test_entering_a_non_numeric_score_is_refused_and_flagged",
+  "tests.harborreviewscores4158.test_review_score_validation::test_a_saved_row_beyond_the_defaults_offers_a_way_to_remove_it",
+]
+p2p = [
+  "tests.harborreviewscores4158.test_review_score_validation::test_every_stored_score_is_offered_on_the_page",
+  "tests.harborreviewscores4158.test_review_score_validation::test_editing_a_saved_row_completely_is_stored",
+  "tests.harborreviewscores4158.test_review_score_validation::test_adding_a_complete_row_stores_it",
+  "tests.harborreviewscores4158.test_review_score_validation::test_emptying_both_halves_of_a_saved_row_removes_it",
+  "tests.harborreviewscores4158.test_review_score_validation::test_deleting_a_category_removes_it_with_its_scores",
+  "tests.harborreviewscores4158.test_review_score_validation::test_renaming_a_category_is_stored",
+  "tests.harborreviewscores4158.test_review_score_validation::test_editing_one_row_leaves_the_others_alone",
+  "tests.harborreviewscores4158.test_review_score_validation::test_a_successful_save_flags_no_row",
+]
+tags = ["multimodal", "visual_bug_fix"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

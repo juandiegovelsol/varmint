@@ -1,0 +1,30 @@
+diff --git a/app/eventyay/base/models/event.py b/app/eventyay/base/models/event.py
+index de16f4e1164..5b5709410c5 100644
+--- a/app/eventyay/base/models/event.py
++++ b/app/eventyay/base/models/event.py
+@@ -2740,9 +2740,9 @@ def teams(self):
+         """Returns all :class:`~eventyay.base.models.organizer.Team` objects
+         that concern this event."""
+ 
+-        return self.organizer.teams.all().filter(
+-            models.Q(all_events=True) | models.Q(models.Q(all_events=False) & models.Q(limit_events__in=[self]))
+-        )
++        return self.organizer.teams.filter(
++            models.Q(all_events=True) | models.Q(models.Q(all_events=False) & models.Q(limit_events=self))
++        ).distinct()
+ 
+     @cached_property
+     def reviewers(self):
+diff --git a/app/eventyay/eventyay_common/views/dashboards.py b/app/eventyay/eventyay_common/views/dashboards.py
+index 9bff5bc..d2ae391 100644
+--- a/app/eventyay/eventyay_common/views/dashboards.py
++++ b/app/eventyay/eventyay_common/views/dashboards.py
+@@ -364,7 +364,7 @@ class EventIndexView(TemplateView):
+ 
+         context['today'] = now().astimezone(ZoneInfo(request.event.timezone)).date()
+         context['nearly_now'] = now().astimezone(ZoneInfo(request.event.timezone)) - timedelta(seconds=20)
+-        context['organizer_teams'] = request.event.teams.filter(all_events=True).values_list('id', 'name')
++        context['organizer_teams'] = request.event.teams.values_list('id', 'name')
+         return context
+ 
+     def post(self, request, *args, **kwargs):

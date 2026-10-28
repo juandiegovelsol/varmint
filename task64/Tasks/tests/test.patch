@@ -1,0 +1,257 @@
+diff --git a/packages/tldraw/src/test/ui/FollowingIndicatorLayering.test.tsx b/packages/tldraw/src/test/ui/FollowingIndicatorLayering.test.tsx
+new file mode 100644
+index 0000000..f08f10b
+--- /dev/null
++++ b/packages/tldraw/src/test/ui/FollowingIndicatorLayering.test.tsx
+@@ -0,0 +1,158 @@
++import { act, screen } from '@testing-library/react'
++import { Tldraw } from '../../lib/Tldraw'
++import { renderTldrawComponent, renderTldrawComponentWithEditor } from '../testutils/renderTldrawComponent'
++
++// Regression coverage for issue #8821: the following-indicator border (DefaultFollowingIndicator)
++// used to be rendered inside TldrawUiInFrontOfTheCanvas(), which mounts inside the canvas's own
++// `.tl-canvas__in-front` overlay (stacking context z-index 250). The main UI layout
++// (`.tlui-layout`, menus/toolbar/style panel/minimap) sits in a *separate*, *higher* stacking
++// context (z-index 300) that is a sibling of the canvas, not a descendant of it. Because CSS
++// z-index only resolves relative to the nearest stacking context, no z-index the border could be
++// given inside `.tl-canvas__in-front` can ever place it above `.tlui-layout`'s own descendants -
++// so every UI panel visually cut the border wherever it touched the edge of the viewport.
++//
++// The fix moves the FollowingIndicator slot out of TldrawUiInFrontOfTheCanvas() and into
++// TldrawUiContent()'s own `.tlui-layout` element instead, so it shares the UI layer's own,
++// higher stacking context. From there it can paint on top of every panel either by ordinary
++// DOM order (placed after the panel groups) or by an explicit stacking elevation - both are
++// legitimate ways to win the paint order once inside the right stacking context.
++//
++// jsdom has no layout/paint engine, so these tests can't check actual pixels or resolved z-index
++// (this repo's own vitest setup stubs window.getComputedStyle to a fixed set of properties that
++// never reflects real stylesheet rules - see packages/tldraw/setupVitest.js). What IS observable,
++// and what the fix is actually made of, is the React/DOM tree: which stacking-context container
++// the indicator's element lands in, and where among that container's children it lands. Both
++// component slots are exercised through the public `components` override prop (the same
++// mechanism packages/editor/src/lib/test/InFrontOfTheCanvas.test.tsx already uses to swap in a
++// test double for a slot), not by reaching into implementation details.
++
++function Marker({ testId }: { testId: string }) {
++	return <div data-testid={testId} />
++}
++
++async function renderWithMarkers() {
++	return renderTldrawComponent(
++		<Tldraw
++			components={{
++				FollowingIndicator: () => <Marker testId="following-indicator-marker" />,
++				RichTextToolbar: () => <Marker testId="rich-text-toolbar-marker" />,
++				ImageToolbar: () => <Marker testId="image-toolbar-marker" />,
++				VideoToolbar: () => <Marker testId="video-toolbar-marker" />,
++				CursorChatBubble: () => <Marker testId="cursor-chat-bubble-marker" />,
++			}}
++		/>,
++		{ waitForPatterns: true }
++	)
++}
++
++describe('FollowingIndicator layering (issue #8821)', () => {
++	it('places the following indicator inside the UI layout, not the canvas-in-front overlay', async () => {
++		await renderWithMarkers()
++		const marker = await screen.findByTestId('following-indicator-marker')
++
++		expect(marker.closest('.tlui-layout')).not.toBeNull()
++		expect(marker.closest('.tl-canvas__in-front')).toBeNull()
++	})
++
++	it('renders the following indicator after the toolbar and menu panels in the UI layout', async () => {
++		await renderWithMarkers()
++		const marker = await screen.findByTestId('following-indicator-marker')
++
++		const layout = marker.closest('.tlui-layout')
++		expect(layout).not.toBeNull()
++
++		// The panel groups (menu/style/toolbar/navigation) live inside .tlui-layout__top and
++		// .tlui-layout__bottom. Neither of those wrappers - nor the panels inside them - declares
++		// its own z-index, so within .tlui-layout's single stacking context, plain DOM order
++		// decides paint order unless an element opts into its own stacking order. A fix can put
++		// the indicator on top either by placing it AFTER the panel groups in the DOM, or by
++		// giving it (or a wrapper around it) an explicit inline z-index that elevates it
++		// regardless of DOM position - both are legitimate. Putting it first (e.g. right after
++		// SkipToMainContent) with no elevation at all would silently reintroduce the same bug one
++		// level down, inside .tlui-layout itself.
++		const bottomPanelGroup = layout!.querySelector('.tlui-layout__bottom')
++		expect(bottomPanelGroup).not.toBeNull()
++
++		const position = marker.compareDocumentPosition(bottomPanelGroup!)
++		// DOCUMENT_POSITION_PRECEDING (0x02): bottomPanelGroup comes BEFORE marker in the tree.
++		// eslint-disable-next-line no-bitwise
++		const comesAfterInDom = Boolean(position & Node.DOCUMENT_POSITION_PRECEDING)
++
++		// jsdom's getComputedStyle is stubbed and never reflects real stylesheet rules (see
++		// packages/tldraw/setupVitest.js), so a class-based z-index can't be verified here - but
++		// an inline one can. Walk from the marker up to (not including) .tlui-layout for one.
++		let explicitlyElevated = false
++		for (let el: HTMLElement | null = marker; el && el !== layout; el = el.parentElement) {
++			const z = el.style.zIndex
++			if (z && z !== 'auto' && Number(z) > 0) {
++				explicitlyElevated = true
++				break
++			}
++		}
++
++		expect(comesAfterInDom || explicitlyElevated).toBe(true)
++	})
++
++	it('still places the following indicator inside the UI layout while in focus mode', async () => {
++		// Focus mode swaps TldrawUiContent's normal top/bottom panel groups for a single
++		// "exit focus mode" button (see the isFocusMode ternary in TldrawUi.tsx), but the
++		// follow border has nothing to do with that toolbar chrome - it must keep rendering
++		// regardless. A fix that only inserts the indicator inside the *non-focus-mode* branch
++		// of that ternary (instead of after it, unconditionally) would pass every other test
++		// here and still silently drop the border the moment focus mode is active.
++		const { editor } = await renderTldrawComponentWithEditor(
++			(onMount) => (
++				<Tldraw
++					onMount={onMount}
++					components={{ FollowingIndicator: () => <Marker testId="following-indicator-marker" /> }}
++				/>
++			),
++			{ waitForPatterns: true }
++		)
++
++		await act(async () => {
++			editor.updateInstanceState({ isFocusMode: true })
++		})
++
++		const marker = await screen.findByTestId('following-indicator-marker')
++		expect(marker.closest('.tlui-layout')).not.toBeNull()
++		expect(marker.closest('.tl-canvas__in-front')).toBeNull()
++	})
++
++	it('still renders the rich text toolbar inside the canvas-in-front overlay', async () => {
++		await renderWithMarkers()
++		const marker = await screen.findByTestId('rich-text-toolbar-marker')
++		expect(marker.closest('.tl-canvas__in-front')).not.toBeNull()
++	})
++
++	it('still renders the image toolbar inside the canvas-in-front overlay', async () => {
++		await renderWithMarkers()
++		const marker = await screen.findByTestId('image-toolbar-marker')
++		expect(marker.closest('.tl-canvas__in-front')).not.toBeNull()
++	})
++
++	it('still renders the video toolbar inside the canvas-in-front overlay', async () => {
++		await renderWithMarkers()
++		const marker = await screen.findByTestId('video-toolbar-marker')
++		expect(marker.closest('.tl-canvas__in-front')).not.toBeNull()
++	})
++
++	it('still renders the cursor chat bubble inside the canvas-in-front overlay', async () => {
++		await renderWithMarkers()
++		const marker = await screen.findByTestId('cursor-chat-bubble-marker')
++		expect(marker.closest('.tl-canvas__in-front')).not.toBeNull()
++	})
++
++	it('renders no following indicator when no override is supplied and nobody is being followed', async () => {
++		await renderTldrawComponent(<Tldraw />, { waitForPatterns: true })
++		// The real DefaultFollowingIndicator renders null until editor.getInstanceState().followingUserId
++		// is set, so no `.tlui-following-indicator` element should exist at all.
++		expect(document.querySelector('.tlui-following-indicator')).toBeNull()
++	})
++
++	it('renders the following indicator override exactly once', async () => {
++		await renderWithMarkers()
++		const markers = await screen.findAllByTestId('following-indicator-marker')
++		expect(markers.length).toBe(1)
++	})
++})
+diff --git a/packages/tldraw/src/test/viewport-following.test.ts b/packages/tldraw/src/test/viewport-following.test.ts
+index 9577ba03b5..2ce66a4f39 100644
+--- a/packages/tldraw/src/test/viewport-following.test.ts
++++ b/packages/tldraw/src/test/viewport-following.test.ts
+@@ -1,3 +1,4 @@
++import { InstancePresenceRecordType, PageRecordType, createUserId } from '@tldraw/tlschema'
+ import { TestEditor } from './TestEditor'
+ 
+ // eslint-disable-next-line @typescript-eslint/no-unused-vars
+@@ -8,11 +9,81 @@ beforeEach(() => {
+ })
+ 
+ describe('When following a user', () => {
+-	it.todo('starts following a user')
++	it('expands the viewport to fully contain the followed user, preserving our own aspect ratio', () => {
++		const leaderId = createUserId('leader')
++		const pageId = editor.getCurrentPageId()
++
++		editor.store.put([
++			InstancePresenceRecordType.create({
++				id: InstancePresenceRecordType.createId('leader-presence'),
++				userId: leaderId,
++				userName: 'Leader',
++				currentPageId: pageId,
++				camera: { x: 0, y: 0, z: 1 },
++				screenBounds: { x: 0, y: 0, w: 400, h: 800 },
++				cursor: { type: 'default', x: 0, y: 0, rotation: 0 },
++				lastActivityTimestamp: Date.now(),
++			}),
++		])
++
++		// Disable the chase animation so following locks onto the target viewport immediately,
++		// instead of easing towards it over several animation frames.
++		editor.user.updateUserPreferences({ animationSpeed: 0 })
++		editor.startFollowingUser(leaderId)
++
++		// Our own viewport is 1080x720 (a 3:2 aspect ratio). The leader's viewport is 400x800
++		// (taller than it is wide). To follow them we must end up with a viewport that fully
++		// contains their 400x800 view, still has our own 3:2 aspect ratio, and is centered on
++		// their viewport's center - which means growing wider than their viewport, not narrower.
++		const camera = editor.getCamera()
++		expect(camera.z).toBeCloseTo(0.9)
++		expect(camera.x).toBeCloseTo(400)
++		expect(camera.y).toBeCloseTo(0)
++	})
++
+ 	it.todo('stops following a user')
+ 	it.todo('stops following a user when the camera changes due to user action')
+ 	it.todo('moves the camera to follow the user without unfollowing them')
+ 	it.todo('stops any animations while following')
+ 	it.todo('stops following a user when the page changes due to user action')
+-	it.todo('follows a user to another page without unfollowing them')
++
++	it('follows a user to another page without unfollowing them', () => {
++		const leaderId = createUserId('leader')
++		const startPageId = editor.getCurrentPageId()
++		const otherPageId = PageRecordType.createId('other-page')
++		editor.createPage({ name: 'Other page', id: otherPageId })
++
++		editor.user.updateUserPreferences({ animationSpeed: 0 })
++		editor.store.put([
++			InstancePresenceRecordType.create({
++				id: InstancePresenceRecordType.createId('leader-presence'),
++				userId: leaderId,
++				userName: 'Leader',
++				currentPageId: startPageId,
++				camera: { x: 0, y: 0, z: 1 },
++				screenBounds: { x: 0, y: 0, w: 1080, h: 720 },
++				cursor: { type: 'default', x: 0, y: 0, rotation: 0 },
++				lastActivityTimestamp: Date.now(),
++			}),
++		])
++		editor.startFollowingUser(leaderId)
++
++		// The leader navigates to a different page. We should follow them there - and stay
++		// following, rather than treating the page change as a reason to stop.
++		editor.store.put([
++			InstancePresenceRecordType.create({
++				id: InstancePresenceRecordType.createId('leader-presence'),
++				userId: leaderId,
++				userName: 'Leader',
++				currentPageId: otherPageId,
++				camera: { x: 0, y: 0, z: 1 },
++				screenBounds: { x: 0, y: 0, w: 1080, h: 720 },
++				cursor: { type: 'default', x: 0, y: 0, rotation: 0 },
++				lastActivityTimestamp: Date.now(),
++			}),
++		])
++
++		expect(editor.getCurrentPageId()).toBe(otherPageId)
++		expect(editor.getInstanceState().followingUserId).toBe(leaderId)
++	})
+ })

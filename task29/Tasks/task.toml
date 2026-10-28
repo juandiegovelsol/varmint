@@ -1,0 +1,72 @@
+version = "1.0"
+
+[metadata]
+task_id = "textualize__textual-5826-mm"
+title = "Nested colors in markup are ignored"
+repository_name = "Textualize/textual"
+repo_url = "https://github.com/Textualize/textual"
+issue_number = 5826
+pr_number = 5829
+base_commit = "a4432febe7f92bb8752b19760c66d77e9fd1d5da"
+fix_commit = "329099925ed6e442fc49740710e80b4f03a5cd0b"
+task_type = "visual_bug_fix"
+language = "Python"
+framework = "Textual"
+cross_file = false
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = """
+The prompt never shows the line that was typed, so the reproduction itself exists only in the
+screenshot. Two things are visible there and stated nowhere: the colour that survives is the
+outermost tag, and the ranges panel lists three ranges that all start at offset 0, each wider
+than the one before it, narrowest first. The ranges are therefore correct and only their order is
+wrong, which is what separates "the nested tags are being discarded" from "the ranges are being
+layered in the wrong order". Those are different pieces of code, and the prose fits both.
+
+The fix is small but has to hold for four branches at once: ranges recorded as tags close, ranges
+flushed for tags still open at the end of the parse, tags closed in a different order than opened,
+and a tag that closes at the offset it opened at and must record nothing rather than an empty
+range. Reversing the list of ranges repairs the screenshot and breaks the pair of unclosed tags
+that already works on the untouched tree, which is pinned as pass-to-pass, so under the binary
+reward that shortcut scores 0.0.
+"""
+files_edited = ["src/textual/markup.py"]
+f2p = [
+  "test_nested_colors_paint_each_character",
+  "test_nested_hex_colors_paint_each_character",
+  "test_sibling_tag_inside_nesting_paints_each_character",
+  "test_innermost_tag_wins_for_properly_nested_pair",
+  "test_first_closed_tag_wins_for_crossed_pair",
+  "test_tags_that_wrap_nothing_produce_no_spans",
+]
+p2p = [
+  "test_unclosed_tags_stack_innermost_on_top",
+  "test_cascading_unclosed_tags_paint_each_character",
+  "test_closing_a_tag_restores_the_enclosing_one",
+  "test_auto_closed_tag_leaves_following_text_unstyled",
+  "test_adjacent_tag_pairs_paint_their_own_range",
+  "test_non_conflicting_attributes_combine",
+  "test_unbalanced_markup_is_still_rejected",
+  "test_content_parse_fail",
+]
+tags = ["multimodal", "visual_bug_fix", "textual", "python", "terminal", "pytest", "visual_required"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"
+
+[verifier.env]
+EVAL_API_KEY = "${OPENAI_API_KEY}"
+EVAL_BASE_URL = "${OPENAI_API_BASE}"
+EVAL_MODEL = "${EVAL_MODEL:-anthropic/claude-opus-4-5-20251101}"

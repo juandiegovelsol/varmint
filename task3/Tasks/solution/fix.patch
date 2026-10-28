@@ -1,0 +1,349 @@
+diff --git a/src/parser/constants.ts b/src/parser/constants.ts
+index cda3065..c7f1158 100644
+--- a/src/parser/constants.ts
++++ b/src/parser/constants.ts
+@@ -1,5 +1,6 @@
+ import { getSvgRegex } from './getSvgRegex';
+ import { LEFT, TOP } from '../constants';
++import { TEXT_DECORATION_THICKNESS } from '../shapes/Text/constants';
+ 
+ // matches, e.g.: +14.56e-12, etc.
+ export const reNum = String.raw`[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?`;
+@@ -69,6 +70,7 @@ export const svgValidTagNames = [
+     'clip-rule': 'clipRule',
+     'vector-effect': 'strokeUniform',
+     'image-rendering': 'imageSmoothing',
++    'text-decoration-thickness': TEXT_DECORATION_THICKNESS,
+   },
+   fSize = 'font-size',
+   cPath = 'clip-path';
+diff --git a/src/parser/normalizeValue.ts b/src/parser/normalizeValue.ts
+index dcea036..ceed770 100644
+--- a/src/parser/normalizeValue.ts
++++ b/src/parser/normalizeValue.ts
+@@ -2,6 +2,7 @@ import { multiplyTransformMatrices } from '../util/misc/matrix';
+ import { parseUnit } from '../util/misc/svgParsing';
+ import { parseTransformAttribute } from './parseTransformAttribute';
+ import { CENTER, LEFT, RIGHT, NONE, FILL, STROKE } from '../constants';
++import { TEXT_DECORATION_THICKNESS } from '../shapes/Text/constants';
+ 
+ export function normalizeValue(
+   attr: string,
+@@ -44,7 +45,7 @@ export function normalizeValue(
+     }
+   } else if (attr === 'textAnchor' /* text-anchor */) {
+     ouputValue = value === 'start' ? LEFT : value === 'end' ? RIGHT : CENTER;
+-  } else if (attr === 'charSpacing') {
++  } else if (attr === 'charSpacing' || attr === TEXT_DECORATION_THICKNESS) {
+     // parseUnit returns px and we convert it to em
+     parsed = (parseUnit(value, fontSize) / fontSize) * 1000;
+   } else if (attr === 'paintFirst') {
+diff --git a/src/shapes/Text/Text.ts b/src/shapes/Text/Text.ts
+index 054635d..8ac3b31 100644
+--- a/src/shapes/Text/Text.ts
++++ b/src/shapes/Text/Text.ts
+@@ -40,6 +40,7 @@ import {
+   JUSTIFY_CENTER,
+   JUSTIFY_LEFT,
+   JUSTIFY_RIGHT,
++  TEXT_DECORATION_THICKNESS,
+ } from './constants';
+ import { CENTER, LEFT, RIGHT, TOP, BOTTOM } from '../../constants';
+ import { isFiller } from '../../util/typeAssertions';
+@@ -107,6 +108,7 @@ interface UniqueTextProps {
+   textAlign: string;
+   direction: CanvasDirection;
+   path?: Path;
++  textDecorationThickness: number;
+ }
+ 
+ export interface SerializedTextProps
+@@ -295,10 +297,23 @@ export class FabricText<
+    */
+   declare path?: Path;
+ 
++  /**
++   * The text decoration thickness for underline, overline and strikethrough
++   * The thickness is expressed in thousandths of fontSize ( em ).
++   * The original value was 1/15 that translates to 66.6667 thousandths.
++   * The choice of unit of measure is to align with charSpacing.
++   * You can slim the thickness without issues, while large underline or overline may end up
++   * outside the bounding box of the text. In order to fix that a bigger refactor of the code
++   * is needed and is out of scope for now. If you need such large overline on the first line
++   * of text or large underline on the last line of text, consider disabling caching as a
++   * workaround
++   * @default 66.667
++   */
++  declare textDecorationThickness: number;
++
+   /**
+    * Offset amount for text path starting position
+    * Only used when text has a path
+-   * @type Number
+    * @default
+    */
+   declare pathStartOffset: number;
+@@ -1563,8 +1578,9 @@ export class FabricText<
+     const leftOffset = this._getLeftOffset(),
+       path = this.path,
+       charSpacing = this._getWidthOfCharSpacing(),
++      offsetAligner =
++        type === 'linethrough' ? 0.5 : type === 'overline' ? 1 : 0,
+       offsetY = this.offsets[type];
+-
+     for (let i = 0, len = this._textLines.length; i < len; i++) {
+       const heightOfLine = this.getHeightOfLine(i);
+       if (!this[type] && !this.styleHas(type, i)) {
+@@ -1578,8 +1594,14 @@ export class FabricText<
+       let boxWidth = 0;
+       let lastDecoration = this.getValueOfPropertyAt(i, 0, type);
+       let lastFill = this.getValueOfPropertyAt(i, 0, FILL);
+-      let currentDecoration;
+-      let currentFill;
++      let lastThickness = this.getValueOfPropertyAt(
++        i,
++        0,
++        TEXT_DECORATION_THICKNESS,
++      );
++      let currentDecoration = lastDecoration;
++      let currentFill = lastFill;
++      let currentThickness = lastThickness;
+       const top = topOffset + maxHeight * (1 - this._fontSizeFraction);
+       let size = this.getHeightOfChar(i, 0);
+       let dy = this.getValueOfPropertyAt(i, 0, 'deltaY');
+@@ -1587,9 +1609,15 @@ export class FabricText<
+         const charBox = this.__charBounds[i][j] as Required<GraphemeBBox>;
+         currentDecoration = this.getValueOfPropertyAt(i, j, type);
+         currentFill = this.getValueOfPropertyAt(i, j, FILL);
++        currentThickness = this.getValueOfPropertyAt(
++          i,
++          j,
++          TEXT_DECORATION_THICKNESS,
++        );
+         const currentSize = this.getHeightOfChar(i, j);
+         const currentDy = this.getValueOfPropertyAt(i, j, 'deltaY');
+         if (path && currentDecoration && currentFill) {
++          const finalThickness = (this.fontSize * currentThickness) / 1000;
+           ctx.save();
+           // bug? verify lastFill is a valid fill here.
+           ctx.fillStyle = lastFill as string;
+@@ -1597,35 +1625,38 @@ export class FabricText<
+           ctx.rotate(charBox.angle);
+           ctx.fillRect(
+             -charBox.kernedWidth / 2,
+-            offsetY * currentSize + currentDy,
++            offsetY * currentSize + currentDy - offsetAligner * finalThickness,
+             charBox.kernedWidth,
+-            this.fontSize / 15,
++            finalThickness,
+           );
+           ctx.restore();
+         } else if (
+           (currentDecoration !== lastDecoration ||
+             currentFill !== lastFill ||
+             currentSize !== size ||
++            currentThickness !== lastThickness ||
+             currentDy !== dy) &&
+           boxWidth > 0
+         ) {
++          const finalThickness = (this.fontSize * lastThickness) / 1000;
+           let drawStart = leftOffset + lineLeftOffset + boxStart;
+           if (this.direction === 'rtl') {
+             drawStart = this.width - drawStart - boxWidth;
+           }
+-          if (lastDecoration && lastFill) {
++          if (lastDecoration && lastFill && lastThickness) {
+             // bug? verify lastFill is a valid fill here.
+             ctx.fillStyle = lastFill as string;
+             ctx.fillRect(
+               drawStart,
+-              top + offsetY * size + dy,
++              top + offsetY * size + dy - offsetAligner * finalThickness,
+               boxWidth,
+-              this.fontSize / 15,
++              finalThickness,
+             );
+           }
+           boxStart = charBox.left;
+           boxWidth = charBox.width;
+           lastDecoration = currentDecoration;
++          lastThickness = currentThickness;
+           lastFill = currentFill;
+           size = currentSize;
+           dy = currentDy;
+@@ -1638,13 +1669,15 @@ export class FabricText<
+         drawStart = this.width - drawStart - boxWidth;
+       }
+       ctx.fillStyle = currentFill as string;
++      const finalThickness = (this.fontSize * currentThickness) / 1000;
+       currentDecoration &&
+         currentFill &&
++        currentThickness &&
+         ctx.fillRect(
+           drawStart,
+-          top + offsetY * size + dy,
++          top + offsetY * size + dy - offsetAligner * finalThickness,
+           boxWidth - charSpacing,
+-          this.fontSize / 15,
++          finalThickness,
+         );
+       topOffset += heightOfLine;
+     }
+diff --git a/src/shapes/Text/TextSVGExportMixin.ts b/src/shapes/Text/TextSVGExportMixin.ts
+index 7a809e3..f4c834f 100644
+--- a/src/shapes/Text/TextSVGExportMixin.ts
++++ b/src/shapes/Text/TextSVGExportMixin.ts
+@@ -77,10 +77,8 @@ export class TextSVGExportMixin extends FabricObjectSVGExportMixin {
+     return [
+       textBgRects.join(''),
+       '\t\t<text xml:space="preserve" ',
+-      this.fontFamily
+-        ? `font-family="${this.fontFamily.replace(dblQuoteRegex, "'")}" `
+-        : '',
+-      this.fontSize ? `font-size="${this.fontSize}" ` : '',
++      `font-family="${this.fontFamily.replace(dblQuoteRegex, "'")}" `,
++      `font-size="${this.fontSize}" `,
+       this.fontStyle ? `font-style="${this.fontStyle}" ` : '',
+       this.fontWeight ? `font-weight="${this.fontWeight}" ` : '',
+       textDecoration ? `text-decoration="${textDecoration}" ` : '',
+@@ -305,7 +303,7 @@ export class TextSVGExportMixin extends FabricObjectSVGExportMixin {
+    * @return {String}
+    */
+   getSvgStyles(this: TextSVGExportMixin & FabricText, skipShadow?: boolean) {
+-    return `${super.getSvgStyles(skipShadow)} white-space: pre;`;
++    return `${super.getSvgStyles(skipShadow)} text-decoration-thickness: ${toFixed((this.textDecorationThickness * this.getObjectScaling().y) / 10, config.NUM_FRACTION_DIGITS)}%; white-space: pre;`;
+   }
+ 
+   /**
+@@ -328,10 +326,18 @@ export class TextSVGExportMixin extends FabricObjectSVGExportMixin {
+       fontStyle,
+       fontWeight,
+       deltaY,
++      textDecorationThickness,
++      linethrough,
++      overline,
++      underline,
+     } = style;
+ 
+-    const textDecoration = this.getSvgTextDecoration(style);
+-
++    const textDecoration = this.getSvgTextDecoration({
++      underline: underline ?? this.underline,
++      overline: overline ?? this.overline,
++      linethrough: linethrough ?? this.linethrough,
++    });
++    const thickness = textDecorationThickness || this.textDecorationThickness;
+     return [
+       stroke ? colorPropToSVG(STROKE, stroke) : '',
+       strokeWidth ? `stroke-width: ${strokeWidth}; ` : '',
+@@ -345,7 +351,9 @@ export class TextSVGExportMixin extends FabricObjectSVGExportMixin {
+       fontSize ? `font-size: ${fontSize}px; ` : '',
+       fontStyle ? `font-style: ${fontStyle}; ` : '',
+       fontWeight ? `font-weight: ${fontWeight}; ` : '',
+-      textDecoration ? `text-decoration: ${textDecoration}; ` : textDecoration,
++      textDecoration
++        ? `text-decoration: ${textDecoration}; text-decoration-thickness: ${toFixed((thickness * this.getObjectScaling().y) / 10, config.NUM_FRACTION_DIGITS)}%; `
++        : '',
+       fill ? colorPropToSVG(FILL, fill) : '',
+       deltaY ? `baseline-shift: ${-deltaY}; ` : '',
+       useWhiteSpace ? 'white-space: pre; ' : '',
+diff --git a/src/shapes/Text/constants.ts b/src/shapes/Text/constants.ts
+index 9039e96..18154b2 100644
+--- a/src/shapes/Text/constants.ts
++++ b/src/shapes/Text/constants.ts
+@@ -2,6 +2,8 @@ import { FILL, LEFT, STROKE, reNewline } from '../../constants';
+ import type { TClassProperties } from '../../typedefs';
+ import type { FabricText } from './Text';
+ 
++export const TEXT_DECORATION_THICKNESS = 'textDecorationThickness';
++
+ const fontProperties = [
+   'fontSize',
+   'fontWeight',
+@@ -33,6 +35,7 @@ export const additionalProps = [
+   ...textDecorationProperties,
+   'textBackgroundColor',
+   'direction',
++  TEXT_DECORATION_THICKNESS,
+ ] as const;
+ 
+ export type StylePropertiesType =
+@@ -47,7 +50,8 @@ export type StylePropertiesType =
+   | 'deltaY'
+   | 'overline'
+   | 'underline'
+-  | 'linethrough';
++  | 'linethrough'
++  | typeof TEXT_DECORATION_THICKNESS;
+ 
+ export const styleProperties: Readonly<StylePropertiesType[]> = [
+   ...fontProperties,
+@@ -57,6 +61,7 @@ export const styleProperties: Readonly<StylePropertiesType[]> = [
+   FILL,
+   'deltaY',
+   'textBackgroundColor',
++  TEXT_DECORATION_THICKNESS,
+ ] as const;
+ 
+ // @TODO: Many things here are configuration related and shouldn't be on the class nor prototype
+@@ -76,6 +81,19 @@ export const textDefaultValues: Partial<TClassProperties<FabricText>> = {
+   textAlign: LEFT,
+   fontStyle: 'normal',
+   lineHeight: 1.16,
++  textBackgroundColor: '',
++  stroke: null,
++  shadow: null,
++  path: undefined,
++  pathStartOffset: 0,
++  pathSide: LEFT,
++  pathAlign: 'baseline',
++  charSpacing: 0,
++  deltaY: 0,
++  direction: 'ltr',
++  CACHE_FONT_SIZE: 400,
++  MIN_TEXT_WIDTH: 2,
++  // Text magic numbers
+   superscript: {
+     size: 0.6, // fontSize factor
+     baseline: -0.35, // baseline-shift factor (upwards)
+@@ -84,25 +102,14 @@ export const textDefaultValues: Partial<TClassProperties<FabricText>> = {
+     size: 0.6, // fontSize factor
+     baseline: 0.11, // baseline-shift factor (downwards)
+   },
+-  textBackgroundColor: '',
+-  stroke: null,
+-  shadow: null,
+-  path: undefined,
+-  pathStartOffset: 0,
+-  pathSide: LEFT,
+-  pathAlign: 'baseline',
+   _fontSizeFraction: 0.222,
+   offsets: {
+     underline: 0.1,
+-    linethrough: -0.315,
+-    overline: -0.88,
++    linethrough: -0.28167, // added 1/30 to original number
++    overline: -0.81333, // added 1/15 to original number
+   },
+   _fontSizeMult: 1.13,
+-  charSpacing: 0,
+-  deltaY: 0,
+-  direction: 'ltr',
+-  CACHE_FONT_SIZE: 400,
+-  MIN_TEXT_WIDTH: 2,
++  [TEXT_DECORATION_THICKNESS]: 66.667, // before implementation was 1/15
+ };
+ 
+ export const JUSTIFY = 'justify';
+diff --git a/src/util/misc/textStyles.ts b/src/util/misc/textStyles.ts
+index bb036c9..7d59c28 100644
+--- a/src/util/misc/textStyles.ts
++++ b/src/util/misc/textStyles.ts
+@@ -30,6 +30,7 @@ export const hasStyleChanged = (
+   prevStyle.fontFamily !== thisStyle.fontFamily ||
+   prevStyle.fontWeight !== thisStyle.fontWeight ||
+   prevStyle.fontStyle !== thisStyle.fontStyle ||
++  prevStyle.textDecorationThickness !== thisStyle.textDecorationThickness ||
+   prevStyle.textBackgroundColor !== thisStyle.textBackgroundColor ||
+   prevStyle.deltaY !== thisStyle.deltaY ||
+   (forTextSpans &&

@@ -1,0 +1,46 @@
+{
+  "behavior_in_task_description": {
+    "outcome": "pass",
+    "explanation": "instruction.md is intentionally sparse in prose (by design per task.toml's difficulty_explanation, which is a deliberate 'diagnose from the screenshot' hard task), but the qualitative behaviors the tests check are present: it states the pop-up must not be drawn partly off-screen on a narrow screen with a long option, that it must not gain its own sideways scroll (only cut the long option off at the far edge), that a long list must still scroll vertically, and that the bug is hit in both LTR and RTL locales. The before/after screenshots (embedded in instruction.md) additionally convey the exact target geometry (small gutter at the start edge, cut-off text, vertical scroll retained), which is what the f2p tests (LTR/RTL positioning, hidden-x/auto-y overflow) verify. Exact internals (CONTENT_MARGIN, file path) are withheld on purpose as part of the task's difficulty design rather than omitted by oversight."
+  },
+  "behavior_in_tests": {
+    "outcome": "pass",
+    "explanation": "Every behavior described in instruction.md has a corresponding test: narrow-screen overflow correction in LTR and RTL ('positions content within viewport in LTR/RTL mode'), no sideways scroll while vertical scroll is preserved ('scrolls the option list vertically only when an option overflows'), plus regression guards (p2p) that the normal non-overflow case still renders/positions correctly. No instruction behavior is left unverified."
+  },
+  "informative_test_structure": {
+    "outcome": "pass",
+    "explanation": "tests/test.patch is organized with a clear 'Helpers' section, descriptive comments explaining each helper's purpose and design rationale, a `describe` block grouping all cases, and per-test comments stating what scenario and assertion each test represents (e.g. explaining why gutter tolerance is used, or why LTR/RTL are mirrors of each other). test.sh is also heavily commented, explaining each non-obvious step (submission capture, moduleNameMapper fix, rubric judging)."
+  },
+  "anti_cheating_measures": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile clones the upstream repo, checks out the base commit, then deletes .git and re-inits a single-commit history specifically so the agent cannot browse future history/the fix PR. tests/ and solution/ are not copied into the image (only environment/assets/ is). The agent phase runs with network_mode=no-network, preventing the agent from looking up the original GitHub issue/PR fix online. The rubric judge (judge.py) explicitly excludes test/spec files from what it shows a judge model and withholds the task instruction, golden fix.patch, test.patch and screenshots from the judge context specifically to avoid turning it into a similarity/answer-leak checker."
+  },
+  "structured_data_schema": {
+    "outcome": "not_applicable",
+    "explanation": "This is a UI visual-bug-fix task (correcting CSS/positioning logic in a React component); it does not require the agent to produce structured output like JSON/CSV/API payloads, so a documented data schema is not relevant."
+  },
+  "pinned_dependencies": {
+    "outcome": "pass",
+    "explanation": "The Docker image pins the Node major version via the `node:22-bookworm` base image, pins Yarn to an exact version via `corepack prepare yarn@4.1.0 --activate`, and installs dependencies with `yarn install --immutable`, which enforces the checked-in yarn.lock versions from the pinned base_commit. No unpinned pip/npm installs are introduced by the task's own scripts."
+  },
+  "typos": {
+    "outcome": "pass",
+    "explanation": "Reviewed instruction.md, task.toml, tests/config.json, tests/rubrics.json, tests/test.sh, tests/verifier.py, tests/judge.py, solution/solve.sh, solution/fix.patch, tests/test.patch, environment/Dockerfile, ASSET_MANIFEST.json, and evidence_bundle.json. Commit hashes (base_commit/fix_commit) are valid 40-character SHA1 strings, file paths referenced (e.g. /app/.harbor_assets/*.png, packages/react/select/src/Select.tsx) are consistent across files, and the f2p/p2p lists match exactly between task.toml and tests/config.json. No typos found that would break commands or references."
+  },
+  "tests_or_solution_in_image": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile only COPYs environment/assets/ into the image and includes an explicit comment: 'tests/ and solution/ are intentionally NOT copied — the harness supplies them at verify time.' Neither directory is referenced anywhere else in the Dockerfile."
+  },
+  "test_deps_in_image": {
+    "outcome": "pass",
+    "explanation": "The `yarn install --immutable --mode=skip-build` step in the Dockerfile installs the repository's own pinned devDependencies (including its existing jest/testing-library setup) as part of normal repo setup, not extra dependencies added solely for harness grading. test.sh explicitly notes 'No extra test-only deps needed; yarn install was done in the Dockerfile,' i.e. no additional test-only tooling is baked in beyond what the pinned yarn.lock already specifies for the project itself."
+  },
+  "hardcoded_solution": {
+    "outcome": "pass",
+    "explanation": "solution/solve.sh applies solution/fix.patch, which is the actual multi-hunk source-code diff (three targeted changes to Select.tsx: clamping fix for LTR, mirrored fix for RTL, and overflow:hidden auto for the viewport) recreating the real upstream fix — it does not print or hardcode an expected test output/answer, it performs the code change an agent would need to make."
+  },
+  "file_reference_mentioned": {
+    "outcome": "not_applicable",
+    "explanation": "This task does not require the agent to produce a new output file with a specific name that tests check for (unlike e.g. a data task expecting output.csv). The agent edits an existing source file (packages/react/select/src/Select.tsx per task.toml's files_edited) as part of a normal codebase bug fix; the file to modify is intentionally not named in instruction.md as part of the task's diagnostic difficulty design, which is assessed separately under behavior_in_task_description."
+  }
+}

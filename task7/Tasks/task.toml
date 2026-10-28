@@ -1,0 +1,41 @@
+version = "1.0"
+
+[metadata]
+task_id = "radix-ui-primitives-2611-mm"
+title = "[ContextMenu] An open ContextMenu does not move after right clicking somewhere else"
+repository_name = "radix-ui/primitives"
+repo_url = "https://github.com/radix-ui/primitives"
+issue_number = 2611
+pr_number = 4003
+base_commit = "e251bc6791a8c5f0c3dcabbf4f070f2bc9db46ab"
+fix_commit = "b964ea3dc5bd1e8091fa0648e8f61fccde889ee8"
+task_type = "temporal_interaction"
+language = "TypeScript"
+framework = "React"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "medium"
+difficulty_explanation = """The instruction gives only that a context menu misbehaves when it is right-clicked again while already open, plus a GIF; it names no file, primitive, repository, specific defect, or environment fingerprint. To solve it the agent must watch the recording and perceive that two distinct things go wrong on the second right-click: the menu does not move to the new pointer position, and the already-open menu does not stay open and reposition; instead the second right-click dismisses it, so it disappears rather than relocating. The well-known upstream change for this issue fixes only the position tracking and leaves the second defect intact, because the trigger's own pointerdown, part of the right-click gesture, is treated as an outside interaction by the open menu's dismiss layer and dismisses it before it can reposition. A fix that only re-anchors still dismisses and remounts the menu on every re-trigger and fails. A complete fix must both re-anchor to the new point and prevent the trigger's own pointer interaction from dismissing the open menu. The fail-to-pass tests assert observable outcomes: the popper wrapper transform changes on a second right-click at a new location, and the menu is not dismissed (onOpenChange is never called with false) with its content DOM node preserved across a re-trigger; both are implementation-agnostic. The pass-to-pass tests confirm the menu is still closed by default and still opens on the first right-click."""
+files_edited = [
+  "packages/react/context-menu/src/context-menu.tsx",
+  "packages/react/menu/src/menu.tsx",
+  "packages/react/menu/src/index.ts"
+]
+f2p = ["re-anchors the content when re-triggered in a new location while open", "does not close and remount the content when re-triggered while already open"]
+p2p = ["keeps the content closed by default", "opens the content on right click"]
+tags = ["multimodal", "temporal_interaction", "React", "react-context-menu", "positioning", "popper"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "no-network"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

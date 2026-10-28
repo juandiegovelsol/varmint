@@ -1,0 +1,136 @@
+diff --git a/src/chart/RechartsWrapper.tsx b/src/chart/RechartsWrapper.tsx
+index c37d957..a764acf 100644
+--- a/src/chart/RechartsWrapper.tsx
++++ b/src/chart/RechartsWrapper.tsx
+@@ -16,7 +16,7 @@ import { mouseLeaveChart } from '../state/tooltipSlice';
+ import { useAppDispatch } from '../state/hooks';
+ import { mouseClickAction, mouseMoveAction } from '../state/mouseEventsMiddleware';
+ import { useSynchronisedEventsFromOtherCharts } from '../synchronisation/useChartSynchronisation';
+-import { focusAction, keyDownAction } from '../state/keyboardEventsMiddleware';
++import { focusAction, keyDownAction, blurAction } from '../state/keyboardEventsMiddleware';
+ import { useReportScale } from '../util/useReportScale';
+ import { ExternalMouseEvents } from './types';
+ import { externalEventAction } from '../state/externalEventsMiddleware';
+@@ -304,6 +304,10 @@ export const RechartsWrapper = forwardRef<HTMLDivElement | null, RechartsWrapper
+       dispatch(focusAction());
+     }, [dispatch]);
+ 
++    const onBlur = useCallback(() => {
++      dispatch(blurAction());
++    }, [dispatch]);
++
+     const onKeyDown = useCallback(
+       (e: React.KeyboardEvent<HTMLDivElement>) => {
+         dispatch(keyDownAction(e.key));
+@@ -392,6 +396,7 @@ export const RechartsWrapper = forwardRef<HTMLDivElement | null, RechartsWrapper
+             onContextMenu={myOnContextMenu}
+             onDoubleClick={myOnDoubleClick}
+             onFocus={onFocus}
++            onBlur={onBlur}
+             onKeyDown={onKeyDown}
+             onMouseDown={myOnMouseDown}
+             onMouseEnter={myOnMouseEnter}
+diff --git a/src/component/TooltipBoundingBox.tsx b/src/component/TooltipBoundingBox.tsx
+index 888bfc3..ef11d75 100644
+--- a/src/component/TooltipBoundingBox.tsx
++++ b/src/component/TooltipBoundingBox.tsx
+@@ -59,7 +59,12 @@ export class TooltipBoundingBox extends PureComponent<TooltipBoundingBoxProps, S
+       this.props.coordinate?.x !== this.state.dismissedAtCoordinate.x ||
+       this.props.coordinate?.y !== this.state.dismissedAtCoordinate.y
+     ) {
+-      this.state.dismissed = false;
++      /*
++       * setState, not assignment: mutating state directly schedules no render, so the box stays
++       * hidden through the very update that moved it - the reader has to move twice before the
++       * chart speaks again.
++       */
++      this.setState({ dismissed: false });
+     }
+   }
+ 
+diff --git a/src/state/keyboardEventsMiddleware.ts b/src/state/keyboardEventsMiddleware.ts
+index 0924fab..c106803 100644
+--- a/src/state/keyboardEventsMiddleware.ts
++++ b/src/state/keyboardEventsMiddleware.ts
+@@ -12,6 +12,7 @@ import { combineActiveTooltipIndex } from './selectors/combiners/combineActiveTo
+ 
+ export const keyDownAction = createAction<KeyboardEvent['key']>('keyDown');
+ export const focusAction = createAction('focus');
++export const blurAction = createAction('blur');
+ 
+ export const keyboardEventsMiddleware = createListenerMiddleware<RechartsRootState>();
+ 
+@@ -67,15 +68,18 @@ keyboardEventsMiddleware.startListening({
+         }
+         const tooltipTicks = selectTooltipAxisTicks(currentState);
+         if (key === 'Enter') {
+-          const coordinate = selectCoordinateForDefaultIndex(
+-            currentState,
+-            'axis',
+-            'hover',
+-            String(keyboardInteraction.index),
+-          );
++          const nextActive = !keyboardInteraction.active;
++          /*
++           * Ending the interaction deliberately lets the coordinate go. That is what separates it
++           * from an interaction that merely lost focus, which keeps its coordinate so it can be
++           * picked up again; the index is kept either way so Enter resumes where it left off.
++           */
++          const coordinate = nextActive
++            ? selectCoordinateForDefaultIndex(currentState, 'axis', 'hover', String(keyboardInteraction.index))
++            : undefined;
+           listenerApi.dispatch(
+             setKeyboardInteraction({
+-              active: !keyboardInteraction.active,
++              active: nextActive,
+               activeIndex: keyboardInteraction.index,
+               activeCoordinate: coordinate,
+             }),
+@@ -142,14 +146,41 @@ keyboardEventsMiddleware.startListening({
+     if (keyboardInteraction.active) {
+       return;
+     }
+-    if (keyboardInteraction.index == null) {
+-      const nextIndex = '0';
+-      const coordinate = selectCoordinateForDefaultIndex(state, 'axis', 'hover', String(nextIndex));
++    /*
++     * An inactive interaction that still remembers an index has two possible causes, told apart by
++     * whether a coordinate survived it: focus went elsewhere and the interaction is waiting to be
++     * picked up, or the reader ended it themselves and it should stay ended.
++     */
++    if (keyboardInteraction.index != null && keyboardInteraction.coordinate == null) {
++      return;
++    }
++    const nextIndex = keyboardInteraction.index == null ? '0' : keyboardInteraction.index;
++    const coordinate = selectCoordinateForDefaultIndex(state, 'axis', 'hover', String(nextIndex));
++    listenerApi.dispatch(
++      setKeyboardInteraction({
++        active: true,
++        activeIndex: nextIndex,
++        activeCoordinate: coordinate,
++      }),
++    );
++  },
++});
++
++keyboardEventsMiddleware.startListening({
++  actionCreator: blurAction,
++  effect: (_action, listenerApi: ListenerEffectAPI<RechartsRootState, AppDispatch>) => {
++    const state: RechartsRootState = listenerApi.getState();
++    const accessibilityLayerIsActive = state.rootProps.accessibilityLayer !== false;
++    if (!accessibilityLayerIsActive) {
++      return;
++    }
++    const { keyboardInteraction } = state.tooltip;
++    if (keyboardInteraction.active) {
+       listenerApi.dispatch(
+         setKeyboardInteraction({
+-          active: true,
+-          activeIndex: nextIndex,
+-          activeCoordinate: coordinate,
++          active: false,
++          activeIndex: keyboardInteraction.index,
++          activeCoordinate: keyboardInteraction.coordinate,
+         }),
+       );
+     }

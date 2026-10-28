@@ -1,0 +1,46 @@
+{
+  "behavior_in_task_description": {
+    "outcome": "pass",
+    "explanation": "instruction.md states the full behavioral contract that the f2p tests check: keyboard movement only moves focus (never selects or emits an event, including jumps to either end), movement lands only on selectable items and wraps at both ends, movement resumes from a pointer-selected item, explicit keyboard activation selects and emits the event with the payload shown in the recording, and the accessible selected state follows selection not focus. Each of the 7 f2p test titles maps directly onto one of these bullets. The task intentionally omits file/component/event/key names, but that is by design (visual_essentiality=required per task.toml) -- the attached bug.gif is the documented channel for those specifics, and instruction.md explicitly directs the agent to reproduce the recorded interaction, so no tested behavior is left undocumented by the combination of prose + evidence."
+  },
+  "behavior_in_tests": {
+    "outcome": "pass",
+    "explanation": "Every behavior named in instruction.md (focus-only movement, no event on movement, wrap-around, skip-disabled, jump-to-ends without selecting, resume-from-pointer, explicit-activation selects+emits, aria-selected follows selection) has a corresponding f2p test in tests/test.patch. The closing line 'behavior that is already correct ... must keep working' is covered by the p2p list (existing content-switcher click/keydown/selectedIndex/manual-mode tests)."
+  },
+  "informative_test_structure": {
+    "outcome": "pass",
+    "explanation": "tabs-test.js is organized with a shared fixture builder, small named helpers (expectFocus, expectSelection, countSelectionEvents, roleTab) and a one-line comment above every `it` explaining the behavioral intent being asserted. test.sh is broken into clearly echoed sections (apply patch, build, install chromium, run tests, compute reward) with an inline comment block enumerating what the f2p/p2p groups check. verifier.py has a clear docstring and small single-purpose functions."
+  },
+  "anti_cheating_measures": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile fetches only the base commit (--depth 1), applies the three bug patches, then strips .git entirely before re-initing a single-commit repo, so the agent cannot inspect the upstream fix PR or commit history. tests/ and solution/ are never copied into the image. Test files are only materialized at verify time via test.patch, applied fresh from harbor_base so candidate edits to test files are discarded before scoring. The reward is computed purely from real Mocha pass/fail results, never by inspecting source diffs. The optional rubric-judge path fails open ('|| echo \"\"') so it can never be used to unfairly fail a run, and defaults to test-only scoring when absent (as it is here)."
+  },
+  "structured_data_schema": {
+    "outcome": "not_applicable",
+    "explanation": "This is a UI component behavior-fix task (keyboard interaction contract for a web component), not a task that produces structured output like JSON/CSV/API responses, so no output schema is required."
+  },
+  "pinned_dependencies": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile pins the base commit SHA (1a9ccca...) and installs JS dependencies via `yarn install --immutable`, which enforces the committed yarn.lock. apt packages (git, ca-certificates, and chromium installed later in test.sh) are unpinned but that is acceptable per guidance. No unpinned pip packages are used."
+  },
+  "typos": {
+    "outcome": "pass",
+    "explanation": "No typos found in instruction.md, task.toml, the Dockerfile, the bug patches, solve.sh, test.sh, or verifier.py that would cause command/path failures or confusion."
+  },
+  "tests_or_solution_in_image": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile only COPYs bugs/ (to a temp path, later removed) and assets/ (the evidence gif) into the image. It never copies tests/ or solution/, which are supplied separately at verify/solve time."
+  },
+  "test_deps_in_image": {
+    "outcome": "pass",
+    "explanation": "test.sh installs the test-only headless browser dependency (`apt-get install -y chromium`) at verification time and cleans apt lists afterward; the Dockerfile does not install chromium or any web-test-runner/puppeteer-specific browser binaries during image build."
+  },
+  "hardcoded_solution": {
+    "outcome": "pass",
+    "explanation": "solve.sh applies solution/fix.patch, which is a genuine multi-file source code diff (content-switcher.ts, tab.ts, tabs.ts) implementing the actual interaction-type/selection-state fix logic (e.g. adding an 'activation' interaction type, a `_moveTo` method, correcting capIndex and aria-selected binding) rather than printing or writing a literal expected answer/output."
+  },
+  "file_reference_mentioned": {
+    "outcome": "not_applicable",
+    "explanation": "The task requires a source code fix to existing component files, not the creation of new output files for the tests to check, so no such filenames need to be mentioned in instruction.md."
+  }
+}

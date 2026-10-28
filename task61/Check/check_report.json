@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "checks": {
+        "behavior_in_task_description": {
+          "explanation": "instruction.md (mirroring the real GitHub issue) states the core requirement to accept fractional values on the AP field, plus three explicit derived-behavior requirements that map 1:1 onto the hardening tests: totals 'must still round up, never down' (matches modifiable_value_total_rounds_up_not_truncated), 'combining multiple modifiers... must still respect the correct order between them' (matches modifiable_value_changes_apply_in_priority_order), and 'computing a new value from it must never alter the original' (matches reduce_damage_by_hits_does_not_mutate_original). The task is a codebase-exploration bug-fix (not a fixed-schema deliverable), so it is appropriate that instruction.md does not name internal files/functions like Base.ts or calcTotal() — the agent is expected to locate them, exactly as a real engineer would from the issue text and screenshot.",
+          "outcome": "pass"
+        },
+        "behavior_in_tests": {
+          "explanation": "Every behavior named in instruction.md is exercised: fractional-value acceptance on the AP field (3 f2p schema tests), round-up-not-down (calcTotal ceil test), correct modifier ordering (priority-sort test), and non-mutation of the original value (reduceDamageByHits clone test). p2p tests further guard that unrelated integer-only fields/paths are untouched, which is consistent with (not required by, but not contradicted by) the instruction.",
+          "outcome": "pass"
+        },
+        "informative_test_structure": {
+          "explanation": "tests/test.patch adds a single .mjs file with clear '-- f2p --' / '-- p2p --' section banners, a per-test doc comment explaining what is being verified and why, and descriptive test names (e.g. modifiable_value_changes_apply_in_priority_order). test.sh and verifier.py are also heavily commented, explaining each step of capture/apply/score.",
+          "outcome": "pass"
+        },
+        "anti_cheating_measures": {
+          "explanation": "The Dockerfile clones the real repo at base_commit, applies the three hardening bug patches, then strips .git and re-inits a single 'harbor_base' commit, so the agent cannot inspect the historical fix PR or diff against upstream. tests/ and solution/ are never copied into the image. environment/bugs/ (containing the injected-bug patches) is copied only to a /tmp path used during the build and never lands in the final image layers reachable by the agent. ASSET_MANIFEST.json and evidence_bundle.json (which name the real repo/issue/PR numbers) are also excluded from the image; only the screenshot PNG is copied. The verifier restores test-patch-covered paths from harbor_base before applying test.patch, preventing an agent from tampering with the test file.",
+          "outcome": "pass"
+        },
+        "structured_data_schema": {
+          "explanation": "This is a source-code bug-fix task (modifying existing TypeScript files), not a task that produces structured output like JSON/CSV/API responses, so a documented output schema is not relevant.",
+          "outcome": "not_applicable"
+        },
+        "pinned_dependencies": {
+          "explanation": "The only dependency installed at build time is the target repository's own `npm install --ignore-scripts`, which resolves against that repo's own package-lock.json (a pinned, third-party artifact outside this task's authorship). No additional unpinned test-only packages are introduced by the task itself; the test harness only requires the already-installed `typescript` compiler from node_modules.",
+          "outcome": "pass"
+        },
+        "typos": {
+          "explanation": "Cross-checked the screenshot filename/path (bug_screenshot_1.png, /app/.harbor_assets/...) across instruction.md, Dockerfile, ASSET_MANIFEST.json, and evidence_bundle.json — all consistent. No spelling errors or broken identifiers found in instruction.md, task.toml, test.patch, or the bug patches.",
+          "outcome": "pass"
+        },
+        "tests_or_solution_in_image": {
+          "explanation": "The Dockerfile only COPYs environment/assets/bug_screenshot_1.png into the image; it explicitly does not COPY tests/ or solution/, and comments in the Dockerfile confirm this is intentional ('tests/ and solution/ are intentionally NOT copied into the image -- the harness supplies them at verify time').",
+          "outcome": "pass"
+        },
+        "test_deps_in_image": {
+          "explanation": "test.sh explicitly states the verify run is offline and installs nothing; it only relies on the TypeScript compiler already present in the image via the target repo's own `npm install`, which is a project dependency rather than a test-only addition.",
+          "outcome": "pass"
+        },
+        "hardcoded_solution": {
+          "explanation": "solution/solve.sh applies solution/fix.patch, a genuine multi-file source diff (Base.ts parameter-threading, ModifiableValue.ts ceil/sort fixes, helpers.ts duplicate() restoration) mirroring the real upstream fix commit — it performs the actual code change rather than printing or injecting a precomputed answer.",
+          "outcome": "pass"
+        },
+        "file_reference_mentioned": {
+          "explanation": "The task does not require the agent to produce new named output files (e.g. output.csv) for the tests to check; it requires modifying existing source files discovered through codebase exploration, so there is no output filename that needs to be stated in instruction.md.",
+          "outcome": "not_applicable"
+        }
+      },
+      "cost_usd": 0.27769,
+      "task_name": "Tasks",
+      "error": null
+    }
+  ]
+}

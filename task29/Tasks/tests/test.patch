@@ -1,0 +1,259 @@
+diff --git a/tests/test_markup.py b/tests/test_markup.py
+index 718c617..93e2a37 100644
+--- a/tests/test_markup.py
++++ b/tests/test_markup.py
+@@ -35,9 +35,9 @@ from textual.markup import MarkupError, to_content
+             Content(
+                 "What is up with you?",
+                 spans=[
++                    Span(0, 20, style="b"),
+                     Span(0, 10, style="on red"),
+                     Span(5, 20, style="i"),
+-                    Span(0, 20, style="b"),
+                 ],
+             ),
+         ),
+@@ -84,6 +84,64 @@ from textual.markup import MarkupError, to_content
+                 spans=[Span(0, 35, style="#ff0000"), Span(7, 35, style="#ffffff")],
+             ),
+         ),
++        (
++            "[blue][green][red]R[/red]G[/green]B[/blue]",
++            Content(
++                "RGB",
++                spans=[
++                    Span(0, 3, "blue"),
++                    Span(0, 2, "green"),
++                    Span(0, 1, "red"),
++                ],
++            ),
++        ),
++        (
++            "[red][blue]X[/blue][/red]",
++            Content(
++                "X",
++                spans=[
++                    Span(0, 1, "red"),
++                    Span(0, 1, "blue"),
++                ],
++            ),
++        ),
++        # Non-nested tags
++        (
++            "[red][blue]X[/red][/blue]",
++            Content(
++                "X",
++                spans=[
++                    Span(0, 1, "blue"),
++                    Span(0, 1, "red"),
++                ],
++            ),
++        ),
++        (
++            "[red][blue]X[/red]",
++            Content(
++                "X",
++                spans=[
++                    Span(0, 1, "blue"),
++                    Span(0, 1, "red"),
++                ],
++            ),
++        ),
++        (
++            "[red][blue]X",
++            Content(
++                "X",
++                spans=[
++                    Span(0, 1, "red"),
++                    Span(0, 1, "blue"),
++                ],
++            ),
++        ),
++        # Edge cases
++        ("[bold][/bold]", Content("")),
++        ("[bold][/]", Content("")),
++        ("[bold]", Content("")),
++        ("", Content("")),
++        ("[red][green][/red]", Content("")),
+     ],
+ )
+ def test_to_content(markup: str, content: Content):
+diff --git a/tests/test_markup_nesting.py b/tests/test_markup_nesting.py
+new file mode 100644
+index 0000000..06ea6de
+--- /dev/null
++++ b/tests/test_markup_nesting.py
+@@ -0,0 +1,173 @@
++"""Rendered-appearance tests for overlapping and nested markup tags.
++
++These tests deliberately assert what the terminal ends up painting -- the effective style
++of every single character, after all the styled ranges have been layered on top of each
++other -- instead of asserting the exact list of ranges a particular implementation happens
++to build. Two implementations may describe the same picture with different ranges (one wide
++range with narrower ones layered over it, or a run of adjacent non-overlapping ranges), and
++both are correct as long as each character is painted the same. Only `to_content` and the
++public rendering API are used, so nothing here depends on how the spans are assembled.
++
++Expected colours are resolved through `Style.parse` rather than written as literal hex, so
++the assertions stay valid regardless of the palette behind a colour name.
++"""
++
++from __future__ import annotations
++
++import pytest
++
++from textual.markup import to_content
++from textual.style import Style
++
++
++def paint(markup: str) -> list[tuple[str, str | None]]:
++    """Render `markup` and return (character, effective foreground colour) for each character."""
++    painted: list[tuple[str, str | None]] = []
++    for text, style in to_content(markup).render(end=""):
++        for character in text:
++            foreground = style.foreground
++            painted.append((character, None if foreground is None else foreground.hex))
++    return painted
++
++
++def colour(style: str) -> str | None:
++    """The foreground colour a style string resolves to, as rendered."""
++    foreground = Style.parse(style).foreground
++    return None if foreground is None else foreground.hex
++
++
++# --------------------------------------------------------------------------------------
++# Nesting: the tag closest to a character is the one that shows.
++# --------------------------------------------------------------------------------------
++
++
++def test_nested_colors_paint_each_character() -> None:
++    """Three colours opened one inside the other paint three different characters."""
++    assert paint("[blue][green][red]R[/red]G[/green]B[/blue]") == [
++        ("R", colour("red")),
++        ("G", colour("green")),
++        ("B", colour("blue")),
++    ]
++
++
++def test_nested_hex_colors_paint_each_character() -> None:
++    """The same nesting written with hex colours instead of names paints the same way."""
++    assert paint("[#ff0000][#00ff00][#0000ff]A[/#0000ff]B[/#00ff00]C[/#ff0000]") == [
++        ("A", colour("#0000ff")),
++        ("B", colour("#00ff00")),
++        ("C", colour("#ff0000")),
++    ]
++
++
++def test_sibling_tag_inside_nesting_paints_each_character() -> None:
++    """A second tag opened after an inner tag closed keeps the enclosing colours intact.
++
++    Also mixes the two ways of closing a tag: by name, and with the bare closing tag.
++    """
++    assert paint("[blue][green][red]R[/red][yellow]Y[/]G[/green]B[/blue]") == [
++        ("R", colour("red")),
++        ("Y", colour("yellow")),
++        ("G", colour("green")),
++        ("B", colour("blue")),
++    ]
++
++
++def test_innermost_tag_wins_for_properly_nested_pair() -> None:
++    """When two tags wrap the same character and nest cleanly, the inner one shows."""
++    assert paint("[red][blue]X[/blue][/red]") == [("X", colour("blue"))]
++
++
++def test_first_closed_tag_wins_for_crossed_pair() -> None:
++    """When two tags wrap the same character and are closed out of order, the tag closed
++    first is the one that shows -- whether the second tag is closed afterwards or left open.
++    """
++    assert paint("[red][blue]X[/red][/blue]") == [("X", colour("red"))]
++    assert paint("[red][blue]X[/red]") == [("X", colour("red"))]
++
++
++def test_tags_that_wrap_nothing_produce_no_spans() -> None:
++    """Markup whose tags end up wrapping no text at all yields empty content with no
++    styled range covering an empty stretch of text.
++
++    Every form is checked together because they are one property: a tag that never gets any
++    text under it, whether it is closed by name, closed with the bare closing tag, or left
++    open to the end of the markup.
++    """
++    for markup in [
++        "",
++        "[bold]",
++        "[bold][/]",
++        "[bold][/bold]",
++        "[red][green][/red]",
++        "[red][green][/]",
++    ]:
++        content = to_content(markup)
++        assert content.plain == "", markup
++        empty_spans = [span for span in content.spans if span.start == span.end]
++        assert empty_spans == [], f"{markup!r} produced {empty_spans!r}"
++
++
++# --------------------------------------------------------------------------------------
++# Regression guards: behaviour that already worked and must keep working.
++# --------------------------------------------------------------------------------------
++
++
++def test_unclosed_tags_stack_innermost_on_top() -> None:
++    """Two tags opened over the same character and never closed: the inner one shows."""
++    assert paint("[red][blue]X") == [("X", colour("blue"))]
++
++
++def test_cascading_unclosed_tags_paint_each_character() -> None:
++    """Tags opened one after another and never closed each take over from where they start."""
++    assert paint("[blue]A[green]B[red]C") == [
++        ("A", colour("blue")),
++        ("B", colour("green")),
++        ("C", colour("red")),
++    ]
++
++
++def test_closing_a_tag_restores_the_enclosing_one() -> None:
++    """Text after an inner tag closes goes back to the colour that is still open around it."""
++    assert paint("[blue]start[red]mid[/red]end[/blue]") == [
++        *[(character, colour("blue")) for character in "start"],
++        *[(character, colour("red")) for character in "mid"],
++        *[(character, colour("blue")) for character in "end"],
++    ]
++
++
++def test_auto_closed_tag_leaves_following_text_unstyled() -> None:
++    """Text after a tag is closed with nothing else open around it carries no style at all."""
++    painted = paint("[bold red]Hello[/] World")
++    assert painted[:5] == [(character, colour("bold red")) for character in "Hello"]
++    assert painted[5:] == [(character, None) for character in " World"]
++    trailing = [style for text, style in to_content("[bold red]Hello[/] World").render(end="")
++                if text.endswith("World")]
++    assert trailing and all(style.bold is None for style in trailing)
++
++
++def test_adjacent_tag_pairs_paint_their_own_range() -> None:
++    """Two tag pairs written back to back colour their own character and nothing else."""
++    assert paint("[red]A[/red][green]B[/green]") == [
++        ("A", colour("red")),
++        ("B", colour("green")),
++    ]
++
++
++def test_non_conflicting_attributes_combine() -> None:
++    """A colour and an attribute wrapping the same character both survive."""
++    (text, style), *rest = to_content("[blue][bold]N[/bold][/blue]").render(end="")
++    assert text == "N"
++    assert rest == []
++    assert style.foreground is not None
++    assert style.foreground.hex == colour("blue")
++    assert style.bold is True
++
++
++def test_unbalanced_markup_is_still_rejected() -> None:
++    """Closing tags with nothing to close, or closing a tag that was never opened, still fail."""
++    from textual.markup import MarkupError
++
++    with pytest.raises(MarkupError):
++        to_content("foo[/]")
++    with pytest.raises(MarkupError):
++        to_content("[foo]foo[/bar]")

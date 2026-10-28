@@ -1,0 +1,73 @@
+diff --git a/javascripts/core/celestials/celestials.js b/javascripts/core/celestials/celestials.js
+index ad9f71deb..c7c8cfa97 100644
+--- a/javascripts/core/celestials/celestials.js
++++ b/javascripts/core/celestials/celestials.js
+@@ -27,12 +27,12 @@ GameDatabase.celestials.descriptions = [
+   {
+     name: "Effarig",
+     effects() {
+-      return `All Dimension multipliers, gamespeed, and tickspeed are heavily reduced, like Dilation.
+-      Infinity Power reduces the production and tickspeed penalties and Time Shards reduce the gamespeed penalty.
+-      Glyph levels are permanently capped to ${Effarig.glyphLevelCap}, rarity is also reduced.`;
++      return `All Dimension multipliers, gamespeed, and tickspeed are severely lowered, like Dilation.
++      Infinity Power reduces the production and gamespeed penalties and Time Shards reduce the tickspeed penalty.
++      Glyph levels are temporarily capped to ${formatInt(Effarig.glyphLevelCap)}, rarity is unaffected.`;
+     },
+     description() {
+-      return `You will exit Effarig's Reality once you complete it for the first time.`;
++      return `You will exit Effarig's Reality when you complete a Layer of it for the first time.`;
+     }
+   },
+   {
+diff --git a/javascripts/core/format.js b/javascripts/core/format.js
+index a71414ecc..597b664c9 100644
+--- a/javascripts/core/format.js
++++ b/javascripts/core/format.js
+@@ -86,7 +86,7 @@ window.timeDisplayShort = function timeDisplayShort(ms) {
+   return TimeSpan.fromMilliseconds(ms).toStringShort();
+ };
+ 
+-const commaRegexp = /\B(?=(\d{4})+(?!\d))/gu;
++const commaRegexp = /\B(?=(\d{3})+(?!\d))/gu;
+ window.formatWithCommas = function formatWithCommas(value) {
+   const decimalPointSplit = value.toString().split(".");
+   decimalPointSplit[0] = decimalPointSplit[0].replace(commaRegexp, ",");
+diff --git a/javascripts/core/notations.js b/javascripts/core/notations.js
+index db37cd845..7d16b67bb 100644
+--- a/javascripts/core/notations.js
++++ b/javascripts/core/notations.js
+@@ -35,7 +35,7 @@ export const Notation = (function() {
+     bar: painful(notation(N.BarNotation)),
+     shi: painful(notation(N.ShiNotation)),
+     blind: painful(notation(N.BlindNotation)),
+-    blobs: notation(N.BlobsNotation),
++    blobs: painful(notation(N.BlobsNotation)),
+     all: painful(notation(N.AllNotation))
+   };
+ }());
+diff --git a/src/components/tabs/celestial-pelle/PelleTab.vue b/src/components/tabs/celestial-pelle/PelleTab.vue
+index 34b3b357d..c4d7c7b49 100644
+--- a/src/components/tabs/celestial-pelle/PelleTab.vue
++++ b/src/components/tabs/celestial-pelle/PelleTab.vue
+@@ -24,6 +24,9 @@ export default {
+   computed: {
+     symbol() {
+       return Pelle.symbol;
++    },
++    requiredRows() {
++      return Achievements.prePelleRows.length;
+     }
+   },
+   methods: {
+@@ -84,9 +87,9 @@ export default {
+       v-else
+       class="pelle-unlock-requirements"
+     >
+-      You need at least 15 rows of achievements before Doomed unlocks.
++      You must have {{ formatInt(requiredRows) }} rows of achievements to unlock Doomed.
+       <br>
+-      {{ completedRows }}/15
++      {{ formatInt(completedRows) }} / {{ formatInt(requiredRows) }}
+     </div>
+   </div>
+ </template>

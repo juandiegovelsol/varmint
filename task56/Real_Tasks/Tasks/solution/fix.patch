@@ -1,0 +1,241 @@
+diff --git a/packages/web-components/src/components/content-switcher/content-switcher.ts b/packages/web-components/src/components/content-switcher/content-switcher.ts
+index ea6b053..5cb8abd 100644
+--- a/packages/web-components/src/components/content-switcher/content-switcher.ts
++++ b/packages/web-components/src/components/content-switcher/content-switcher.ts
+@@ -1,5 +1,5 @@
+ /**
+- * Copyright IBM Corp. 2019, 2025
++ * Copyright IBM Corp. 2019, 2026
+  *
+  * This source code is licensed under the Apache-2.0 license found in the
+  * LICENSE file in the root directory of this source tree.
+@@ -23,10 +23,10 @@ export { NAVIGATION_DIRECTION, CONTENT_SWITCHER_SIZE };
+  */
+ const capIndex = (index: number, length: number) => {
+   if (index < 0) {
+-    return 0;
++    return length - 1;
+   }
+   if (index >= length) {
+-    return length - 1;
++    return 0;
+   }
+   return index;
+ };
+@@ -105,7 +105,7 @@ class CDSContentSwitcher extends LitElement {
+     direction: number
+   ) {
+     const items = this.querySelectorAll(
+-      (this.constructor as typeof CDSContentSwitcher).selectorItem
++      (this.constructor as typeof CDSContentSwitcher).selectorItemEnabled
+     );
+     const currentIndex = indexOf(items, currentItem);
+     const nextIndex = capIndex(currentIndex + direction, items.length);
+@@ -145,7 +145,7 @@ class CDSContentSwitcher extends LitElement {
+    */
+   protected _handleUserInitiatedSelectItem(
+     item: CDSContentSwitcherItem,
+-    interactionType?: 'mouse' | 'keyboard' | undefined
++    interactionType?: 'mouse' | 'keyboard' | 'activation' | undefined
+   ) {
+     if (
+       (item && !item.disabled && item.value !== this.value) ||
+@@ -153,41 +153,48 @@ class CDSContentSwitcher extends LitElement {
+         interactionType === 'keyboard' &&
+         !item.disabled)
+     ) {
+-      const init = {
+-        bubbles: true,
+-        composed: true,
+-        detail: {
+-          item,
+-        },
+-      };
+-      const constructor = this.constructor as typeof CDSContentSwitcher;
+-      const beforeSelectEvent = new CustomEvent(constructor.eventBeforeSelect, {
+-        ...init,
+-        cancelable: true,
+-      });
+-      if (this.dispatchEvent(beforeSelectEvent)) {
+-        this._selectionDidChange(item, interactionType);
+-
+-        // Add extra event details (index, name, text) to match the React `onChange`
+-        const items = this.querySelectorAll(constructor.selectorItem);
+-        const index = Array.from(items).indexOf(item);
+-        const name = item.getAttribute('name') ?? undefined;
+-        const text =
+-          item.textContent?.trim() ||
+-          item.getAttribute('aria-label')?.trim() ||
+-          undefined;
+-
+-        const afterSelectEvent = new CustomEvent(constructor.eventSelect, {
++      if (this.selectionMode !== 'manual' || interactionType !== 'keyboard') {
++        const init = {
+           bubbles: true,
+           composed: true,
+           detail: {
+             item,
+-            index,
+-            name,
+-            text,
+           },
+-        });
+-        this.dispatchEvent(afterSelectEvent);
++        };
++        const constructor = this.constructor as typeof CDSContentSwitcher;
++        const beforeSelectEvent = new CustomEvent(
++          constructor.eventBeforeSelect,
++          {
++            ...init,
++            cancelable: true,
++          }
++        );
++        if (this.dispatchEvent(beforeSelectEvent)) {
++          this._selectionDidChange(item, interactionType);
++
++          // Add extra event details (index, name, text) to match the React `onChange`
++          const items = this.querySelectorAll(constructor.selectorItem);
++          const index = Array.from(items).indexOf(item);
++          const name = item.getAttribute('name') ?? undefined;
++          const text =
++            item.textContent?.trim() ||
++            item.getAttribute('aria-label')?.trim() ||
++            undefined;
++
++          const afterSelectEvent = new CustomEvent(constructor.eventSelect, {
++            bubbles: true,
++            composed: true,
++            detail: {
++              item,
++              index,
++              name,
++              text,
++            },
++          });
++          this.dispatchEvent(afterSelectEvent);
++        }
++      } else {
++        this._selectionDidChange(item, interactionType);
+       }
+     }
+   }
+@@ -221,7 +228,7 @@ class CDSContentSwitcher extends LitElement {
+ 
+   protected _selectionDidChange(
+     itemToSelect: CDSContentSwitcherItem,
+-    interactionType?: 'mouse' | 'keyboard' | undefined
++    interactionType?: 'mouse' | 'keyboard' | 'activation' | undefined
+   ) {
+     if (this.selectionMode === 'manual' && interactionType === 'keyboard') {
+       // In manual mode, only focus the item without changing the selection
+@@ -314,7 +321,7 @@ class CDSContentSwitcher extends LitElement {
+       const itemToSelect = items[this.selectedIndex] as CDSContentSwitcherItem;
+       this._selectionDidChange(
+         itemToSelect,
+-        this.selectionMode === 'manual' ? 'keyboard' : 'mouse'
++        this.selectionMode === 'manual' ? 'activation' : 'mouse'
+       );
+     }
+   }
+diff --git a/packages/web-components/src/components/tabs/tab.ts b/packages/web-components/src/components/tabs/tab.ts
+index 7f3ca57..e502844 100644
+--- a/packages/web-components/src/components/tabs/tab.ts
++++ b/packages/web-components/src/components/tabs/tab.ts
+@@ -80,7 +80,6 @@ export default class CDSTab extends CDSContentSwitcherItem {
+     const {
+       badgeIndicator,
+       disabled,
+-      highlighted,
+       selected,
+       tabTitle,
+       _handleSlotChange: handleSlotChange,
+@@ -97,7 +96,7 @@ export default class CDSTab extends CDSContentSwitcherItem {
+         aria-label="${ifDefined(accessibleLabel || undefined)}"
+         tabindex="${selected ? 0 : -1}"
+         ?disabled="${disabled}"
+-        aria-selected="${highlighted}">
++        aria-selected="${selected}">
+         <span class="${prefix}--tabs__nav-item-label-wrapper">
+           <slot @slotchange="${handleSlotChange}"></slot>
+         </span>
+diff --git a/packages/web-components/src/components/tabs/tabs.ts b/packages/web-components/src/components/tabs/tabs.ts
+index 6da4cac..5ded002 100644
+--- a/packages/web-components/src/components/tabs/tabs.ts
++++ b/packages/web-components/src/components/tabs/tabs.ts
+@@ -103,7 +103,7 @@ export default class CDSTabs extends HostListenerMixin(CDSContentSwitcher) {
+     this._handleUserInitiatedSelectItem(nextItem as CDSTab, 'keyboard');
+     if (!immediate) {
+       forEach(this.querySelectorAll(selectorItem), (item) => {
+-        (item as CDSTab)[immediate ? 'highlighted' : 'selected'] =
++        (item as CDSTab)[immediate ? 'selected' : 'highlighted'] =
+           nextItem === item;
+       });
+     }
+@@ -121,12 +121,36 @@ export default class CDSTabs extends HostListenerMixin(CDSContentSwitcher) {
+     this.requestUpdate();
+   }
+ 
++  /**
++   * Moves the keyboard position to the given tab.
++   *
++   * In `manual` selection mode this only moves the focus/highlight, leaving the
++   * selection (and the selection event) to explicit activation. In `automatic`
++   * selection mode the tab is selected right away.
++   *
++   * @param tab The tab to move the keyboard position to.
++   */
++  protected _moveTo(tab: CDSTab) {
++    if (this.selectionMode === 'manual') {
++      const { selectorItem } = this.constructor as typeof CDSTabs;
++      forEach(this.querySelectorAll(selectorItem), (item) => {
++        (item as CDSTab).highlighted = tab === item;
++      });
++
++      const tabText = tab.textContent;
++      if (tabText) {
++        this._assistiveStatusText = tabText;
++      }
++    }
++    this._handleUserInitiatedSelectItem(tab, 'keyboard');
++  }
++
+   @HostListener('click')
+   protected _handleClick(event: MouseEvent) {
+     super._handleClick(event);
+     const { selectorItem } = this.constructor as typeof CDSTabs;
+     const currentItem = this._getCurrentItem(event.target as HTMLElement);
+-    if (currentItem && this.selectionMode === 'automatic') {
++    if (currentItem) {
+       forEach(this.querySelectorAll(selectorItem), (item) => {
+         (item as CDSTab).highlighted = false;
+       });
+@@ -147,7 +171,7 @@ export default class CDSTabs extends HostListenerMixin(CDSContentSwitcher) {
+             block: 'nearest',
+             inline: 'nearest',
+           });
+-          this._handleUserInitiatedSelectItem(firstEnabledTab as CDSTab);
++          this._moveTo(firstEnabledTab as CDSTab);
+           this.requestUpdate();
+         }
+         break;
+@@ -158,7 +182,7 @@ export default class CDSTabs extends HostListenerMixin(CDSContentSwitcher) {
+             block: 'nearest',
+             inline: 'nearest',
+           });
+-          this._handleUserInitiatedSelectItem(lastEnabledTab as CDSTab);
++          this._moveTo(lastEnabledTab as CDSTab);
+           this.requestUpdate();
+         }
+         break;
+@@ -176,7 +200,10 @@ export default class CDSTabs extends HostListenerMixin(CDSContentSwitcher) {
+             `${prefix}-tab[highlighted]`
+           );
+           if (focusedTab) {
+-            this._selectionDidChange(focusedTab);
++            this._handleUserInitiatedSelectItem(
++              focusedTab as CDSTab,
++              'activation'
++            );
+             this.requestUpdate();
+           }
+         }

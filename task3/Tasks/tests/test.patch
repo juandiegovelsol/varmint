@@ -1,0 +1,405 @@
+diff --git a/src/shapes/Text/f2p_additions.spec.ts b/src/shapes/Text/f2p_additions.spec.ts
+new file mode 100644
+--- /dev/null
++++ b/src/shapes/Text/f2p_additions.spec.ts
+@@ -0,0 +1,253 @@
++import { describe, expect, it } from 'vitest';
++import { FabricText } from './Text';
++
++/**
++ * Behavioural probes for the configurable decoration line-weight feature.
++ *
++ * These tests deliberately assume NOTHING about:
++ *   - what the new public property is called,
++ *   - what CSS declaration / SVG attribute carries it,
++ *   - what unit or numeric scale it is expressed in,
++ *   - whether it is emitted as `name: value` or `name="value"`.
++ *
++ * The control is *discovered* at runtime: we look for a serialisable numeric
++ * property that, when scaled, makes some numeric value in the emitted SVG
++ * scale by the same factor. Any behaviourally correct implementation is found
++ * by that probe; an unfixed library is not.
++ */
++
++/** Numeric properties an unfixed text object already serialises. */
++const PRE_EXISTING_NUMERIC_PROPS = [
++  'left',
++  'top',
++  'width',
++  'height',
++  'scaleX',
++  'scaleY',
++  'angle',
++  'opacity',
++  'strokeWidth',
++  'strokeMiterLimit',
++  'strokeDashOffset',
++  'skewX',
++  'skewY',
++  'fontSize',
++  'fontWeight',
++  'lineHeight',
++  'charSpacing',
++  'deltaY',
++  'pathStartOffset',
++  'padding',
++  'minScaleLimit',
++  'cornerSize',
++  'touchCornerSize',
++  'borderScaleFactor',
++  'rotatingPointOffset',
++  'borderOpacityWhenMoving',
++  'CACHE_FONT_SIZE',
++  'MIN_TEXT_WIDTH',
++];
++
++const LOW = 100;
++const HIGH = 300;
++const RATIO = HIGH / LOW;
++
++/**
++ * Every `name: 12.5` CSS declaration and every `name="12.5"` XML attribute in
++ * the SVG, collected as { declarationName: [numbers, in document order] }.
++ * Trailing units (%, px, em, ...) are ignored, so the unit is never pinned.
++ */
++function numericDeclarations(svg) {
++  const out = Object.create(null);
++  const push = (name, raw) => {
++    const value = parseFloat(raw);
++    if (!isFinite(value)) {
++      return;
++    }
++    if (!out[name]) {
++      out[name] = [];
++    }
++    out[name].push(value);
++  };
++
++  const cssRe = /([a-zA-Z][\w-]*)\s*:\s*(-?\d*\.?\d+)/g;
++  let m;
++  while ((m = cssRe.exec(svg)) !== null) {
++    push(m[1], m[2]);
++  }
++
++  const attrRe = /([a-zA-Z][\w-]*)\s*=\s*"(-?\d*\.?\d+)[^"]*"/g;
++  while ((m = attrRe.exec(svg)) !== null) {
++    push(m[1], m[2]);
++  }
++
++  return out;
++}
++
++/** Numeric properties on a text object that the unfixed library did not have. */
++function candidateProps() {
++  const serialized = new FabricText('X', { underline: true }).toObject();
++  return Object.keys(serialized).filter(
++    (key) =>
++      typeof serialized[key] === 'number' &&
++      key.charAt(0) !== '_' &&
++      PRE_EXISTING_NUMERIC_PROPS.indexOf(key) === -1,
++  );
++}
++
++function closeEnough(actual, expected) {
++  return Math.abs(actual - expected) <= Math.max(0.02, Math.abs(expected) * 0.02);
++}
++
++/**
++ * Find { prop, decl }: a public property `prop` whose value is reported in the
++ * emitted SVG through declaration `decl`, proportionally.
++ * Returns null when no such control exists (i.e. on an unfixed library).
++ */
++function discoverKnob() {
++  const props = candidateProps();
++  for (let p = 0; p < props.length; p++) {
++    const prop = props[p];
++    const lowSvg = new FabricText('X', {
++      underline: true,
++      [prop]: LOW,
++    }).toSVG();
++    const highSvg = new FabricText('X', {
++      underline: true,
++      [prop]: HIGH,
++    }).toSVG();
++    if (lowSvg === highSvg) {
++      continue;
++    }
++    const low = numericDeclarations(lowSvg);
++    const high = numericDeclarations(highSvg);
++    const names = Object.keys(low);
++    for (let n = 0; n < names.length; n++) {
++      const decl = names[n];
++      const lowVals = low[decl];
++      const highVals = high[decl];
++      if (!highVals || highVals.length !== lowVals.length) {
++        continue;
++      }
++      let scales = false;
++      let consistent = true;
++      for (let i = 0; i < lowVals.length; i++) {
++        const l = lowVals[i];
++        const h = highVals[i];
++        if (l !== 0 && closeEnough(h, l * RATIO)) {
++          scales = true;
++        } else if (l !== h) {
++          consistent = false;
++          break;
++        }
++      }
++      if (scales && consistent) {
++        return { prop: prop, decl: decl };
++      }
++    }
++  }
++  return null;
++}
++
++function valuesOf(svg, decl) {
++  return numericDeclarations(svg)[decl] || [];
++}
++
++function distinctCount(values) {
++  const seen = {};
++  let n = 0;
++  for (let i = 0; i < values.length; i++) {
++    const k = String(values[i]);
++    if (!seen[k]) {
++      seen[k] = true;
++      n++;
++    }
++  }
++  return n;
++}
++
++describe('text decoration line weight', () => {
++  it('decoration weight is configurable and scales the emitted SVG', () => {
++    const knob = discoverKnob();
++    expect(
++      knob,
++      'no public property makes the decoration weight in the emitted SVG scale with it',
++    ).not.toBeNull();
++  });
++
++  it('decoration weight applies to underline, overline and linethrough', () => {
++    const knob = discoverKnob();
++    expect(knob).not.toBeNull();
++
++    const text = new FabricText('abc', {
++      styles: {
++        0: {
++          0: { underline: true, [knob.prop]: 40 },
++          1: { overline: true, [knob.prop]: 160 },
++          2: { linethrough: true, [knob.prop]: 280 },
++        },
++      },
++    });
++
++    // One distinct reported weight per decoration type.
++    expect(distinctCount(valuesOf(text.toSVG(), knob.decl))).toBeGreaterThanOrEqual(3);
++  });
++
++  it('decoration weight varies per character inside one text object', () => {
++    const knob = discoverKnob();
++    expect(knob).not.toBeNull();
++
++    const text = new FabricText('AB', {
++      underline: true,
++      styles: {
++        0: {
++          0: { [knob.prop]: 50 },
++          1: { [knob.prop]: 400 },
++        },
++      },
++    });
++
++    const values = valuesOf(text.toSVG(), knob.decl);
++    expect(values.length).toBeGreaterThanOrEqual(2);
++    expect(distinctCount(values)).toBeGreaterThanOrEqual(2);
++  });
++
++  it('decoration weight survives object round-trip serialization', async () => {
++    const knob = discoverKnob();
++    expect(knob).not.toBeNull();
++
++    const original = new FabricText('AB', {
++      underline: true,
++      [knob.prop]: 220,
++      styles: {
++        0: {
++          1: { [knob.prop]: 40 },
++        },
++      },
++    });
++
++    const restored = await FabricText.fromObject(original.toObject());
++    expect(restored.toSVG()).toBe(original.toSVG());
++  });
++
++  it('default decoration weight is exposed and left unchanged', () => {
++    const knob = discoverKnob();
++    expect(knob).not.toBeNull();
++
++    const stock = new FabricText('X', { underline: true });
++    const stockSvg = stock.toSVG();
++
++    const values = valuesOf(stockSvg, knob.decl);
++    expect(values.length).toBeGreaterThanOrEqual(1);
++    expect(values.every((v) => v > 0)).toBe(true);
++
++    // Opting in with the serialised default must be a no-op for existing users.
++    const defaultValue = stock.toObject()[knob.prop];
++    expect(typeof defaultValue).toBe('number');
++    const explicit = new FabricText('X', {
++      underline: true,
++      [knob.prop]: defaultValue,
++    });
++    expect(explicit.toSVG()).toBe(stockSvg);
++  });
++});
+diff --git a/src/shapes/Text/TextSVGExportMixin.spec.ts b/src/shapes/Text/TextSVGExportMixin.spec.ts
+index 43dbfd3..3035097 100644
+--- a/src/shapes/Text/TextSVGExportMixin.spec.ts
++++ b/src/shapes/Text/TextSVGExportMixin.spec.ts
+@@ -41,48 +41,27 @@ describe('TextSvgExport', () => {
+     });
+ 
+     it('toSVG', () => {
+-      const TEXT_SVG =
+-        '<g transform="" style=""  >\n\t\t<text xml:space="preserve" font-family="Times New Roman" font-size="40" font-style="normal" font-weight="normal" style="stroke: none; stroke-width: 1; stroke-dasharray: none; stroke-linecap: butt; stroke-dashoffset: 0; stroke-linejoin: miter; stroke-miterlimit: 4; fill: rgb(0,0,0); fill-rule: nonzero; opacity: 1; white-space: pre;" ><tspan x="-10" y="12.57" >x</tspan></text>\n</g>\n';
+       const text = new FabricText('x');
+-      expect(removeTranslate(text.toSVG())).toEqualSVG(
+-        removeTranslate(TEXT_SVG),
+-      );
++      expect(text.toSVG()).toMatchSVGSnapshot();
+       text.set('fontFamily', 'Arial');
+-      expect(removeTranslate(text.toSVG())).toEqualSVG(
+-        removeTranslate(
+-          TEXT_SVG.replace(
+-            'font-family="Times New Roman"',
+-            'font-family="Arial"',
+-          ),
+-        ),
+-      );
++      expect(text.toSVG()).toMatchSVGSnapshot();
+     });
+ 
+     it('toSVG justified', () => {
+-      const TEXT_SVG_JUSTIFIED =
+-        '<g transform="" style=""  >\n\t\t<text xml:space="preserve" font-family="Times New Roman" font-size="40" font-style="normal" font-weight="normal" style="stroke: none; stroke-width: 1; stroke-dasharray: none; stroke-linecap: butt; stroke-dashoffset: 0; stroke-linejoin: miter; stroke-miterlimit: 4; fill: rgb(0,0,0); fill-rule: nonzero; opacity: 1; white-space: pre;" ><tspan x="-60" y="-13.65" >xxxxxx</tspan><tspan x="-60" y="38.78" style="white-space: pre; ">x </tspan><tspan x="40" y="38.78" >y</tspan></text>\n</g>\n';
+       const text = new FabricText('xxxxxx\nx y', {
+         textAlign: 'justify',
+       });
+ 
+-      expect(removeTranslate(text.toSVG())).toEqualSVG(
+-        removeTranslate(TEXT_SVG_JUSTIFIED),
+-      );
++      expect(text.toSVG()).toMatchSVGSnapshot();
+     });
+ 
+     it('toSVG with multiple spaces', () => {
+-      const TEXT_SVG_MULTIPLESPACES =
+-        '<g transform="" style=""  >\n\t\t<text xml:space="preserve" font-family="Times New Roman" font-size="40" font-style="normal" font-weight="normal" style="stroke: none; stroke-width: 1; stroke-dasharray: none; stroke-linecap: butt; stroke-dashoffset: 0; stroke-linejoin: miter; stroke-miterlimit: 4; fill: rgb(0,0,0); fill-rule: nonzero; opacity: 1; white-space: pre;" ><tspan x="-105" y="12.57" style="white-space: pre; ">x                 y</tspan></text>\n</g>\n';
+       const text = new FabricText('x                 y');
+-      expect(removeTranslate(text.toSVG())).toEqualSVG(
+-        removeTranslate(TEXT_SVG_MULTIPLESPACES),
+-      );
++      expect(text.toSVG()).toMatchSVGSnapshot();
+     });
+ 
+     it('toSVG with deltaY', () => {
+       config.configure({ NUM_FRACTION_DIGITS: 0 });
+-      const TEXT_SVG =
+-        '<g transform="" style=""  >\n\t\t<text xml:space="preserve" font-family="Times New Roman" font-size="40" font-style="normal" font-weight="normal" style="stroke: none; stroke-width: 1; stroke-dasharray: none; stroke-linecap: butt; stroke-dashoffset: 0; stroke-linejoin: miter; stroke-miterlimit: 4; fill: rgb(0,0,0); fill-rule: nonzero; opacity: 1; white-space: pre;" ><tspan x="-16" y="13" >x</tspan><tspan x="4" y="13"  dy="-14" style="font-size: 24px; baseline-shift: 14; ">x</tspan></text>\n</g>\n';
+       const text = new FabricText('xx', {
+         styles: {
+           0: {
+@@ -93,15 +72,11 @@ describe('TextSvgExport', () => {
+           },
+         },
+       });
+-      expect(removeTranslate(text.toSVG())).toEqualSVG(
+-        removeTranslate(TEXT_SVG),
+-      );
++      expect(text.toSVG()).toMatchSVGSnapshot();
+       config.configure({ NUM_FRACTION_DIGITS: 2 });
+     });
+ 
+     it('toSVG with font', () => {
+-      const TEXT_SVG_WITH_FONT =
+-        '<g transform="" style=""  >\n\t\t<text xml:space="preserve" font-family="Times New Roman" font-size="40" font-style="normal" font-weight="normal" style="stroke: none; stroke-width: 1; stroke-dasharray: none; stroke-linecap: butt; stroke-dashoffset: 0; stroke-linejoin: miter; stroke-miterlimit: 4; fill: rgb(0,0,0); fill-rule: nonzero; opacity: 1; white-space: pre;" ><tspan x="-60" y="-13.65" style="font-family: \'Times New Roman\'; ">xxxxxx</tspan><tspan x="-60" y="38.78" style="white-space: pre; ">x </tspan><tspan x="40" y="38.78" >y</tspan></text>\n</g>\n';
+       const text = new FabricText('xxxxxx\nx y', {
+         textAlign: 'justify',
+         styles: {
+@@ -115,28 +90,15 @@ describe('TextSvgExport', () => {
+           },
+         },
+       });
+-      expect(removeTranslate(text.toSVG())).toEqualSVG(
+-        removeTranslate(TEXT_SVG_WITH_FONT),
+-      );
++      expect(text.toSVG()).toMatchSVGSnapshot();
+     });
+ 
+     it('toSVG with text as a clipPath', () => {
+       config.configure({ NUM_FRACTION_DIGITS: 0 });
+-      const EXPECTED =
+-        '<g transform="" clip-path="url(#CLIPPATH_0)"  >\n<clipPath id="CLIPPATH_0" >\n\t\t\t<text xml:space="preserve" font-family="Times New Roman" font-size="40" font-style="normal" font-weight="normal" style="stroke: none; stroke-width: 1; stroke-dasharray: none; stroke-linecap: butt; stroke-dashoffset: 0; stroke-linejoin: miter; stroke-miterlimit: 4; fill: rgb(0,0,0); fill-rule: nonzero; opacity: 1; white-space: pre;" ><tspan x="-122" y="13" >text as clipPath</tspan></text>\n</clipPath>\n<rect style="stroke: none; stroke-width: 1; stroke-dasharray: none; stroke-linecap: butt; stroke-dashoffset: 0; stroke-linejoin: miter; stroke-miterlimit: 4; fill: rgb(0,0,0); fill-rule: nonzero; opacity: 1;"  x="-100" y="-50" rx="0" ry="0" width="200" height="100" />\n</g>\n';
+       const clipPath = new FabricText('text as clipPath');
+       const rect = new Rect({ width: 200, height: 100 });
+       rect.clipPath = clipPath;
+-      expect(removeTranslate(rect.toSVG())).toEqualSVG(
+-        removeTranslate(EXPECTED),
+-      );
++      expect(rect.toSVG()).toMatchSVGSnapshot();
+     });
+   });
+ });
+-
+-/**
+- * Remove translate matrix transformations from SVG string for comparison
+- */
+-function removeTranslate(str: string) {
+-  return str.replace(/matrix\(.*?\)/, '');
+-}
+diff --git a/vitest.d.ts b/vitest.d.ts
+index 0f0c175..2aa71b6 100644
+--- a/vitest.d.ts
++++ b/vitest.d.ts
+@@ -17,6 +17,8 @@ interface CustomMatchers<R = unknown, T = unknown> {
+ 
+   toMatchObjectSnapshot(propertiesOrHint?: ObjectOptions<T>, hint?: string): R;
+ 
++  toMatchSVGSnapshot(propertiesOrHint?: ObjectOptions<T>, hint?: string): R;
++
+   toEqualRoundedMatrix(expected: TMat2D, precision?: number): R;
+ 
+   toEqualSVG(expected: string): void;
+diff --git a/vitest.extend.ts b/vitest.extend.ts
+index 3d8a737..a1052bf 100644
+--- a/vitest.extend.ts
++++ b/vitest.extend.ts
+@@ -122,6 +122,24 @@ chai.util.addMethod(
+   },
+ );
+ 
++chai.util.addMethod(
++  chai.Assertion.prototype,
++  'toMatchSVGSnapshot',
++  function (
++    this: Chai.AssertionStatic,
++    propertiesOrHint?: ExtendedOptions | string,
++    hint?: string,
++  ) {
++    const received = chai.util.flag(this, 'object');
++
++    const value = sanitizeSVG(received);
++
++    chai.util.flag(this, 'object', value);
++
++    return rawToMatchSnapshot.call(this, propertiesOrHint, hint);
++  },
++);
++
+ expect.extend({
+   toSameImageObject(actual: FabricImage, expected: FabricImage) {
+     const normalizedActual = {

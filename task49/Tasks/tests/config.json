@@ -1,0 +1,27 @@
+{
+  "task_id": "OpenCTI-Platform__opencti-16540-mm",
+  "verifier_mode": "test_execution",
+  "test_framework": "vitest 4.1.8 (jsdom) + @testing-library/react — synthetic, not present at base_commit; test.patch adds opencti-platform/opencti-front/harbor_tests/",
+  "test_files": [
+    "opencti-platform/opencti-front/harbor_tests/vitest.config.mts",
+    "opencti-platform/opencti-front/harbor_tests/setup.js",
+    "opencti-platform/opencti-front/harbor_tests/draftValidationWorkLabel.test.jsx",
+    "opencti-platform/opencti-front/harbor_tests/stubs/*"
+  ],
+  "f2p": [
+    "Draft validation work status > labels the validation work state of a draft differently from a plain connector work",
+    "Draft validation work status > uses one and the same label for the validation work state whatever the state is",
+    "Draft validation work status > names the validation work state after the validation it reports on",
+    "Draft validation work status > labels the validation work state the same way for an unrelated draft"
+  ],
+  "p2p": [
+    "Draft validation work status (p2p guards) > reads at least the wait, progress and complete work states from the platform schema",
+    "Draft validation work status (p2p guards) > keeps the generic connector work line labelled with the platform status wording",
+    "Draft validation work status (p2p guards) > leaves every other field label of the work line untouched in the draft context",
+    "Draft validation work status (p2p guards) > still shows the work state itself in both contexts",
+    "Draft validation work status (p2p guards) > still shows the name, timings and counters of the draft validation work",
+    "Draft validation work status (p2p guards) > renders one generic work line per work of the connectors screen"
+  ],
+  "synthetic_test_plan": "ConnectorWorkLine.tsx is the shared 'work line' block used by two screens: the connectors screen (through ConnectorWorks.tsx, one line per import work) and the draft overview (through DraftRoot.tsx, one line for the draft's validation work). At base_commit the block hard-codes t_i18n('Status') as the label of its state field, so the approved-draft page labels the validation progress of the draft 'Status' — the wording the platform now uses for the draft workflow status, which is what the issue's screenshot shows. The fix makes the label a per-call-site decision (an optional statusLabel prop) and the draft call site supplies the validation wording. The spec renders the REAL DraftRoot (fed a draft fixture across the relay boundary) and, as the reference context, the REAL ConnectorWorks list, both of which render the REAL ConnectorWorkLine through the REAL Label/TaskStatus/Tag components. Stand-ins exist only for LEAF modules that cannot run offline (react-relay, relay-runtime, react-router-dom, rxjs, ramda, dompurify, js-base64, mdi-material-ui, @mui/icons-material, @mui/styles, i18n, Loader/ErrorNotFound/Breadcrumbs, the design-system Button/Card/CardTitle, the Drawer shell, ConnectorWorksErrorLine, parseWorkErrors, the routed draft screens, relay/environment, Security, utils/Time and the useGranted/useDraftContext/useHelper/useSwitchDraft hooks) — never ConnectorWorkLine, DraftRoot, ConnectorWorks, Label, TaskStatus, useApiMutation, utils/String or @mui/material.",
+  "anti_overfit": "No assertion compares a label against a string copied out of the fix. A work line is read back from the DOM as {label, value} pairs; the state field is LOCATED BY ITS VALUE (the work state it is displaying) and the assertion is then made on that field's LABEL, so the scored contract is the observable mapping 'call site -> wording of the state field' rather than one author's literal. The set of work states is read live from the GraphQL schema's `enum State` (opencti-platform/opencti-graphql/config/schema/opencti.graphql) instead of being hard-coded, and every state is driven through both call sites, so a fix that special-cases the state visible in the screenshot cannot pass. A second, fully disjoint draft/work fixture (different ids, names, timings, counters, state, draft status) repeats the check so nothing can be tied to the reported values. The only wording constraint on the new label is that it mentions the validation it reports on (case-insensitive /validation/) and is not the generic 'Status' — capitalisation and any longer phrasing pass. The p2p side pins what must NOT change: the generic connectors work line keeps the platform's 'Status' wording for every state, every other field label of the line is byte-identical between the two contexts, the state value itself still renders in both, and the name/timings/counters of the draft validation work are unchanged. Verified against two independent correct implementations and four band-aids (see NOTES.md)."
+}

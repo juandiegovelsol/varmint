@@ -1,0 +1,46 @@
+{
+  "behavior_in_task_description": {
+    "outcome": "pass",
+    "explanation": "instruction.md describes each behavior the tests check, at the same level of abstraction the tests use: a character with its own offset (raised/lowered, multiple on one line, on a later line of a multi-line text), decoration thickness parity for both object-level and character-level declarations that must not vary with scale, and rotation-following behavior when text follows a path. These map directly onto the seven f2p test names in tests/config.json. The instruction deliberately withholds the file and exact mechanism (per difficulty_explanation, difficulty='hard'), but does not withhold any behavior that is tested -- it never asks for a specific formula, attribute name, or schema that isn't otherwise supplied, so nothing required to pass is hidden from the agent's view of the problem."
+  },
+  "behavior_in_tests": {
+    "outcome": "pass",
+    "explanation": "Every behavior instruction.md calls out is exercised by tests/test.patch: raised/lowered character displacement (own offset, not twice), multiple displaced characters on one line, displacement carried onto a later line, decoration thickness invariance under scale for both text-level and character-level declarations, and offset-along-rotated-baseline when text follows a path. No described behavior is left untested, and the p2p list covers legitimate pre-existing behavior (baseline parity, x-ordering, font-size carryover, unscaled thickness proportionality, path characters without displacement, background color export) that should not regress."
+  },
+  "informative_test_structure": {
+    "outcome": "pass",
+    "explanation": "tests/test.patch adds a clearly named `describe('canvas and svg export parity', ...)` block with one `it(...)` per behavior, each name written as a plain-English assertion (e.g. 'a raised character is displaced by its own offset and not by twice it'). Helper functions (parseTspans, effectiveDrop, totalPosition) are given short comments explaining their purpose, and tricky expectations (e.g. the path-rotation trig) are annotated inline. tests/verifier.py and tests/judge.py are also heavily commented, explaining the binary reward policy, the rubric contract, and the anti-cheat rationale."
+  },
+  "anti_cheating_measures": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile clones the real repo, checks out the base commit, strips .git and reinitializes a single-commit history (so the agent cannot `git log`/`git diff` forward to the real fix), and copies only the two PNG evidence assets into the image -- tests/ and solution/ are never copied in. The verifier resets any test files the agent may have touched back to harbor_base before applying tests/test.patch, so edits to tests cannot influence scoring. verifier.py explicitly never greps source for the fix, scoring purely from JUnit results, and the rubric judge is fed only a diff with test/spec/snapshot files stripped out (never the task instruction, the golden fix.patch, or the screenshots), preventing it from becoming a similarity checker. The agent phase runs with network_mode='no-network', preventing it from fetching the real upstream PR."
+  },
+  "structured_data_schema": {
+    "outcome": "not_applicable",
+    "explanation": "This is a source-code bug-fix task (editing TextSVGExportMixin.ts); it does not require the agent to produce structured output like JSON/CSV/API responses, so no schema documentation is expected."
+  },
+  "pinned_dependencies": {
+    "outcome": "pass",
+    "explanation": "The environment image is built from `node:22-bookworm` and Node dependencies are installed via `npm ci`, which installs exact versions from the repository's committed package-lock.json (reproducible builds). apt packages (ca-certificates, curl, git, python3) are unpinned but that is acceptable per the guidance. No ad hoc pip installs are used anywhere in the verifier (judge.py explicitly notes it only uses the stdlib since the verifier image has no pip install step)."
+  },
+  "typos": {
+    "outcome": "pass",
+    "explanation": "Reviewed instruction.md, task.toml, the Dockerfile, tests/config.json, tests/verifier.py, tests/judge.py, tests/rubrics.json, solution/solve.sh, solution/fix.patch, and tests/test.patch. Commit hashes in task.toml are valid 40-character SHA1 strings, file paths referenced across task.toml/config.json/Dockerfile/ASSET_MANIFEST.json are internally consistent (e.g. TextSVGExportMixin.ts, TextSVGExportMixin.spec.ts, canvas_render.png/exported_render.png), and no misspellings or broken identifiers were found."
+  },
+  "tests_or_solution_in_image": {
+    "outcome": "pass",
+    "explanation": "environment/Dockerfile only copies `assets/*.png` into the image (as /app/.harbor_assets/); it does not COPY anything from tests/ or solution/, so the agent's build never contains the test spec, snapshot, or the golden fix.patch."
+  },
+  "test_deps_in_image": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile's `npm ci` installs the fabric.js repository's own package-lock.json dependencies (including its existing vitest devDependency), which is standard project setup rather than harness-specific test tooling added for grading. The actual test artifacts (spec file, snapshot) are supplied separately via tests/test.patch and applied only at verification time in test.sh, not baked into the image."
+  },
+  "hardcoded_solution": {
+    "outcome": "pass",
+    "explanation": "solution/solve.sh applies solution/fix.patch (the real upstream developer fix) with `git apply`/`patch` against the source tree, i.e. it reproduces the actual code change to TextSVGExportMixin.ts rather than writing out expected test outputs or answer strings. This mirrors the process an agent would perform (editing the source file), not a shortcut that only satisfies the test assertions directly."
+  },
+  "file_reference_mentioned": {
+    "outcome": "not_applicable",
+    "explanation": "The task requires the agent to fix a bug in existing repository source code (no new output file is produced or checked); tests operate on whatever file(s) the agent modifies via a full vitest run, and file_reference guidance for generated artifacts like output.csv does not apply. Deliberately withholding the specific file name (src/shapes/Text/TextSVGExportMixin.ts) from the instruction is called out in task.toml's difficulty_explanation as an intentional difficulty lever, not a missing spec of a deliverable."
+  }
+}

@@ -1,0 +1,112 @@
+version = "1.0"
+
+[metadata]
+task_id = "SR5-FoundryVTT__SR5-FoundryVTT-1462-mm"
+title = "[BUG] Sprite power sections all adding new powers as general 'Sprite Powers'"
+repository_name = "SR5-FoundryVTT/SR5-FoundryVTT"
+repo_url = "https://github.com/SR5-FoundryVTT/SR5-FoundryVTT"
+issue_number = 1462
+pr_number = 1467
+base_commit = "86fc0f8f31ad9b406d0947faa3f0d9e0c6b90f07"
+fix_commit = "1324bd2d34a2861b212c18f5a631eceaa75ba261"
+task_type = "visual_bug_fix"
+language = "TypeScript"
+framework = "FoundryVTT Application V1 (Shadowrun5e system)"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = """
+The sprite actor sheet's Sprite Powers tab has three list sections (general Sprite Powers,
+Optional/Enabled, Optional/Disabled) that all share the SAME underlying item type
+('sprite_power') and are only distinguished by a `system.optional` field read at render time.
+The screenshot marks FIVE distinct defects spread over that one tab, on both sides of the
+round trip and across six files, and the reward is BINARY -- every one of them has to be
+found, and each is invisible to any test that only looks at the others.
+
+  1. WRITE PATH (the reported headline): each section renders its own '+Add' button, but
+     every one of them funnels through the single generic SR5BaseActorSheet#_onItemCreate,
+     which builds the new item purely from the clicked header's `data-item-id` (the item
+     TYPE) and has no way to know which of the three same-typed sections was clicked -- so
+     every new power is created with no `system.optional` and lands in the general list.
+     Fixing it means threading per-section data from the header into the create call: a
+     discriminator the header actually renders, and a sprite-specific read of it.
+  2. The generic list markup that fixes (1) depend on is itself broken: the shared ListItem
+     partial guards its `itemData` -> `data-*` attribute spread on a truthiness test that is
+     never true for the plain object every caller passes, so the whole mechanism silently
+     renders nothing. It is dead code at the shipped commit -- nothing passes `itemData`
+     today -- so it is invisible until a candidate wires (1) up through it, correctly
+     tags all three headers, and finds the attributes simply absent from the render with
+     no error anywhere. This is the single most expensive defect in the set: it makes an
+     otherwise-correct fix to (1) look wrong.
+  3. The general section's header declares the WRONG item type for its own +Add, so that
+     button does not create a sprite power at all. The two icon helpers beside it still say
+     'sprite_power', so the button looks and reads correctly everywhere except the one
+     attribute that decides what gets created.
+  4. READ PATH: the two optional sections' row filters are swapped, so a power carrying
+     'enabled_option' is listed under "Optional - Disabled" and vice versa. This defect
+     actively fights (1): a candidate who fixes the write path first sees new powers appear
+     under the opposite heading and concludes the two tag VALUES must be swapped. Making
+     that "fix" satisfies the read side while breaking the write side, and the two are
+     graded separately, so the trap costs the whole run. The only way through it is to take
+     the data model (and not the rendered heading) as ground truth.
+  5. The enable/disable control is offered on the wrong rows: the wrapper predicate that
+     decides whether a power can be toggled compares against the wrong optional value, so
+     non-optional powers get a control that does nothing and 'enabled_option' powers lose
+     the one control they need. It also HIDES defect (6) behind itself -- the control has to
+     be restored before the bug in what it does is observable at all.
+  6. The toggle handler moves a power between the two optional sections but writes the
+     inverted `system.enabled` flag, so a power that has just been switched off reports
+     itself as enabled (and keeps applying its active effects). The two halves of the state
+     -- which section it sits in, and whether it is on -- disagree.
+
+The verifier drives every one of these against the candidate's own tree: the templates are
+really rendered (so the headers must actually emit a section discriminator, the rows must
+actually land under the right heading, and the toggle control must actually appear on the
+right rows), and the rendered headers are then fed to the real `_onItemCreate`, while the
+real `_onListItemToggleEnabled` is driven against item fixtures and scored on the resulting
+item state. Wiring up only part of the round trip fixes nothing in the running app and
+scores 0.0. Nothing about attribute names, helper names, update-call shape or file layout is
+fixed by the tests: any naming, any source directory and either update API works, as long as
+the observable behaviour closes.
+"""
+files_edited = [
+  "src/module/actor/sheets/SR5BaseActorSheet.ts",
+  "src/module/actor/sheets/SR5SpriteActorSheet.ts",
+  "src/module/data/SR5ItemDataWrapper.ts",
+  "src/module/handlebars/ItemLineHelpers.ts",
+  "src/templates/actor/parts/matrix/SpritePowerList.html",
+  "src/templates/common/List/ListItem.html",
+]
+f2p = [
+  "sprite_power_enabled_section_create_tags_new_item_enabled_option",
+  "sprite_power_disabled_section_create_tags_new_item_disabled_option",
+  "sprite_power_sections_bucket_independently_not_all_into_general",
+  "sprite_power_sections_all_create_sprite_power_typed_items",
+  "sprite_power_rows_render_under_the_section_matching_their_optional_state",
+  "sprite_power_enable_toggle_offered_only_for_optional_powers",
+  "sprite_power_enable_toggle_swaps_section_and_enabled_state_together",
+]
+p2p = [
+  "actor_sheet_generic_item_create_unaffected_by_sprite_specific_data",
+  "sprite_sheet_non_sprite_power_item_create_stays_unaffected",
+  "item_create_still_unhides_its_inventory_section",
+  "item_create_still_adds_to_selected_non_default_inventory",
+  "sprite_power_section_headers_still_carry_an_item_type_id",
+  "enable_toggle_still_ignores_standard_powers_and_non_power_items",
+]
+tags = ["multimodal", "visual_bug_fix"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+network_mode = "public"
+timeout_sec = 2400.0
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

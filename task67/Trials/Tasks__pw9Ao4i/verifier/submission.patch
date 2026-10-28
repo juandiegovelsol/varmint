@@ -1,0 +1,37 @@
+diff --git a/src/fheroes2/dialog/dialog_selectscenario.cpp b/src/fheroes2/dialog/dialog_selectscenario.cpp
+index 29bd8e3..364b9b4 100644
+--- a/src/fheroes2/dialog/dialog_selectscenario.cpp
++++ b/src/fheroes2/dialog/dialog_selectscenario.cpp
+@@ -146,6 +146,20 @@ void ScenarioListBox::ActionListPressRight( Maps::FileInfo & info )
+     fheroes2::showMessage( header, body, Dialog::ZERO );
+ }
+ 
++void ScenarioListBox::ActionListPressRight( Maps::FileInfo & info, const fheroes2::Point & mousePos, int32_t itemOffsetX, int32_t /*itemOffsetY*/ )
++{
++    // The map name occupies the horizontal space between the "map type" icon column and the "victory condition" icon column
++    // (see RedrawItem for the exact layout). Only a right-click on the name should open the location / map-type popup.
++    // Right-clicks on the icon columns are intentionally left to the caller so that each icon keeps its own help popup.
++    const int32_t nameAreaStart = itemOffsetX + 47; // right edge of the "map type" icon column
++    const int32_t nameAreaEnd = itemOffsetX + 213; // left edge of the "victory condition" icon column
++
++    if ( mousePos.x < nameAreaStart || mousePos.x >= nameAreaEnd )
++        return;
++
++    ActionListPressRight( info );
++}
++
+ void ScenarioListBox::RedrawBackground( const fheroes2::Point & dst )
+ {
+     fheroes2::Display & display = fheroes2::Display::instance();
+diff --git a/src/fheroes2/dialog/dialog_selectscenario.h b/src/fheroes2/dialog/dialog_selectscenario.h
+index 04dc9ea..e068848 100644
+--- a/src/fheroes2/dialog/dialog_selectscenario.h
++++ b/src/fheroes2/dialog/dialog_selectscenario.h
+@@ -55,6 +55,7 @@ public:
+     }
+ 
+     void ActionListPressRight( Maps::FileInfo & info ) override;
++    void ActionListPressRight( Maps::FileInfo & info, const fheroes2::Point & mousePos, int32_t itemOffsetX, int32_t itemOffsetY ) override;
+ 
+     bool selectOk;
+ };

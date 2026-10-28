@@ -1,0 +1,215 @@
+diff --git a/packages/web-components/src/components/content-switcher/__tests__/content-switcher-test.js b/packages/web-components/src/components/content-switcher/__tests__/content-switcher-test.js
+index dac11551e73d..43c7c5436315 100644
+--- a/packages/web-components/src/components/content-switcher/__tests__/content-switcher-test.js
++++ b/packages/web-components/src/components/content-switcher/__tests__/content-switcher-test.js
+@@ -138,5 +138,95 @@ describe('cds-content-switcher', function () {
+     expect(eventLeft.detail.item.getAttribute('value')).to.equal('all');
+   });
+
++  it('should emit an event on click when selectionMode is manual', async () => {
++    const el = await fixture(html`
++      <cds-content-switcher selection-mode="manual">
++        <cds-content-switcher-item name="one" value="all">
++          First section
++        </cds-content-switcher-item>
++        <cds-content-switcher-item name="two" value="cloudFoundry">
++          Second section
++        </cds-content-switcher-item>
++        <cds-content-switcher-item name="three" value="staging">
++          Third section
++        </cds-content-switcher-item>
++      </cds-content-switcher>
++    `);
++
++    await el.updateComplete;
++
++    const items = el.querySelectorAll('cds-content-switcher-item');
++    const second = items[1];
++    await second.updateComplete;
++
++    const eventPromise = oneEvent(el, 'cds-content-switcher-selected');
++    const button = second.shadowRoot.querySelector('button');
++    button.click();
++
++    const { detail } = await eventPromise;
++
++    expect(detail.item).to.equal(second);
++    expect(detail.item.getAttribute('name')).to.equal('two');
++    expect(detail.item.getAttribute('value')).to.equal('cloudFoundry');
++    expect(detail.item.textContent.trim()).to.equal('Second section');
++    expect(detail.index).to.equal(1);
++    expect(detail.name).to.equal('two');
++    expect(detail.text).to.equal('Second section');
++  });
++
++  it('should emit an event on Enter or Space when selectionMode is manual', async () => {
++    const el = await fixture(html`
++      <cds-content-switcher selection-mode="manual">
++        <cds-content-switcher-item name="one" value="all">
++          First section
++        </cds-content-switcher-item>
++        <cds-content-switcher-item name="two" value="cloudFoundry">
++          Second section
++        </cds-content-switcher-item>
++        <cds-content-switcher-item name="three" value="staging">
++          Third section
++        </cds-content-switcher-item>
++      </cds-content-switcher>
++    `);
++
++    await el.updateComplete;
++
++    const items = el.querySelectorAll('cds-content-switcher-item');
++    const button = items[0].shadowRoot.querySelector('button');
++    button.focus();
++
++    await sendKeys({ press: 'ArrowRight' });
++    await el.updateComplete;
++    await items[1].updateComplete;
++
++    let eventPromise = oneEvent(el, 'cds-content-switcher-selected');
++    await sendKeys({ press: 'Enter' });
++    let { detail } = await eventPromise;
++
++    expect(detail.item).to.equal(items[1]);
++    expect(detail.item.getAttribute('name')).to.equal('two');
++    expect(detail.item.getAttribute('value')).to.equal('cloudFoundry');
++    expect(detail.item.textContent.trim()).to.equal('Second section');
++    expect(detail.index).to.equal(1);
++    expect(detail.name).to.equal('two');
++    expect(detail.text).to.equal('Second section');
++
++    await sendKeys({ press: 'ArrowRight' });
++    await el.updateComplete;
++    await items[2].updateComplete;
++
++    eventPromise = oneEvent(el, 'cds-content-switcher-selected');
++    await sendKeys({ press: ' ' });
++    ({ detail } = await eventPromise);
++
++    expect(detail.item).to.equal(items[2]);
++    expect(detail.item.getAttribute('name')).to.equal('three');
++    expect(detail.item.getAttribute('value')).to.equal('staging');
++    expect(detail.item.textContent.trim()).to.equal('Third section');
++    expect(detail.index).to.equal(2);
++    expect(detail.name).to.equal('three');
++    expect(detail.text).to.equal('Third section');
++  });
++
+   it('should support size attribute', async () => {
+     const el = await fixture(html`
+       <cds-content-switcher size="lg">
+
+diff --git a/packages/web-components/src/components/tabs/__tests__/tabs-test.js b/packages/web-components/src/components/tabs/__tests__/tabs-test.js
+new file mode 100644
+--- /dev/null
++++ b/packages/web-components/src/components/tabs/__tests__/tabs-test.js
+@@ -0,0 +1,108 @@
++/**
++ * Copyright IBM Corp. 2019, 2026
++ *
++ * This source code is licensed under the Apache-2.0 license found in the
++ * LICENSE file in the root directory of this source tree.
++ */
++
++import { expect, fixture, html, oneEvent } from '@open-wc/testing';
++import { sendKeys } from '@web/test-runner-commands';
++import '@carbon/web-components/es/components/tabs/index.js';
++
++describe('cds-tabs manual selection mode', function () {
++  it('should move focus without changing selection or emitting cds-tabs-selected during arrow-key navigation', async () => {
++    const el = await fixture(html`
++      <cds-tabs value="all" selection-mode="manual">
++        <cds-tab id="tab-all" target="panel-all" value="all">
++          Dashboard
++        </cds-tab>
++        <cds-tab
++          id="tab-cloudFoundry"
++          target="panel-cloudFoundry"
++          value="cloudFoundry">
++          Monitoring
++        </cds-tab>
++        <cds-tab id="tab-staging" target="panel-staging" value="staging">
++          Activity
++        </cds-tab>
++      </cds-tabs>
++    `);
++
++    await el.updateComplete;
++
++    const tabs = el.querySelectorAll('cds-tab');
++    const firstLink = tabs[0].shadowRoot.querySelector('a');
++    firstLink.focus();
++
++    let eventCount = 0;
++    const onSelected = () => {
++      eventCount++;
++    };
++
++    el.addEventListener('cds-tabs-selected', onSelected);
++
++    await sendKeys({ press: 'ArrowRight' });
++    await el.updateComplete;
++    await tabs[1].updateComplete;
++
++    expect(document.activeElement).to.equal(tabs[1]);
++    expect(tabs[1].shadowRoot.activeElement).to.equal(
++      tabs[1].shadowRoot.querySelector('a')
++    );
++    expect(el.value).to.equal('all');
++    expect(eventCount).to.equal(0);
++
++    await sendKeys({ press: 'ArrowLeft' });
++    await el.updateComplete;
++    await tabs[0].updateComplete;
++
++    expect(document.activeElement).to.equal(tabs[0]);
++    expect(tabs[0].shadowRoot.activeElement).to.equal(
++      tabs[0].shadowRoot.querySelector('a')
++    );
++    expect(el.value).to.equal('all');
++    expect(eventCount).to.equal(0);
++
++    el.removeEventListener('cds-tabs-selected', onSelected);
++  });
++
++  it('should emit cds-tabs-selected when the focused tab is explicitly selected with the keyboard', async () => {
++    for (const key of ['Enter', ' ']) {
++      const el = await fixture(html`
++        <cds-tabs value="all" selection-mode="manual">
++          <cds-tab id="tab-all" target="panel-all" value="all">
++            Dashboard
++          </cds-tab>
++          <cds-tab
++            id="tab-cloudFoundry"
++            target="panel-cloudFoundry"
++            value="cloudFoundry">
++            Monitoring
++          </cds-tab>
++          <cds-tab id="tab-staging" target="panel-staging" value="staging">
++            Activity
++          </cds-tab>
++        </cds-tabs>
++      `);
++
++      await el.updateComplete;
++
++      const tabs = el.querySelectorAll('cds-tab');
++      tabs[0].shadowRoot.querySelector('a').focus();
++
++      await sendKeys({ press: 'ArrowRight' });
++      await el.updateComplete;
++      await tabs[1].updateComplete;
++
++      expect(el.value).to.equal('all');
++
++      const eventPromise = oneEvent(el, 'cds-tabs-selected');
++      await sendKeys({ press: key });
++      const { detail } = await eventPromise;
++
++      expect(detail.item).to.equal(tabs[1]);
++      expect(detail.item.getAttribute('value')).to.equal('cloudFoundry');
++      expect(el.value).to.equal('cloudFoundry');
++    }
++  });
++});

@@ -1,0 +1,242 @@
+== applying test.patch ==
+== checking pinned test deps (no install) ==
+pytest 8.4.2
+pygame-ce 2.5.8 (SDL 2.32.10, Python 3.11.16)
+pygame 2.5.8
+== running f2p + p2p tests ==
+(tests exited non-zero; parsing report)
+== computing reward ==
+{
+  "reward": 0.0,
+  "rubric": "not graded",
+  "f2p": {
+    "tests.test_focus_matrix.AdjustRowAtScale::test_new_row_fits_rightmost_element_1080p_fullscreen": "fail",
+    "tests.test_focus_matrix.AdjustRowAtScale::test_new_row_fits_rightmost_element_1440p_fullscreen": "fail",
+    "tests.test_focus_matrix.AdjustRowAtScale::test_new_row_fits_mid_right_element_1080p_fullscreen": "fail",
+    "tests.test_focus_matrix.BuildMapAtScale::test_add_to_map_across_a_scaled_screen": "fail",
+    "tests.test_focus_matrix.BuildMapAtScale::test_add_to_map_across_a_4k_screen": "fail"
+  },
+  "p2p": {
+    "tests.test_focus_matrix.WindowedBehaviourUnchanged::test_row_indexing_in_a_window": "pass",
+    "tests.test_focus_matrix.WindowedBehaviourUnchanged::test_map_rows_are_grouped_by_y_in_a_window": "pass",
+    "tests.test_focus_matrix.WindowedBehaviourUnchanged::test_navigation_between_elements_in_a_window": "pass",
+    "tests.test_focus_matrix.WindowedBehaviourUnchanged::test_removing_an_element_clears_its_slot": "pass"
+  },
+  "f2p_passing": [],
+  "p2p_passing": [
+    "tests.test_focus_matrix.WindowedBehaviourUnchanged::test_row_indexing_in_a_window",
+    "tests.test_focus_matrix.WindowedBehaviourUnchanged::test_map_rows_are_grouped_by_y_in_a_window",
+    "tests.test_focus_matrix.WindowedBehaviourUnchanged::test_navigation_between_elements_in_a_window",
+    "tests.test_focus_matrix.WindowedBehaviourUnchanged::test_removing_an_element_clears_its_slot"
+  ]
+}
+reward=0.0
+_fits_mid_right_element_1080p_fullscreen>
+
+    def test_new_row_fits_mid_right_element_1080p_fullscreen(self):
+        self.use_fullscreen_display(1920, 1080)
+>       self._assert_row_holds_element(self.element_at_logical_x("save_button", 700))
+
+tests/test_focus_matrix.py:151: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_focus_matrix.py:115: in _assert_row_holds_element
+    row = focus_matrix.adjust_row([], element)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+row = [None, None, None, None, None, None, ...]
+element = <FakeFocusable save_button @ (1410, 165)>
+
+    def adjust_row(
+        row: list[Optional[UIElement]], element: UIElement
+    ) -> list[Optional[UIElement]]:
+        if not row:  # if row is empty
+            row = [None for x in range(int(ui_scale_value(800) / ui_scale_value(10)) + 1)]
+    
+        index = int(element.get_abs_rect().x / ui_scale_value(10))
+    
+        row.insert(index, element)
+>       row.pop(index + 1)
+E       IndexError: pop index out of range
+
+scripts/ui/focus_matrix.py:121: IndexError
+____ AdjustRowAtScale.test_new_row_fits_rightmost_element_1080p_fullscreen _____
+
+self = <tests.test_focus_matrix.AdjustRowAtScale testMethod=test_new_row_fits_rightmost_element_1080p_fullscreen>
+
+    def test_new_row_fits_rightmost_element_1080p_fullscreen(self):
+        self.use_fullscreen_display(1920, 1080)
+        self.assertGreater(screen_settings.screen_scale, 1)
+>       self._assert_row_holds_element(
+            self.element_at_logical_x("rightmost_button", 780)
+        )
+
+tests/test_focus_matrix.py:138: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_focus_matrix.py:115: in _assert_row_holds_element
+    row = focus_matrix.adjust_row([], element)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+row = [None, None, None, None, None, None, ...]
+element = <FakeFocusable rightmost_button @ (1530, 165)>
+
+    def adjust_row(
+        row: list[Optional[UIElement]], element: UIElement
+    ) -> list[Optional[UIElement]]:
+        if not row:  # if row is empty
+            row = [None for x in range(int(ui_scale_value(800) / ui_scale_value(10)) + 1)]
+    
+        index = int(element.get_abs_rect().x / ui_scale_value(10))
+    
+        row.insert(index, element)
+>       row.pop(index + 1)
+E       IndexError: pop index out of range
+
+scripts/ui/focus_matrix.py:121: IndexError
+____ AdjustRowAtScale.test_new_row_fits_rightmost_element_1440p_fullscreen _____
+
+self = <tests.test_focus_matrix.AdjustRowAtScale testMethod=test_new_row_fits_rightmost_element_1440p_fullscreen>
+
+    def test_new_row_fits_rightmost_element_1440p_fullscreen(self):
+        self.use_fullscreen_display(2560, 1440)
+        self.assertGreater(screen_settings.screen_scale, 1)
+>       self._assert_row_holds_element(
+            self.element_at_logical_x("rightmost_button", 780)
+        )
+
+tests/test_focus_matrix.py:145: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_focus_matrix.py:115: in _assert_row_holds_element
+    row = focus_matrix.adjust_row([], element)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+row = [None, None, None, None, None, None, ...]
+element = <FakeFocusable rightmost_button @ (2040, 220)>
+
+    def adjust_row(
+        row: list[Optional[UIElement]], element: UIElement
+    ) -> list[Optional[UIElement]]:
+        if not row:  # if row is empty
+            row = [None for x in range(int(ui_scale_value(800) / ui_scale_value(10)) + 1)]
+    
+        index = int(element.get_abs_rect().x / ui_scale_value(10))
+    
+        row.insert(index, element)
+>       row.pop(index + 1)
+E       IndexError: pop index out of range
+
+scripts/ui/focus_matrix.py:121: IndexError
+______________ BuildMapAtScale.test_add_to_map_across_a_4k_screen ______________
+
+self = <tests.test_focus_matrix.BuildMapAtScale testMethod=test_add_to_map_across_a_4k_screen>
+
+    def test_add_to_map_across_a_4k_screen(self):
+        self.use_fullscreen_display(3840, 2160)
+        elements = [
+            self.element_at_logical_x("top_left", 40, logical_y=100),
+            self.element_at_logical_x("top_right", 740, logical_y=100),
+            self.element_at_logical_x("bottom_left", 40, logical_y=500),
+        ]
+>       self._assert_map_contains_all(elements)
+
+tests/test_focus_matrix.py:191: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_focus_matrix.py:158: in _assert_map_contains_all
+    current_map = focus_matrix.add_to_map([], elements)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ui/focus_matrix.py:73: in add_to_map
+    current_rows_by_y_pos[target_row] = adjust_row(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+row = [None, None, None, None, None, None, ...]
+element = <FakeFocusable top_right @ (2940, 330)>
+
+    def adjust_row(
+        row: list[Optional[UIElement]], element: UIElement
+    ) -> list[Optional[UIElement]]:
+        if not row:  # if row is empty
+            row = [None for x in range(int(ui_scale_value(800) / ui_scale_value(10)) + 1)]
+    
+        index = int(element.get_abs_rect().x / ui_scale_value(10))
+    
+        row.insert(index, element)
+>       row.pop(index + 1)
+E       IndexError: pop index out of range
+
+scripts/ui/focus_matrix.py:121: IndexError
+____________ BuildMapAtScale.test_add_to_map_across_a_scaled_screen ____________
+
+self = <tests.test_focus_matrix.BuildMapAtScale testMethod=test_add_to_map_across_a_scaled_screen>
+
+    def test_add_to_map_across_a_scaled_screen(self):
+        self.use_fullscreen_display(1920, 1080)
+        elements = [
+            self.element_at_logical_x("left", 30, logical_y=120),
+            self.element_at_logical_x("middle", 380, logical_y=120),
+            self.element_at_logical_x("right", 720, logical_y=120),
+        ]
+>       current_map = self._assert_map_contains_all(elements)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_focus_matrix.py:176: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_focus_matrix.py:158: in _assert_map_contains_all
+    current_map = focus_matrix.add_to_map([], elements)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+scripts/ui/focus_matrix.py:73: in add_to_map
+    current_rows_by_y_pos[target_row] = adjust_row(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+row = [None, None, None, None, None, None, ...]
+element = <FakeFocusable right @ (1440, 195)>
+
+    def adjust_row(
+        row: list[Optional[UIElement]], element: UIElement
+    ) -> list[Optional[UIElement]]:
+        if not row:  # if row is empty
+            row = [None for x in range(int(ui_scale_value(800) / ui_scale_value(10)) + 1)]
+    
+        index = int(element.get_abs_rect().x / ui_scale_value(10))
+    
+        row.insert(index, element)
+>       row.pop(index + 1)
+E       IndexError: pop index out of range
+
+scripts/ui/focus_matrix.py:121: IndexError
+---------------- generated xml file: /logs/verifier/report.xml -----------------
+=========================== short test summary info ============================
+FAILED tests/test_focus_matrix.py::AdjustRowAtScale::test_new_row_fits_mid_right_element_1080p_fullscreen
+FAILED tests/test_focus_matrix.py::AdjustRowAtScale::test_new_row_fits_rightmost_element_1080p_fullscreen
+FAILED tests/test_focus_matrix.py::AdjustRowAtScale::test_new_row_fits_rightmost_element_1440p_fullscreen
+FAILED tests/test_focus_matrix.py::BuildMapAtScale::test_add_to_map_across_a_4k_screen
+FAILED tests/test_focus_matrix.py::BuildMapAtScale::test_add_to_map_across_a_scaled_screen
+========================= 5 failed, 4 passed in 0.22s ==========================
+(tests exited non-zero; parsing report)
+== computing reward ==
+{
+  "reward": 0.0,
+  "rubric": "not graded",
+  "f2p": {
+    "tests.test_focus_matrix.AdjustRowAtScale::test_new_row_fits_rightmost_element_1080p_fullscreen": "fail",
+    "tests.test_focus_matrix.AdjustRowAtScale::test_new_row_fits_rightmost_element_1440p_fullscreen": "fail",
+    "tests.test_focus_matrix.AdjustRowAtScale::test_new_row_fits_mid_right_element_1080p_fullscreen": "fail",
+    "tests.test_focus_matrix.BuildMapAtScale::test_add_to_map_across_a_scaled_screen": "fail",
+    "tests.test_focus_matrix.BuildMapAtScale::test_add_to_map_across_a_4k_screen": "fail"
+  },
+  "p2p": {
+    "tests.test_focus_matrix.WindowedBehaviourUnchanged::test_row_indexing_in_a_window": "pass",
+    "tests.test_focus_matrix.WindowedBehaviourUnchanged::test_map_rows_are_grouped_by_y_in_a_window": "pass",
+    "tests.test_focus_matrix.WindowedBehaviourUnchanged::test_navigation_between_elements_in_a_window": "pass",
+    "tests.test_focus_matrix.WindowedBehaviourUnchanged::test_removing_an_element_clears_its_slot": "pass"
+  },
+  "f2p_passing": [],
+  "p2p_passing": [
+    "tests.test_focus_matrix.WindowedBehaviourUnchanged::test_row_indexing_in_a_window",
+    "tests.test_focus_matrix.WindowedBehaviourUnchanged::test_map_rows_are_grouped_by_y_in_a_window",
+    "tests.test_focus_matrix.WindowedBehaviourUnchanged::test_navigation_between_elements_in_a_window",
+    "tests.test_focus_matrix.WindowedBehaviourUnchanged::test_removing_an_element_clears_its_slot"
+  ]
+}
+reward=0.0

@@ -1,0 +1,85 @@
+version = "1.0"
+
+[metadata]
+task_id = "carbon-design-system__carbon-21854-mm"
+title = "[Bug]: cds-tabs with selection-mode=\"manual\" dispatches cds-tabs-selected event on keyboard navigation, but tab is not selected"
+repository_name = "carbon-design-system/carbon"
+repo_url = "https://github.com/carbon-design-system/carbon"
+issue_number = 21854
+pr_number = 22018
+base_commit = "1a9ccca45f0671c874a9cf83d244ab81f7adc7ab"
+fix_commit = "9595886294b39b526bbb5bf158824e0dcafce0e1"
+task_type = "temporal_interaction"
+language = "TypeScript"
+framework = "Web Components (Lit)"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = """
+The prose states only the interaction contract that must hold. Everything needed to act on
+it lives in the attached GIF: which of the repository's ~100 components is involved, which
+of its two framework implementations is running, which selection mode it is in, which
+custom event is at fault, and what that event's payload looks like. The recording shows
+focus moving to a neighbouring tab while the previously selected tab stays selected and its
+panel stays open, with the console logging a selection event and its detail object. Without
+the recording the description matches the React tabs, the web-components tabs and the
+content switcher equally well, so the visual sequence is what makes the task actionable.
+
+The starting state carries several independent defects along the same interaction path, and
+they mask each other: keyboard movement emits the selection event that should only follow
+explicit activation, while explicit activation changes the selection without emitting it;
+the manual-mode keyboard cursor is not the state that movement advances, so movement past
+the first step, and activation afterwards, act on the wrong tab; movement stops at both ends
+of the list instead of continuing onto the opposite one; movement does not skip tabs that
+cannot be selected; the jump-to-either-end keys select outright instead of moving focus; the
+pointer does not hand its position over to the keyboard; and the selected state exposed to
+assistive technology tracks the focus rather than the selection. The defects are spread
+across the tabs element, the tab element and the content switcher base class the tabs extend,
+so a fix confined to the file named by the symptom cannot pass. The task names no file, no
+method, no key, no event, no attribute and no expected code change.
+
+The verifier checks observable behavior only. It drives real key presses and clicks in a
+headless browser and asserts what a user or assistive technology can perceive: where the
+focus is, which tab is selected, the component value, the accessible selected state, and the
+selection events with their payloads. Existing content-switcher click, keyboard-selection,
+selectedIndex and manual-mode behavior must keep passing. No test refers to internal method
+names, interaction-type values, event-gating logic or source structure, so any implementation
+that produces the specified behavior scores full marks.
+"""
+files_edited = [
+  "packages/web-components/src/components/content-switcher/content-switcher.ts",
+  "packages/web-components/src/components/tabs/tabs.ts",
+  "packages/web-components/src/components/tabs/tab.ts",
+]
+f2p = [
+  "cds-tabs manual selection mode > should move focus without changing selection or emitting cds-tabs-selected during arrow-key navigation",
+  "cds-tabs manual selection mode > should emit cds-tabs-selected when the focused tab is explicitly selected with the keyboard",
+  "cds-tabs manual selection mode > should wrap around both ends of the tab list during arrow-key navigation",
+  "cds-tabs manual selection mode > should skip disabled tabs when moving focus and when selecting",
+  "cds-tabs manual selection mode > should move focus to the first and last tab without changing the selection",
+  "cds-tabs manual selection mode > should expose the selected state on the selected tab rather than on the focused one",
+  "cds-tabs manual selection mode > should continue keyboard navigation from the tab most recently selected with the pointer",
+]
+p2p = [
+  "cds-content-switcher > should apply selectedIndex correctly",
+  "cds-content-switcher > should emit event on click with matching details",
+  "cds-content-switcher > should emit event on keydown (ArrowRight/ArrowLeft)",
+  "cds-content-switcher > should emit an event on click when selectionMode is manual",
+  "cds-content-switcher > should emit an event on Enter or Space when selectionMode is manual",
+]
+tags = ["multimodal", "temporal_interaction", "web-components"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

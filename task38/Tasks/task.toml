@@ -1,0 +1,62 @@
+version = "1.0"
+
+[metadata]
+task_id = "fossasia__eventyay-4771-mm"
+title = "Duplicate social media teams are displayed in the Event Organizer"
+repository_name = "fossasia/eventyay"
+repo_url = "https://github.com/fossasia/eventyay"
+issue_number = 4771
+pr_number = 4779
+issue_url = "https://github.com/fossasia/eventyay/issues/4771"
+pr_url = "https://github.com/fossasia/eventyay/pull/4779"
+link_evidence = "timeline cross-referenced -> #4779"
+base_commit = "a2f9cd67f22450fcb0f57e7891bb820a441c6956"
+fix_commit = "cbe9ace030dd45e18a0c60626665b136f9508dd4"
+task_type = "visual_bug_fix"
+language = "Python"
+framework = "pytest + pytest-django (Django test client, in-image PostgreSQL)"
+cross_file = true
+visual_essentiality = "required"
+synthetic_tests_required = true
+provenance = "milestone-2 packager; build recipe inherited from fossasia__eventyay-3984-mm.tar.gz"
+difficulty = "hard"
+difficulty_explanation = """
+The defect must be localized primarily from the visual discrepancy between the event dashboard and the organizer team configuration. The verifier exercises duplicate suppression across multiple data shapes while preserving event scoping, organizer isolation, permission filtering, and dashboard behavior, so a narrow output-specific adjustment is insufficient.
+"""
+files_edited = [
+  "app/eventyay/base/models/event.py",
+  "app/eventyay/eventyay_common/views/dashboards.py"
+]
+f2p = [
+  "tests.tickets.base.test_event_team_listing::test_each_concerned_team_is_listed_once_palette_alpha",
+  "tests.tickets.base.test_event_team_listing::test_each_concerned_team_is_listed_once_palette_bravo",
+  "tests.tickets.base.test_event_team_listing::test_number_of_listed_teams_matches_number_of_concerned_teams",
+  "tests.tickets.base.test_event_team_listing::test_stale_event_limits_on_an_all_events_team_do_not_multiply_it",
+  "tests.tickets.base.test_event_team_listing::test_event_dashboard_panel_names_each_team_once",
+  "app/tests/tickets/base/test_event_team_listing.py::test_event_dashboard_panel_respects_event_team_scope"
+]
+p2p = [
+  "tests.tickets.base.test_event_team_listing::test_team_limited_to_another_event_is_not_listed",
+  "tests.tickets.base.test_event_team_listing::test_team_of_a_different_organizer_is_not_listed",
+  "tests.tickets.base.test_event_team_listing::test_event_specific_team_is_still_listed",
+  "tests.tickets.base.test_event_team_listing::test_team_scoped_to_nothing_is_not_listed",
+  "tests.tickets.base.test_event_team_listing::test_no_teams_are_listed_when_the_organizer_has_none",
+  "tests.tickets.base.test_event_team_listing::test_listed_teams_can_still_be_narrowed_by_permission",
+  "tests.tickets.base.test_event_team_listing::test_event_permissions_of_a_team_member_are_unchanged",
+]
+tags = ["multimodal", "visual_bug_fix"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"
