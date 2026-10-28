@@ -17,11 +17,14 @@ run_tests() {
     examples/toolbar/test.ts \
     examples/tab/test.ts \
     examples/radio/test.ts \
+    examples/combobox-textarea/test.ts \
+    examples/select-listbox/test.ts \
+    examples/combobox-multiple-select/test.ts \
     --reporter=junit --outputFile="$JUNIT_OUT"
 }
 # Directories holding the repo's test plumbing (configs, helpers) that must also be restored so a
 # candidate cannot replace the harness. Space-separated, relative to /app; '' if none.
-PROTECTED_DIRS='examples/composite/test.ts examples/toolbar/test.ts examples/tab/test.ts examples/radio/test.ts vitest.config.ts vitest.setup.ts package.json packages/ariakit-test'
+PROTECTED_DIRS='examples/composite/test.ts examples/toolbar/test.ts examples/tab/test.ts examples/radio/test.ts examples/combobox-textarea/test.ts examples/select-listbox/test.ts examples/combobox-multiple-select/test.ts vitest.config.ts vitest.setup.ts package.json packages/ariakit-test'
 # -----------------------------------------------------------------------------------------------
 
 mkdir -p /logs/verifier

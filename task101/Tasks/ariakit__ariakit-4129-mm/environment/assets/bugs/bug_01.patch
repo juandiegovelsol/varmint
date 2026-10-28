@@ -1,14 +1,21 @@
 diff --git a/packages/ariakit-react-core/src/composite/composite-item.tsx b/packages/ariakit-react-core/src/composite/composite-item.tsx
-index 0f139c2..51cb464 100644
+index 0f139c2..fe9fb04 100644
 --- a/packages/ariakit-react-core/src/composite/composite-item.tsx
 +++ b/packages/ariakit-react-core/src/composite/composite-item.tsx
-@@ -1,4 +1,5 @@
+@@ -6,7 +6,11 @@ import {
+   isTextField,
+   isTextbox,
+ } from "@ariakit/core/utils/dom";
+-import { isPortalEvent, isSelfTarget } from "@ariakit/core/utils/events";
++import {
++  isFocusEventOutside,
++  isPortalEvent,
++  isSelfTarget,
++} from "@ariakit/core/utils/events";
  import {
-+  contains,
-   getScrollingElement,
-   getTextboxSelection,
-   getTextboxValue,
-@@ -204,8 +205,20 @@ export const useCompositeItem = createHook<TagName, CompositeItemOptions>(
+   disabledFromProps,
+   removeUndefinedValues,
+@@ -204,8 +208,21 @@ export const useCompositeItem = createHook<TagName, CompositeItemOptions>(
        // elements. In this case, we just ignore the focus event on this parent
        // item.
        if (targetIsAnotherItem(event, store)) return;
@@ -16,14 +23,15 @@ index 0f139c2..51cb464 100644
 -      store.setActiveId(id);
 +      const { virtualFocus, baseElement, renderedItems } = store.getState();
 +      // With roving tabindex, once the items are rendered, focus coming from
-+      // outside the composite widget (for example, when tabbing into it) can
-+      // only land on the tabbable item, which is already the active one. So
-+      // there's nothing to update in this case.
++      // outside the composite widget (for example, when tabbing into it) lands
++      // on the tabbable item, which is already the active one. So the active id
++      // only needs to be updated when focus moves within the widget or lands on
++      // an item that isn't tabbable.
 +      const isTabbingIn =
 +        !virtualFocus &&
 +        !!renderedItems.length &&
 +        !!baseElement &&
-+        !contains(baseElement, event.relatedTarget) &&
++        isFocusEventOutside(event, baseElement) &&
 +        event.currentTarget.tabIndex >= 0;
 +      if (!isTabbingIn) {
 +        store.setActiveId(id);

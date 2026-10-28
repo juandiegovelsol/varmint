@@ -17,29 +17,37 @@ index c170b7f..b802360 100644
      }
  
 diff --git a/packages/ariakit-react-core/src/composite/composite-item.tsx b/packages/ariakit-react-core/src/composite/composite-item.tsx
-index 51cb464..b8fc44f 100644
+index fe9fb04..b8fc44f 100644
 --- a/packages/ariakit-react-core/src/composite/composite-item.tsx
 +++ b/packages/ariakit-react-core/src/composite/composite-item.tsx
-@@ -1,5 +1,4 @@
+@@ -6,11 +6,7 @@ import {
+   isTextField,
+   isTextbox,
+ } from "@ariakit/core/utils/dom";
+-import {
+-  isFocusEventOutside,
+-  isPortalEvent,
+-  isSelfTarget,
+-} from "@ariakit/core/utils/events";
++import { isPortalEvent, isSelfTarget } from "@ariakit/core/utils/events";
  import {
--  contains,
-   getScrollingElement,
-   getTextboxSelection,
-   getTextboxValue,
-@@ -205,20 +204,8 @@ export const useCompositeItem = createHook<TagName, CompositeItemOptions>(
+   disabledFromProps,
+   removeUndefinedValues,
+@@ -208,21 +204,8 @@ export const useCompositeItem = createHook<TagName, CompositeItemOptions>(
        // elements. In this case, we just ignore the focus event on this parent
        // item.
        if (targetIsAnotherItem(event, store)) return;
 -      const { virtualFocus, baseElement, renderedItems } = store.getState();
 -      // With roving tabindex, once the items are rendered, focus coming from
--      // outside the composite widget (for example, when tabbing into it) can
--      // only land on the tabbable item, which is already the active one. So
--      // there's nothing to update in this case.
+-      // outside the composite widget (for example, when tabbing into it) lands
+-      // on the tabbable item, which is already the active one. So the active id
+-      // only needs to be updated when focus moves within the widget or lands on
+-      // an item that isn't tabbable.
 -      const isTabbingIn =
 -        !virtualFocus &&
 -        !!renderedItems.length &&
 -        !!baseElement &&
--        !contains(baseElement, event.relatedTarget) &&
+-        isFocusEventOutside(event, baseElement) &&
 -        event.currentTarget.tabIndex >= 0;
 -      if (!isTabbingIn) {
 -        store.setActiveId(id);
@@ -49,7 +57,7 @@ index 51cb464..b8fc44f 100644
        // If the composite item is a text field, we'll select its content when
        // focused. This guarantees that pressing arrow keys will move to the
        // previous/next composite items instead of moving the cursor inside the
-@@ -408,6 +395,15 @@ export const useCompositeItem = createHook<TagName, CompositeItemOptions>(
+@@ -412,6 +395,15 @@ export const useCompositeItem = createHook<TagName, CompositeItemOptions>(
        if (!state?.renderedItems.length) return true;
        if (state.virtualFocus) return false;
        if (tabbable) return true;

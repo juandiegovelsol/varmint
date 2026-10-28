@@ -2,7 +2,7 @@ version = "1.0"
 
 [metadata]
 task_id = "ariakit__ariakit-4129-mm"
-title = "Toolbar becomes unreachable by keyboard when the active button is removed or disabled"
+title = "Toolbar keyboard navigation and focus ring break when the active button is removed or disabled"
 repository_name = "ariakit/ariakit"
 repo_url = "https://github.com/ariakit/ariakit"
 issue_number = 4129
@@ -16,15 +16,15 @@ cross_file = true
 visual_essentiality = "required"
 difficulty = "hard"
 difficulty_explanation = """
-The text names no widget, key, button or symptom: it only points at captioned frames, so the images are the only source for what goes wrong and for what each key press must do. Recorded frames A1-A4 and B1-B3 show the defect (A: the active button is removed and Shift+Tab skips the group; B: the initially active button is disabled and Tab skips the group). The Expected images then show the landing step (A4, B3) and the next key presses (A5-A7: Shift+Tab out, Tab back in, Right Arrow; B4-B7: Tab out, Shift+Tab back in, Right Arrow twice, wrapping past the disabled button), and every keyboard-focused group button is drawn with the page's blue focus ring.
+The text names no component, specific key, button label or focus target: it points at captioned frames, so only the images say what goes wrong and what each key press must do. Recorded frames A0-A4 and B1-B3 show the defect (A: the active button is removed and Shift+Tab skips the group; B: the initially active button is disabled and Tab skips the group). The Expected images then show the landing step (A4, B3) and the following key presses (A5-A7: Shift+Tab out, Tab back in, Right Arrow; B4-B8: Tab out, Shift+Tab back in, Right Arrow, Right Arrow wrapping past the disabled button, Left Arrow wrapping back past it). Every keyboard-focused group button is drawn with the page's blue focus ring, while the button clicked in A3 is not.
 
 Four defects sit on that path, in three files across two packages, and three of them stay invisible until the first one is fixed:
 1. composite-item.tsx derives the tab stop only from activeId, so a removed or disabled active item leaves no tab stop (the original bug; upstream fix 4698ea1).
-2. composite-item.tsx onFocus skips store.setActiveId when focus enters from outside the widget onto an item that is already tabbable. Normally the tab stop is the active item, so nothing changes; with any fallback tab stop the store keeps the stale id. Arrow keys then move from the removed or disabled button (Expected A7 and B6 fail), and with an all-items-tabbable fallback the single tab stop never comes back (Expected A5 and B4 fail).
-3. focusable.tsx treats Shift as a non-keyboard modifier when tracking input modality, so after a mouse click the button reached with Shift+Tab gets focus but no focus ring (Expected A4 shows the ring).
-4. composite-store.ts loops back to the first item without skipping disabled ones, so Right Arrow on the last button selects the disabled first button and focus does not move (Expected B7).
+2. composite-item.tsx onFocus skips store.setActiveId when focus enters the widget from outside onto an item that is already tabbable. Normally the tab stop is the active item, so nothing changes; with a fallback tab stop the store keeps the stale id. Arrow keys then move from the removed or disabled button (Expected A7 and B6), and an all-items-tabbable fallback never collapses back to a single tab stop (Expected A5 and B4).
+3. focusable.tsx treats Shift as a non-keyboard modifier when tracking input modality, so after a mouse click the button reached with Shift+Tab gets focus but no focus ring (Expected A4).
+4. composite-store.ts loops back without skipping disabled items, so wrapping in either direction selects the disabled button and focus does not move (Expected B7 and B8).
 
-Defects 2-4 change none of the recorded frames and break no other test in the repository: on the buggy base the full vitest suite fails only the five f2p tests, so the suite gives no hint. A solver has to replay every Expected frame, including whether the ring is drawn, and trace each mismatch to its own cause in the composite item, the focusable modality tracking and the composite store navigation. Each defect is caught by its own f2p test, so fixing only the visible tab-stop bug is not enough. All four model patches that solved the pre-hardening task (a first-enabled-item fallback) fail 3 of the 5 f2p tests on this base, and the upstream fix alone fails all 5.
+Defects 2-4 change none of the recorded frames, break no other test in the repository, pass tsc and biome, and their files carry the same timestamps as the rest of the tree, so neither the suite nor the tooling points at them. A solver has to replay every Expected frame, including whether the ring is drawn, and trace each mismatch to its cause in the composite item, the focusable modality tracking and the composite store navigation. Each defect has its own f2p test. Defect 2 matters for solutions that add a fallback tab stop (the usual approach; all four pre-hardening model patches did); a solution that instead repairs activeId inside the store sidesteps it legitimately, while defects 1, 3 and 4 must be fixed by every strategy. The p2p set also guards the wider fix surface: the combobox loop back to its input, the mouse-versus-keyboard focus ring, and focus-driven active items in selects. All four model patches that solved the pre-hardening task fail 3 of the 5 f2p tests on this base, and the upstream fix alone fails all 5.
 """
 files_edited = [
   "packages/ariakit-core/src/composite/composite-store.ts",
@@ -44,6 +44,9 @@ p2p = [
   "navigate with keyboard",
   "select with keyboard",
   "arrow right",
+  ": at the beginning",
+  "click on item then move with arrow keys",
+  "click on listbox then move through items with keyboard",
 ]
 tags = ["multimodal", "accessibility_visual", "ariakit", "typescript", "accessibility", "keyboard-navigation", "focus-management", "react"]
 

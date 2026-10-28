@@ -14,10 +14,15 @@ RUN git init -q /app \
 # Install every dependency the tests need (vitest ships its own JUnit reporter) at build time.
 RUN npm ci --no-audit
 
-# Injected bugs: copied to a temp path, applied BEFORE harbor_base is recorded, then deleted in the
-# same layer so the patches (whose reverse is the fix) never reach the agent-visible filesystem.
+# Injected bugs: copied to a temp path and applied BEFORE harbor_base is recorded. The same RUN
+# deletes the patches (whose reverse is the fix) from the final filesystem, and gives every tracked
+# file and directory the checkout timestamp again, so the patched files don't stand out by mtime.
 COPY assets/bugs/ /tmp/bugs/
-RUN set -e; for p in /tmp/bugs/*.patch; do git -C /app apply "$p" || patch -p1 -d /app < "$p"; done; rm -rf /tmp/bugs
+RUN set -e; cd /app; \
+    for p in /tmp/bugs/*.patch; do git apply "$p" || patch -p1 < "$p"; done; \
+    rm -rf /tmp/bugs; \
+    git ls-files -z | xargs -0 touch -h -r package.json; \
+    find . -path ./node_modules -prune -o -path ./.git -prune -o -type d -print0 | xargs -0 touch -h -r package.json
 
 # Drop the upstream history and record the task base; the fix commit must be unreachable.
 RUN rm -rf /app/.git \
@@ -26,7 +31,8 @@ RUN rm -rf /app/.git \
  && git -C /app -c user.email=h@l -c user.name=h commit -q -m base \
  && git -C /app tag harbor_base
 
-# Visual evidence for the agent only; never the tests or solution.
+# Visual evidence for the agent only; never the tests or solution. Only the PNGs are copied, and
+# the bug patches are removed again in case the COPY above is ever widened.
 RUN mkdir -p /logs /app/.harbor_assets
 COPY assets/*.png /app/.harbor_assets/
 RUN rm -rf /app/.harbor_assets/bugs
