@@ -1,0 +1,29 @@
+# Canonical MM SWE task bundle layout.
+# The QC-FIX skill treats this as a hard whitelist: after fixing, any path in Tasks/ outside
+# this set means the fixer added something it should not have -> abort and roll back.
+# Contents may vary; the SET OF PATHS may not.
+environment/Dockerfile
+environment/assets/*          # posters and any other referenced assets
+environment/bugs/*            # defect patches the Dockerfile applies at build time
+evidence_bundle.json
+instruction.md
+README.md                     # ALLOWED, not required - harbor hashes it with task.toml/instruction.md
+solution/*                    # fix.patch, solve.sh, and any task-specific solution files
+task.toml
+tests/config.json
+tests/judge.py                # Mode A only - ALLOWED, not required (see below)
+tests/rubrics.json            # Mode A only - ALLOWED, not required (see below)
+tests/test.patch
+tests/test.sh
+tests/verifier.py
+# THE RUBRIC LAYER IS OPTIONAL, AND ABSENT IS A LEGAL SHAPE.
+# tests/rubrics.json and tests/judge.py are listed above because they are ALLOWED, not because
+# they are required. A task with no defect class the behavioral suite can miss ships neither
+# (Mode B) - and that is correct, not "missing rubrics". The two files travel together: one
+# without the other is a blocking defect. An always-pass stub rubric is NOT a substitute for
+# omitting them. See checks/qc_rubric_format.py.
+#
+# NOT part of the layout (do not add):
+#   tests/instruction.md      the judge is deliberately not given the prompt
+#   tests/rubrics.stub.json   deleted: the always-pass stub is no longer a legal shape
+#   __pycache__/, *.pyc, .DS_Store, node_modules/

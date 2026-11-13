@@ -1,0 +1,821 @@
+=== README.md
+# epam__ai_dial_admin_frontend_5175_mm
+
+| | |
+|---|---|
+| **Tags** | `multimodal` `design_reference` `ag-grid (react/next.js)` `typescript` `ag-grid` `typography` `design-system` `tables` |
+| **Agent budget** | 1.5 hours |
+| **Resources** | 4 CPUs · 8 GB RAM |
+
+See [instruction.md](instruction.md) for the task as the agent receives it, and [task.toml](task.toml) for the full environment and verifier configuration.
+=== environment/Dockerfile
+FROM node:24.22.2-alpine3.24
+
+# bash/git/python3 are needed to apply patches and run test.sh at container-run time (no network then).
+# ca-certificates lets apk/git/npm talk https (this sandbox only has https egress).
+RUN apk add --no-cache bash git python3 ca-certificates
+
+WORKDIR /app
+
+# Clone the repo and check out the exact base commit (network needed only at build time).
+RUN git clone https://github.com/epam/ai-dial-admin-frontend.git /app \
+ && git -C /app -c advice.detachedHead=false checkout 5e1a82bfdf99bde855f4931d795d6e01cdb127d2
+
+# Install every dependency the tests need (grading installs nothing). vitest's built-in junit
+# reporter is used at test time (--reporter=junit), no extra reporter package required.
+RUN npm ci
+
+ENV CI=true
+
+# Injected bugs: copied to a temp path, applied BEFORE the timestamp step and the harbor_base snapshot,
+# and deleted in the same RUN so no patch reaches the final image.
+COPY bugs/ /tmp/bugs/
+RUN set -e; for p in /tmp/bugs/*.patch; do git -C /app apply "$p" || patch -p1 -d /app < "$p"; done; \
+    rm -rf /tmp/bugs
+
+# One timestamp for every file: which file changed last must not point at the bug.
+RUN find /app -mindepth 1 -exec touch -h -t 202301010000 {} +
+
+# Drop upstream history and record the task base; the fix commit must stay unreachable from here.
+RUN rm -rf /app/.git \
+ && git -C /app init -q \
+ && git -C /app -c user.email=h@l -c user.name=h add -A \
+ && git -C /app -c user.email=h@l -c user.name=h commit -q -m base \
+ && git -C /app tag harbor_base
+
+# Visual evidence for the agent only (never the whole assets/ folder, never tests/ or solution/).
+RUN mkdir -p /logs /app/.harbor_assets
+COPY assets/current.png assets/mockup.png /app/.harbor_assets/
+
+CMD ["bash"]
+=== environment/assets/ASSET_MANIFEST.json
+[
+  {
+    "role": "current_state",
+    "file": "current.png",
+    "container_path": "/app/.harbor_assets/current.png",
+    "bytes": 36666,
+    "sha256": "2c52a812036d42b74b30f4a70422afd0ad913e486c32fa117ff6531c4eda95da",
+    "source_kind": "generated_from_task_build",
+    "description": "A run detail page's Extraction result grid rendered from the task build, with its header (group-label row and column-label row) marked by a red outline, above three data rows."
+  },
+  {
+    "role": "design_mockup",
+    "file": "mockup.png",
+    "container_path": "/app/.harbor_assets/mockup.png",
+    "bytes": 84717,
+    "sha256": "4b11c662f31824ba53e89242376678c97099977a378ad037a8ca4ed9cd085271",
+    "source_kind": "upstream_issue_attachment",
+    "description": "A grid of the same kind, shown on a different page of the product."
+  }
+]
+=== evidence_bundle.json
+[
+  {
+    "role": "current_state",
+    "file": "current.png",
+    "container_path": "/app/.harbor_assets/current.png",
+    "bytes": 36666,
+    "sha256": "2c52a812036d42b74b30f4a70422afd0ad913e486c32fa117ff6531c4eda95da",
+    "source_kind": "generated_from_task_build",
+    "description": "The run detail page's Extraction result grid, rendered headlessly from the task's buggy build (real grid components and the app's own stylesheets and dark palette) with a run shaped like the upstream issue's: three results of one test case, the first two without a score. The header (red outline: group-label row and column-label row) shows uppercase, letter-spaced labels of mixed sizes ('TEST CASE NAME', '# RUN NUM...', 'TOTAL TURNS'), the SCORE and EXACT_MATCH labels sitting at the left of their columns while the values sit at the right, and the metric group labels ('DeepEval: Answer Releva...', 'Exact Match') lighter than 'Execution' and 'Extracted'. Replaces the upstream attachment, which predated the injected defects.",
+    "local_path": "/app/.harbor_assets/current.png",
+    "url": null,
+    "source_url": null,
+    "labels_added_during_packaging": [
+      "red outline around the header (group-label row and column-label row)"
+    ]
+  },
+  {
+    "role": "design_mockup",
+    "file": "mockup.png",
+    "container_path": "/app/.harbor_assets/mockup.png",
+    "bytes": 84717,
+    "sha256": "4b11c662f31824ba53e89242376678c97099977a378ad037a8ca4ed9cd085271",
+    "source_kind": "upstream_issue_attachment",
+    "description": "The 'Execution Results' grid on a Run Comparison page, grouped into 'Execution' and per-metric column groups with two numbered sub-columns (two runs) plus a 'Delta' column. Header labels are small, sentence-case and semibold, in the same weight as the column group labels above them. This is the existing, correctly styled sibling grid the Extraction result grid (current.png) is meant to visually match.",
+    "local_path": "/app/.harbor_assets/mockup.png",
+    "url": "https://github.com/user-attachments/assets/09d22110-3a52-4c88-99db-3b3e062980df",
+    "source_url": "https://github.com/user-attachments/assets/09d22110-3a52-4c88-99db-3b3e062980df",
+    "labels_added_during_packaging": []
+  }
+]
+=== instruction.md
+# Problem in the top rows
+
+### What happens
+In `current.png`, look at the outlined rows at the top of the table; the highlighted elements are inconsistent in size, positioning, weight or typography. The same rows are shown in `mockup.png`.
+
+### Images
+
+![Image](/app/.harbor_assets/current.png)
+A run's results table, with its top rows outlined, above a few rows of values.
+
+![Image](/app/.harbor_assets/mockup.png)
+A table of the same kind, shown on a different page.
+
+### Expected
+It should look and work correctly. The top rows of every table of this kind, including the one shown in `mockup.png`, should look like `mockup.png`:
+
+- every label in those rows has the same size, weight, letter case and letter spacing as in `mockup.png`, column labels and group labels alike;
+- a label over a column of numbers sits at the right edge of its column, like the numbers below it; every other label sits at the left;
+- the rows are evenly spaced, as in `mockup.png`.
+
+### Environment
+All
+
+## Attached visual evidence
+
+- `/app/.harbor_assets/current.png`
+- `/app/.harbor_assets/mockup.png`
+
+Inspect every attached file before making changes. The images describe observable behavior; they do not prescribe source files, internal names, or an implementation strategy.
+=== solution/solve.sh
+#!/usr/bin/env bash
+# Oracle solution: apply the human developer's fix (source files only; no test files).
+set -euxo pipefail
+cd /app
+
+apply_if_nonempty() {
+  local p="$1"
+  if [ -f "$p" ] && grep -q '[^[:space:]]' "$p"; then
+    git apply "$p" 2>/dev/null || patch -p1 < "$p"
+  fi
+}
+
+apply_if_nonempty /solution/fix.patch
+echo "Applied fix.patch."
+=== task.toml
+version = "1.0"
+reward_type = "binary"
+
+[task]
+name = "scale-ai/epam__ai_dial_admin_frontend_5175_mm"
+
+[metadata]
+task_id = "epam__ai_dial_admin_frontend_5175_mm"
+title = "Problem in the top rows"
+repository_name = "epam/ai-dial-admin-frontend"
+repo_url = "https://github.com/epam/ai-dial-admin-frontend"
+issue_number = 5175
+pr_number = 5259
+base_commit = "5e1a82bfdf99bde855f4931d795d6e01cdb127d2"
+fix_commit = "a1bbd2078566e4849fcc638ac57512fc6cb9e8e8"
+task_type = "design_reference"
+language = "TypeScript"
+framework = "ag-grid (React/Next.js)"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = """
+current.png is rendered headlessly from this task's buggy build (real grid components, the app's own stylesheets and dark palette), so it shows every defect the model starts from: uppercase, letter-spaced labels of mixed sizes; SCORE / EXACT_MATCH labels at the left of columns whose values sit at the right; metric group labels lighter than Execution / Extracted. mockup.png (upstream) shows the target look on another page: small semibold sentence-case labels, numeric labels flush right over their values, evenly spaced header rows, semibold group labels. Neither image names a file, component or grid, and the mockup is itself a second page (Run Comparison) that has to match too.
+
+Root causes a solver has to find by reading code, none of them identifiable from the source alone without the images:
+1. The kit styles the grid's own header text span as 10px uppercase letter-spaced text. The app's EllipsisHeader is rendered inside that span and never undoes 'uppercase'/'tracking', and several leaves (Test Case name, Total turns, HTTP, Duration in the run grid; Test Case name and Delta in the comparison grid) do not use it at all and render through the plain default header, so they keep the kit look.
+2. Metric columns in the run grid pick their header alignment from the first value the merged schema saw for that metric: a metric whose first result has no value yet (the dashes in current.png's first rows) or never has a value loses the column's right-aligned header class, so its label sits left over right-aligned numbers. Only that header class moves the label (the app right-justifies the header label row for it); restoring just the inner component's right-aligned params changes nothing on screen. A shallow repair (prefer a non-null sample) still breaks for a metric that is empty in every row.
+3. The shared group-header component uses regular-weight text, so every custom group label (metric groups in both grids, and the Execution/Extracted groups once wired) is lighter than the semibold group labels in both images.
+4. The Run Comparison grid forces 28px group-header rows under a 40px column-header row; the mockup shows evenly spaced header rows, which only measuring the image reveals.
+
+Fixing the obvious typography (1) leaves 2–4 failing; each is caught by its own render-based test that mounts the real grids (ag-grid in jsdom) and reads the look each header label ends up with under the app's real stylesheet (ui-kit CSS plus the app's global.scss compiled by Sass and Tailwind, run through a CSS cascade over the rendered DOM), so any implementation that produces the right header row passes, whether through utility classes, arbitrary values, stylesheet rules, inline styles or a custom header component. Size 13-15px and weight 500-700 are accepted, since the images cannot separate those values. Guards keep text-column headers left-aligned and the Delta header right-aligned, so blanket alignment hacks fail.
+"""
+files_edited = [
+  "apps/ai-dial-admin/src/components/Grid/HeaderComponents/EllipsisHeader.tsx",
+  "apps/ai-dial-admin/src/components/Grid/HeaderComponents/EllipsisHeaderGroup.tsx",
+  "apps/ai-dial-admin/src/components/Runs/Compare/ExecutionResults/ExecutionResultsTab.tsx",
+  "apps/ai-dial-admin/src/components/Runs/Compare/ExecutionResults/constants.ts",
+  "apps/ai-dial-admin/src/components/Runs/Compare/ExecutionResults/utils/columns.ts",
+  "apps/ai-dial-admin/src/components/Runs/View/utils.ts",
+  "apps/ai-dial-admin/src/components/Runs/grid-column-layout.ts",
+]
+f2p = [
+  "Extraction result grid header row > every column header reads as small semibold sentence-case text",
+  "Extraction result grid header row > numeric column headers line up with their right-aligned values",
+  "Extraction result grid header row > column group labels read as small semibold text",
+  "ExecutionResultsTab header row > Test Case name and Delta headers read as small semibold sentence-case text",
+  "ExecutionResultsTab header row > column group labels read as small semibold text",
+  "ExecutionResultsTab header row > group header rows are as tall as the column header row",
+]
+p2p = [
+  "ScoreCellRenderer > renders a right-aligned, colored number for an absolute score",
+  "ScoreCellRenderer > applies the bucket background and text Tailwind classes to the cell",
+  "ScoreCellRenderer > renders a signed delta",
+  "ScoreCellRenderer > renders a zero delta with no bucket color",
+  "ScoreCellRenderer > renders missing values as a secondary-text dash",
+  "ScoreCellRenderer > renders out-of-range numbers as plain primary text, not a score bucket",
+  "ScoreCellRenderer > draws no border on a visible score cell — adjacent cells read as one field",
+  "ScoreCellRenderer > a zero delta — no bucket — draws a neutral right border on a layer-2 background",
+  "ScoreCellRenderer > hides the value text while keeping the color when the column is too narrow",
+  "ScoreCellRenderer > shows a visible accent-colored right+bottom border once the value is hidden",
+  "ScoreCellRenderer > exposes the hidden value through an accessible name",
+  "ScoreCellRenderer > hides the dash for a missing value when values are hidden — an empty cell, not a dash",
+  "ScoreCellRenderer > a hidden missing-value cell still gets a neutral right border and an accessible name",
+  "ScoreCellRenderer > still shows the dash for a missing value when the column is wide enough",
+  "ScoreCellRenderer > a visible dash cell draws a neutral right border so neighboring dash cells stay separated",
+  "ScoreCellRenderer > renders the 'default' tier text size and padding at its minimum width",
+  "ScoreCellRenderer > renders the 'medium' tier text size and padding at its minimum width",
+  "ScoreCellRenderer > renders the 'small' tier text size and padding at its minimum width",
+  "ScoreCellRenderer > steps down to the next tier one pixel below a tier minimum width",
+  "ScoreCellRenderer > hides the value one pixel below the smallest tier",
+  "ScoreCellRenderer > delta mode needs a wider column than absolute mode for the same tier",
+  "ScoreCellRenderer > hides a delta value below the smallest delta tier even where an absolute value would still show",
+  "ScoreCellRenderer > renders the default tier when the column width is unknown",
+  "ScoreCellRenderer > applies the tier text size to the missing-value dash",
+  "ScoreCellRenderer — heat map layout width > sizes the value from the grid layout width rather than the column own width",
+  "ScoreCellRenderer — heat map layout width > falls back to the column width when the context carries no layout width",
+  "CompareRunIndexHeader alignment > right-aligns the badge and label when isRightAligned is set",
+  "CompareRunIndexHeader alignment > does not right-align the badge and label by default",
+  "CompareRunIndexHeader alignment > right-aligns a badge-only header when isRightAligned is set",
+  "CompareRunIndexHeader alignment > centers a badge-only header by default",
+  "Extraction result grid header row > text column headers stay left-aligned",
+  "Runs View :: RESULT_FILTERS > Should return run and suite filters for provided run",
+  "Runs View :: RESULT_FILTERS > Should return empty values when run ids are missing",
+  "Runs View :: getCellClass > Should return empty class for undefined status code",
+  "Runs View :: getCellClass > Should return success for 2xx status code",
+  "Runs View :: getCellClass > Should return warning for 4xx status code",
+  "Runs View :: getCellClass > Should return error for non-2xx/4xx status code",
+  "Runs View :: getAnalyticsColumns > Should build static, nested metric group and extracted columns",
+  "Runs View :: getAnalyticsColumns > getRowDetailFieldSchema unions metric, test-case, and extracted keys across rows",
+  "Runs View :: getAnalyticsColumns > Should merge extracted column keys from all rows, so a request chain shows every column",
+  "Runs View :: getAnalyticsColumns > Should read each merged extracted column from its own row",
+  "Runs View :: getAnalyticsColumns > Should merge input binding keys from all rows",
+  "Runs View :: getAnalyticsColumns > Should merge metric keys from all rows into column groups",
+  "Runs View :: getAnalyticsColumns > Should assign unique colIds when multiple metrics share the same leaf key",
+  "Runs View :: getAnalyticsColumns > getMetricGroupOrder skips unnamed groups and non-metric headers",
+  "Runs View :: getAnalyticsColumns > getMetricGroupOrder returns metric headers in grid column order",
+  "Runs View :: getAnalyticsColumns > Should handle empty results",
+  "Runs View :: getAnalyticsColumns > Should sort error metric cells last for ascending and first for descending",
+  "Runs View :: getAnalyticsColumns > Should sort numeric metrics by value",
+  "Runs View :: getAnalyticsColumns > Should render blank cell without crash when a metric group is skipped entirely for a row (condition false)",
+  "Runs View :: getFormattedDuration > Should return dash for undefined duration",
+  "Runs View :: getFormattedDuration > Should return milliseconds for duration under 1000",
+  "Runs View :: getFormattedDuration > Should return seconds for duration 1000 or above",
+  "Runs View :: getFormattedDuration > Should handle zero duration",
+  "Runs View :: getPanelTitle > Should format title with test case name and run index",
+  "Runs View :: getPanelTitle > Should default run index to 0 when missing",
+  "Runs View :: getPanelTitle > Should handle null result",
+  "Runs View :: getDetailEntries > Should convert record to key-value tuple array",
+  "Runs View :: getDetailEntries > Should keep object values as objects",
+  "Runs View :: getDetailEntries > Should handle empty record",
+  "Runs View :: getDetailEntries > Should return string-array values as string[]",
+  "Runs View :: getDetailEntries > Should keep mixed arrays as arrays",
+  "Runs View :: getDetailEntries > Should stringify number values",
+  "Runs View :: getDetailNestedEntries > Should create sections from nested metric values",
+  "Runs View :: getDetailNestedEntries > Should fall back to additionalData error when metricValues has only null error",
+  "Runs View :: getDetailNestedEntries > Should keep original values when error is not null",
+  "Runs View :: getDetailNestedEntries > Should keep null error as entry when no additionalData provided",
+  "Runs View :: getDetailNestedEntries > Should append nested additionalData sub-entries after the main entry",
+  "Runs View :: getDetailNestedEntries > Should not expand when additionalData value is a primitive",
+  "Runs View :: getDetailNestedEntries > Should not expand when additionalData value is an array",
+  "Runs View :: getDetailNestedEntries > Should handle mix of expandable and non-expandable additional data",
+  "Runs View :: getDetailNestedEntries > Should handle additionalData with no matching group key",
+  "Runs View :: getDetailNestedEntries > Should handle empty data",
+  "Runs View :: getMetricGroups > Should return empty array for undefined metricValues",
+  "Runs View :: getMetricGroups > Should return empty array for empty metricValues",
+  "Runs View :: getMetricGroups > Should return normal metric group with numeric values",
+  "Runs View :: getMetricGroups > Should detect failed metric group with error fallback from metricInfos",
+  "Runs View :: getMetricGroups > Should include metricInfos for groups with additional data",
+  "Runs View :: getMetricGroups > Should handle multiple groups with mixed success and failure",
+  "Runs View :: getMetricGroups > Should handle null metric values as errors",
+  "Runs View :: getMetricGroups > Should omit a metric skipped by a false condition (absent from metricValues) without crashing",
+  "Runs View :: getMetricGroups > Should surface metric whose JSONata condition errored via metricInfos error",
+  "Runs View :: snapshotsToBindingsMap > Should map named snapshots to bindings record",
+  "Runs View :: snapshotsToBindingsMap > Should skip snapshots without tsmdName",
+  "Runs View :: snapshotsToBindingsMap > Should return empty record for empty array",
+  "Runs View :: snapshotsToBindingsMap > Should default undefined bindings to empty arrays",
+  "Runs View :: executionColumns # (runIndex) valueGetter > Should display 1-based index (backend runIndex is 0-based)",
+  "Runs View :: executionColumns # (runIndex) valueGetter > Should return null when data is null",
+  "Runs View :: executionColumns # (runIndex) valueGetter > Should return null when data is undefined",
+  "Runs View :: executionColumns # (runIndex) valueGetter > Should return null when runIndex is undefined",
+  "Runs View :: executionColumns Request valueGetter > Should build a Request column headed \"Request\"",
+  "Runs View :: executionColumns Request valueGetter > Should display 1-based request number for a 0-based requestIndex",
+  "Runs View :: executionColumns Request valueGetter > Should render requestIndex 0 as 1, not blank",
+  "Runs View :: executionColumns Request valueGetter > Should return null when requestIndex is absent (single-request run)",
+  "Runs View :: executionColumns Request valueGetter > Should return null when data is null or undefined",
+  "Runs View :: executionColumns Total requests valueGetter > Should build a Total requests column headed \"Total requests\"",
+  "Runs View :: executionColumns Total requests valueGetter > Should pass totalRequests through unchanged",
+  "Runs View :: executionColumns Total requests valueGetter > Should return null when totalRequests is absent (single-request run)",
+  "Runs View :: executionColumns Total requests valueGetter > Should return null when data is null or undefined",
+  "Runs View :: executionColumns Turn valueGetter > Should build a Turn column headed \"Turn\"",
+  "Runs View :: executionColumns Turn valueGetter > Should display 1-based turn number for a 0-based turnIndex",
+  "Runs View :: executionColumns Turn valueGetter > Should render turnIndex 0 as 1, not blank",
+  "Runs View :: executionColumns Turn valueGetter > Should return null when turnIndex is absent (single-turn run)",
+  "Runs View :: executionColumns Turn valueGetter > Should return null when data is null or undefined",
+  "Runs View :: executionColumns Total turns valueGetter > Should build a Total turns column headed \"Total turns\"",
+  "Runs View :: executionColumns Total turns valueGetter > Should pass totalTurns through unchanged",
+  "Runs View :: executionColumns Total turns valueGetter > Should return null when totalTurns is absent (single-turn run)",
+  "Runs View :: executionColumns Total turns valueGetter > Should return null when data is null or undefined",
+  "Runs View :: executionColumns are right-aligned > HTTP column keeps its status coloring and adds align-right",
+  "Runs View :: executionColumns are right-aligned > Duration column keeps its status coloring and adds align-right",
+  "Runs View :: executionColumns are right-aligned > Duration column exposes the numeric value so sorting follows real duration, formatted only for display",
+  "Runs View :: createEmptyComparePrimaryRow > carries request/turn identity fields from the source row",
+  "Runs View :: createEmptyComparePrimaryRow > leaves identity fields undefined when absent on the source row",
+  "Runs View :: getCompareRowSelectionId > returns primary id when present",
+  "Runs View :: getCompareRowSelectionId > falls back to compared id for compared-only rows",
+  "Runs View :: isMatchedCompareRow > returns true when both sides have result ids",
+  "Runs View :: isMatchedCompareRow > returns false for primary-only rows",
+  "Runs View :: isMatchedCompareRow > returns false for compared-only rows",
+  "Runs View :: mergeByTestCaseId > matches rows by testCaseId",
+  "Runs View :: mergeByTestCaseId > falls back to testCaseName when testCaseId is absent",
+  "Runs View :: mergeByTestCaseId > sets _compared to null for unmatched current rows",
+  "Runs View :: mergeByTestCaseId > sets _compared to null when current row has no key",
+  "Runs View :: mergeByTestCaseId > preserves all current row fields",
+  "Runs View :: mergeByTestCaseId > matches rows by testCaseId and runIndex",
+  "Runs View :: mergeByTestCaseId > includes compared-only rows when primary has fewer sub-runs",
+  "Runs View :: mergeByTestCaseId > falls back to testCaseName when testCaseIds differ (detached public copy)",
+  "Runs View :: mergeByTestCaseId > prefers testCaseId match over testCaseName when both available",
+  "Runs View :: mergeByTestCaseId > does not merge rows sharing testCaseId + runIndex but differing turnIndex (multi-turn chain)",
+  "Runs View :: mergeByTestCaseId > does not merge rows sharing testCaseId + runIndex but differing requestIndex (request chain)",
+  "Runs View :: mergeByTestCaseId > falls back to testCaseName + runIndex + requestIndex + turnIndex when testCaseId differs",
+  "Runs View :: mergeByTestCaseId > compared-only row keeps its request/turn identity fields on the primary row",
+  "Runs View :: mergeByTestCaseId > matches multi-turn rows by testCaseId, runIndex, and turnIndex",
+  "Runs View :: mergeByTestCaseId > orders chained rows by requestIndex before turnIndex",
+  "Runs View :: mergeByTestCaseId > does not reuse one compared turn across multiple primary turns",
+  "Runs View :: getAnalyticsColumns default column visibility > hides every index column of a single-request, single-turn run",
+  "Runs View :: getAnalyticsColumns default column visibility > keeps the turn column, but not its total, when the run spans several turns",
+  "Runs View :: getAnalyticsColumns default column visibility > keeps the request column, but not its total, when the run spans several requests",
+  "Runs View :: getAnalyticsColumns default column visibility > keeps the run-number column when a test case was run more than once",
+  "Runs View :: getAnalyticsColumns default column visibility > hides the total columns even when their values differ between results",
+  "Runs View :: getAnalyticsColumns default column visibility > keeps HTTP and Duration visible even when every result carries the same status",
+  "Runs View :: getAnalyticsColumns default column visibility > hides the totals but no index column before any result has loaded",
+  "Runs View :: getAnalyticsColumns default column visibility > leaves the other groups’ defaults untouched",
+  "ExecutionResultsTab > renders a column at the width kept in the tab state",
+  "ExecutionResultsTab > loads compare results for both runs and renders grid",
+  "ExecutionResultsTab > skips fetch when results are already lifted",
+  "ExecutionResultsTab > preserves hideHighlights across remount with lifted state",
+  "ExecutionResultsTab > shows load error when run fetch fails",
+  "ExecutionResultsTab > shows load error when compared run is missing",
+  "ExecutionResultsTab > shows empty state when view differences only has no differing rows",
+  "ExecutionResultsTab > renders nested execution fields in display panel",
+  "ExecutionResultsTab > closes display panel when close button is clicked",
+  "ExecutionResultsTab > view differences only hides rows without metric or status diff",
+  "ExecutionResultsTab > hides diff legend when row detail panel is open",
+  "ExecutionResultsTab > shows HTTP columns in grid when HTTP group is checked in display panel",
+  "ExecutionResultsTab > hides HTTP columns in grid when HTTP group is unchecked in display panel",
+  "ExecutionResultsTab > calls onOpenRowDetail when a row is clicked",
+  "ExecutionResultsTab > calls onOpenRowDetail with focusFieldKey when a mapped cell is clicked",
+  "ExecutionResultsTab header row > the Delta header lines up with its right-aligned values",
+]
+tags = ["multimodal", "design_reference", "ag-grid (react/next.js)", "typescript", "ag-grid", "typography", "design-system", "tables"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"
+=== tests/config.json
+{
+  "task_id": "epam__ai_dial_admin_frontend_5175_mm",
+  "verifier_mode": "test_execution",
+  "test_framework": "vitest",
+  "test_files": [
+    "apps/ai-dial-admin/src/components/Grid/CellRenderers/tests/ScoreCellRenderer.spec.tsx",
+    "apps/ai-dial-admin/src/components/Grid/HeaderComponents/tests/CompareRunIndexHeader.spec.tsx",
+    "apps/ai-dial-admin/src/components/Grid/HeaderComponents/tests/EllipsisHeader.spec.tsx",
+    "apps/ai-dial-admin/src/components/Runs/View/tests/utils.spec.ts",
+    "apps/ai-dial-admin/src/components/Runs/View/tests/ExtractionResultHeaderRow.spec.tsx",
+    "apps/ai-dial-admin/src/components/Runs/Compare/ExecutionResults/tests/ExecutionResultsTab.spec.tsx"
+  ],
+  "f2p": [
+    "Extraction result grid header row > every column header reads as small semibold sentence-case text",
+    "Extraction result grid header row > numeric column headers line up with their right-aligned values",
+    "Extraction result grid header row > column group labels read as small semibold text",
+    "ExecutionResultsTab header row > Test Case name and Delta headers read as small semibold sentence-case text",
+    "ExecutionResultsTab header row > column group labels read as small semibold text",
+    "ExecutionResultsTab header row > group header rows are as tall as the column header row"
+  ],
+  "p2p": [
+    "ScoreCellRenderer > renders a right-aligned, colored number for an absolute score",
+    "ScoreCellRenderer > applies the bucket background and text Tailwind classes to the cell",
+    "ScoreCellRenderer > renders a signed delta",
+    "ScoreCellRenderer > renders a zero delta with no bucket color",
+    "ScoreCellRenderer > renders missing values as a secondary-text dash",
+    "ScoreCellRenderer > renders out-of-range numbers as plain primary text, not a score bucket",
+    "ScoreCellRenderer > draws no border on a visible score cell — adjacent cells read as one field",
+    "ScoreCellRenderer > a zero delta — no bucket — draws a neutral right border on a layer-2 background",
+    "ScoreCellRenderer > hides the value text while keeping the color when the column is too narrow",
+    "ScoreCellRenderer > shows a visible accent-colored right+bottom border once the value is hidden",
+    "ScoreCellRenderer > exposes the hidden value through an accessible name",
+    "ScoreCellRenderer > hides the dash for a missing value when values are hidden — an empty cell, not a dash",
+    "ScoreCellRenderer > a hidden missing-value cell still gets a neutral right border and an accessible name",
+    "ScoreCellRenderer > still shows the dash for a missing value when the column is wide enough",
+    "ScoreCellRenderer > a visible dash cell draws a neutral right border so neighboring dash cells stay separated",
+    "ScoreCellRenderer > renders the 'default' tier text size and padding at its minimum width",
+    "ScoreCellRenderer > renders the 'medium' tier text size and padding at its minimum width",
+    "ScoreCellRenderer > renders the 'small' tier text size and padding at its minimum width",
+    "ScoreCellRenderer > steps down to the next tier one pixel below a tier minimum width",
+    "ScoreCellRenderer > hides the value one pixel below the smallest tier",
+    "ScoreCellRenderer > delta mode needs a wider column than absolute mode for the same tier",
+    "ScoreCellRenderer > hides a delta value below the smallest delta tier even where an absolute value would still show",
+    "ScoreCellRenderer > renders the default tier when the column width is unknown",
+    "ScoreCellRenderer > applies the tier text size to the missing-value dash",
+    "ScoreCellRenderer — heat map layout width > sizes the value from the grid layout width rather than the column own width",
+    "ScoreCellRenderer — heat map layout width > falls back to the column width when the context carries no layout width",
+    "CompareRunIndexHeader alignment > right-aligns the badge and label when isRightAligned is set",
+    "CompareRunIndexHeader alignment > does not right-align the badge and label by default",
+    "CompareRunIndexHeader alignment > right-aligns a badge-only header when isRightAligned is set",
+    "CompareRunIndexHeader alignment > centers a badge-only header by default",
+    "Extraction result grid header row > text column headers stay left-aligned",
+    "Runs View :: RESULT_FILTERS > Should return run and suite filters for provided run",
+    "Runs View :: RESULT_FILTERS > Should return empty values when run ids are missing",
+    "Runs View :: getCellClass > Should return empty class for undefined status code",
+    "Runs View :: getCellClass > Should return success for 2xx status code",
+    "Runs View :: getCellClass > Should return warning for 4xx status code",
+    "Runs View :: getCellClass > Should return error for non-2xx/4xx status code",
+    "Runs View :: getAnalyticsColumns > Should build static, nested metric group and extracted columns",
+    "Runs View :: getAnalyticsColumns > getRowDetailFieldSchema unions metric, test-case, and extracted keys across rows",
+    "Runs View :: getAnalyticsColumns > Should merge extracted column keys from all rows, so a request chain shows every column",
+    "Runs View :: getAnalyticsColumns > Should read each merged extracted column from its own row",
+    "Runs View :: getAnalyticsColumns > Should merge input binding keys from all rows",
+    "Runs View :: getAnalyticsColumns > Should merge metric keys from all rows into column groups",
+    "Runs View :: getAnalyticsColumns > Should assign unique colIds when multiple metrics share the same leaf key",
+    "Runs View :: getAnalyticsColumns > getMetricGroupOrder skips unnamed groups and non-metric headers",
+    "Runs View :: getAnalyticsColumns > getMetricGroupOrder returns metric headers in grid column order",
+    "Runs View :: getAnalyticsColumns > Should handle empty results",
+    "Runs View :: getAnalyticsColumns > Should sort error metric cells last for ascending and first for descending",
+    "Runs View :: getAnalyticsColumns > Should sort numeric metrics by value",
+    "Runs View :: getAnalyticsColumns > Should render blank cell without crash when a metric group is skipped entirely for a row (condition false)",
+    "Runs View :: getFormattedDuration > Should return dash for undefined duration",
+    "Runs View :: getFormattedDuration > Should return milliseconds for duration under 1000",
+    "Runs View :: getFormattedDuration > Should return seconds for duration 1000 or above",
+    "Runs View :: getFormattedDuration > Should handle zero duration",
+    "Runs View :: getPanelTitle > Should format title with test case name and run index",
+    "Runs View :: getPanelTitle > Should default run index to 0 when missing",
+    "Runs View :: getPanelTitle > Should handle null result",
+    "Runs View :: getDetailEntries > Should convert record to key-value tuple array",
+    "Runs View :: getDetailEntries > Should keep object values as objects",
+    "Runs View :: getDetailEntries > Should handle empty record",
+    "Runs View :: getDetailEntries > Should return string-array values as string[]",
+    "Runs View :: getDetailEntries > Should keep mixed arrays as arrays",
+    "Runs View :: getDetailEntries > Should stringify number values",
+    "Runs View :: getDetailNestedEntries > Should create sections from nested metric values",
+    "Runs View :: getDetailNestedEntries > Should fall back to additionalData error when metricValues has only null error",
+    "Runs View :: getDetailNestedEntries > Should keep original values when error is not null",
+    "Runs View :: getDetailNestedEntries > Should keep null error as entry when no additionalData provided",
+    "Runs View :: getDetailNestedEntries > Should append nested additionalData sub-entries after the main entry",
+    "Runs View :: getDetailNestedEntries > Should not expand when additionalData value is a primitive",
+    "Runs View :: getDetailNestedEntries > Should not expand when additionalData value is an array",
+    "Runs View :: getDetailNestedEntries > Should handle mix of expandable and non-expandable additional data",
+    "Runs View :: getDetailNestedEntries > Should handle additionalData with no matching group key",
+    "Runs View :: getDetailNestedEntries > Should handle empty data",
+    "Runs View :: getMetricGroups > Should return empty array for undefined metricValues",
+    "Runs View :: getMetricGroups > Should return empty array for empty metricValues",
+    "Runs View :: getMetricGroups > Should return normal metric group with numeric values",
+    "Runs View :: getMetricGroups > Should detect failed metric group with error fallback from metricInfos",
+    "Runs View :: getMetricGroups > Should include metricInfos for groups with additional data",
+    "Runs View :: getMetricGroups > Should handle multiple groups with mixed success and failure",
+    "Runs View :: getMetricGroups > Should handle null metric values as errors",
+    "Runs View :: getMetricGroups > Should omit a metric skipped by a false condition (absent from metricValues) without crashing",
+    "Runs View :: getMetricGroups > Should surface metric whose JSONata condition errored via metricInfos error",
+    "Runs View :: snapshotsToBindingsMap > Should map named snapshots to bindings record",
+    "Runs View :: snapshotsToBindingsMap > Should skip snapshots without tsmdName",
+    "Runs View :: snapshotsToBindingsMap > Should return empty record for empty array",
+    "Runs View :: snapshotsToBindingsMap > Should default undefined bindings to empty arrays",
+    "Runs View :: executionColumns # (runIndex) valueGetter > Should display 1-based index (backend runIndex is 0-based)",
+    "Runs View :: executionColumns # (runIndex) valueGetter > Should return null when data is null",
+    "Runs View :: executionColumns # (runIndex) valueGetter > Should return null when data is undefined",
+    "Runs View :: executionColumns # (runIndex) valueGetter > Should return null when runIndex is undefined",
+    "Runs View :: executionColumns Request valueGetter > Should build a Request column headed \"Request\"",
+    "Runs View :: executionColumns Request valueGetter > Should display 1-based request number for a 0-based requestIndex",
+    "Runs View :: executionColumns Request valueGetter > Should render requestIndex 0 as 1, not blank",
+    "Runs View :: executionColumns Request valueGetter > Should return null when requestIndex is absent (single-request run)",
+    "Runs View :: executionColumns Request valueGetter > Should return null when data is null or undefined",
+    "Runs View :: executionColumns Total requests valueGetter > Should build a Total requests column headed \"Total requests\"",
+    "Runs View :: executionColumns Total requests valueGetter > Should pass totalRequests through unchanged",
+    "Runs View :: executionColumns Total requests valueGetter > Should return null when totalRequests is absent (single-request run)",
+    "Runs View :: executionColumns Total requests valueGetter > Should return null when data is null or undefined",
+    "Runs View :: executionColumns Turn valueGetter > Should build a Turn column headed \"Turn\"",
+    "Runs View :: executionColumns Turn valueGetter > Should display 1-based turn number for a 0-based turnIndex",
+    "Runs View :: executionColumns Turn valueGetter > Should render turnIndex 0 as 1, not blank",
+    "Runs View :: executionColumns Turn valueGetter > Should return null when turnIndex is absent (single-turn run)",
+    "Runs View :: executionColumns Turn valueGetter > Should return null when data is null or undefined",
+    "Runs View :: executionColumns Total turns valueGetter > Should build a Total turns column headed \"Total turns\"",
+    "Runs View :: executionColumns Total turns valueGetter > Should pass totalTurns through unchanged",
+    "Runs View :: executionColumns Total turns valueGetter > Should return null when totalTurns is absent (single-turn run)",
+    "Runs View :: executionColumns Total turns valueGetter > Should return null when data is null or undefined",
+    "Runs View :: executionColumns are right-aligned > HTTP column keeps its status coloring and adds align-right",
+    "Runs View :: executionColumns are right-aligned > Duration column keeps its status coloring and adds align-right",
+    "Runs View :: executionColumns are right-aligned > Duration column exposes the numeric value so sorting follows real duration, formatted only for display",
+    "Runs View :: createEmptyComparePrimaryRow > carries request/turn identity fields from the source row",
+    "Runs View :: createEmptyComparePrimaryRow > leaves identity fields undefined when absent on the source row",
+    "Runs View :: getCompareRowSelectionId > returns primary id when present",
+    "Runs View :: getCompareRowSelectionId > falls back to compared id for compared-only rows",
+    "Runs View :: isMatchedCompareRow > returns true when both sides have result ids",
+    "Runs View :: isMatchedCompareRow > returns false for primary-only rows",
+    "Runs View :: isMatchedCompareRow > returns false for compared-only rows",
+    "Runs View :: mergeByTestCaseId > matches rows by testCaseId",
+    "Runs View :: mergeByTestCaseId > falls back to testCaseName when testCaseId is absent",
+    "Runs View :: mergeByTestCaseId > sets _compared to null for unmatched current rows",
+    "Runs View :: mergeByTestCaseId > sets _compared to null when current row has no key",
+    "Runs View :: mergeByTestCaseId > preserves all current row fields",
+    "Runs View :: mergeByTestCaseId > matches rows by testCaseId and runIndex",
+    "Runs View :: mergeByTestCaseId > includes compared-only rows when primary has fewer sub-runs",
+    "Runs View :: mergeByTestCaseId > falls back to testCaseName when testCaseIds differ (detached public copy)",
+    "Runs View :: mergeByTestCaseId > prefers testCaseId match over testCaseName when both available",
+    "Runs View :: mergeByTestCaseId > does not merge rows sharing testCaseId + runIndex but differing turnIndex (multi-turn chain)",
+    "Runs View :: mergeByTestCaseId > does not merge rows sharing testCaseId + runIndex but differing requestIndex (request chain)",
+    "Runs View :: mergeByTestCaseId > falls back to testCaseName + runIndex + requestIndex + turnIndex when testCaseId differs",
+    "Runs View :: mergeByTestCaseId > compared-only row keeps its request/turn identity fields on the primary row",
+    "Runs View :: mergeByTestCaseId > matches multi-turn rows by testCaseId, runIndex, and turnIndex",
+    "Runs View :: mergeByTestCaseId > orders chained rows by requestIndex before turnIndex",
+    "Runs View :: mergeByTestCaseId > does not reuse one compared turn across multiple primary turns",
+    "Runs View :: getAnalyticsColumns default column visibility > hides every index column of a single-request, single-turn run",
+    "Runs View :: getAnalyticsColumns default column visibility > keeps the turn column, but not its total, when the run spans several turns",
+    "Runs View :: getAnalyticsColumns default column visibility > keeps the request column, but not its total, when the run spans several requests",
+    "Runs View :: getAnalyticsColumns default column visibility > keeps the run-number column when a test case was run more than once",
+    "Runs View :: getAnalyticsColumns default column visibility > hides the total columns even when their values differ between results",
+    "Runs View :: getAnalyticsColumns default column visibility > keeps HTTP and Duration visible even when every result carries the same status",
+    "Runs View :: getAnalyticsColumns default column visibility > hides the totals but no index column before any result has loaded",
+    "Runs View :: getAnalyticsColumns default column visibility > leaves the other groups’ defaults untouched",
+    "ExecutionResultsTab > renders a column at the width kept in the tab state",
+    "ExecutionResultsTab > loads compare results for both runs and renders grid",
+    "ExecutionResultsTab > skips fetch when results are already lifted",
+    "ExecutionResultsTab > preserves hideHighlights across remount with lifted state",
+    "ExecutionResultsTab > shows load error when run fetch fails",
+    "ExecutionResultsTab > shows load error when compared run is missing",
+    "ExecutionResultsTab > shows empty state when view differences only has no differing rows",
+    "ExecutionResultsTab > renders nested execution fields in display panel",
+    "ExecutionResultsTab > closes display panel when close button is clicked",
+    "ExecutionResultsTab > view differences only hides rows without metric or status diff",
+    "ExecutionResultsTab > hides diff legend when row detail panel is open",
+    "ExecutionResultsTab > shows HTTP columns in grid when HTTP group is checked in display panel",
+    "ExecutionResultsTab > hides HTTP columns in grid when HTTP group is unchecked in display panel",
+    "ExecutionResultsTab > calls onOpenRowDetail when a row is clicked",
+    "ExecutionResultsTab > calls onOpenRowDetail with focusFieldKey when a mapped cell is clicked",
+    "ExecutionResultsTab header row > the Delta header lines up with its right-aligned values"
+  ]
+}=== tests/test.sh
+#!/usr/bin/env bash
+# Behavioral verifier. Resets every path test.patch touches to the immutable harbor_base tag, applies
+# the hidden tests, runs ONLY the configured f2p + p2p tests with the repository's own runner into a
+# JUnit report, and lets verifier.py turn that report into the reward. Nothing here reads the
+# candidate's source to decide anything.
+set -uo pipefail
+
+# ---- task-specific values, filled by the task builder ----------------------------------------
+# run_tests runs the configured tests with the repository's own runner and writes JUnit XML to
+# $JUNIT_OUT. The test ids (f2p + p2p from /tests/config.json) are in $TEST_IDS_FILE, one per line.
+# Write plain shell commands here; no quoting of the whole block is needed.
+run_tests() {
+  npx vitest run \
+    --config apps/ai-dial-admin/vitest.config.ts \
+    --reporter=junit \
+    --outputFile="$JUNIT_OUT" \
+    apps/ai-dial-admin/src/components/Grid/CellRenderers/tests/ScoreCellRenderer.spec.tsx \
+    apps/ai-dial-admin/src/components/Grid/HeaderComponents/tests/CompareRunIndexHeader.spec.tsx \
+    apps/ai-dial-admin/src/components/Grid/HeaderComponents/tests/EllipsisHeader.spec.tsx \
+    apps/ai-dial-admin/src/components/Runs/View/tests/utils.spec.ts \
+    apps/ai-dial-admin/src/components/Runs/View/tests/ExtractionResultHeaderRow.spec.tsx \
+    apps/ai-dial-admin/src/components/Runs/Compare/ExecutionResults/tests/ExecutionResultsTab.spec.tsx
+}
+# Directories holding the repo's test plumbing (configs, helpers) that must also be restored so a
+# candidate cannot replace the harness. Space-separated, relative to /app; '' if none.
+PROTECTED_DIRS='apps/ai-dial-admin/vitest.config.ts apps/ai-dial-admin/vitest-reporter.ts apps/ai-dial-admin/test-setup.tsx apps/ai-dial-admin/test-models.ts apps/ai-dial-admin/src/components/Grid/CellRenderers/tests/ScoreCellRenderer.spec.tsx apps/ai-dial-admin/src/components/Runs/View/tests/utils.spec.ts apps/ai-dial-admin/src/components/Grid/HeaderComponents/tests/EllipsisHeader.spec.tsx apps/ai-dial-admin/src/components/Grid/HeaderComponents/tests/CompareRunIndexHeader.spec.tsx'
+# -----------------------------------------------------------------------------------------------
+
+mkdir -p /logs/verifier
+STDOUT_LOG=/logs/verifier/test-stdout.txt
+STDERR_LOG=/logs/verifier/test-stderr.txt
+export JUNIT_OUT=/logs/verifier/junit.xml
+export TEST_IDS_FILE=/logs/verifier/test_ids.txt
+: > "$STDOUT_LOG"; : > "$STDERR_LOG"
+rm -f "$JUNIT_OUT" /logs/verifier/reward.txt /logs/verifier/reward.json
+
+ensure_reward() { [ -f /logs/verifier/reward.txt ] || echo 0 > /logs/verifier/reward.txt; }
+trap ensure_reward EXIT
+
+cd /app || { echo "no /app" | tee -a "$STDERR_LOG"; exit 1; }
+
+# 1. Restore every path test.patch touches. Both diff headers are read, so new files, binary
+#    baselines (image-comparison PNGs, snapshots), renames and deletions are all covered.
+_patch_paths=$( { sed -n 's#^diff --git a/\(.*\) b/.*#\1#p' /tests/test.patch
+                  sed -n 's#^diff --git a/.* b/\(.*\)#\1#p' /tests/test.patch; } | sort -u )
+for _p in $_patch_paths; do
+  git -C /app checkout harbor_base -- "$_p" 2>/dev/null || rm -rf "/app/$_p" 2>/dev/null || true
+done
+for _d in $PROTECTED_DIRS; do
+  git -C /app checkout harbor_base -- "$_d" 2>/dev/null || true
+  git -C /app clean -fdq -- "$_d" 2>/dev/null || true
+done
+
+# 2. Apply the hidden tests.
+echo "== applying test.patch ==" | tee -a "$STDOUT_LOG"
+git apply --binary /tests/test.patch 2>>"$STDERR_LOG" \
+  || git apply /tests/test.patch 2>>"$STDERR_LOG" \
+  || patch -p1 -i /tests/test.patch 2>>"$STDERR_LOG" \
+  || { echo "ERROR: could not apply test.patch" | tee -a "$STDERR_LOG"; exit 1; }
+
+# 3. Run only the configured tests.
+python3 - <<'PY' > "$TEST_IDS_FILE"
+import json
+c = json.load(open("/tests/config.json"))
+print("\n".join(c["f2p"] + c["p2p"]))
+PY
+echo "== running f2p + p2p tests ==" | tee -a "$STDOUT_LOG"
+( cd /app && run_tests ) >>"$STDOUT_LOG" 2>>"$STDERR_LOG" \
+  || echo "(tests exited non-zero; parsing the report)" | tee -a "$STDOUT_LOG"
+
+# 4. Reward from the report.
+echo "== computing reward ==" | tee -a "$STDOUT_LOG"
+# Rubric judge — SUB-AGENT backend: no API key, no network. On the first pass there is no
+# verdict yet, so judge.py writes a judge request under /logs/verifier/judge/ and prints
+# nothing; scoring falls back to tests alone. Once a judge sub-agent has written
+# verdict.json there, `mm_run.sh <task> rescore` folds the verdict into the reward.
+# The `|| echo ""` is load-bearing: the judge must never be able to fail the run.
+RUBRIC=""
+if [ -f /tests/rubrics.json ]; then
+  RUBRIC=$(python3 /tests/judge.py --rubrics /tests/rubrics.json --repo /app \
+             2>/logs/verifier/judge.log || echo "")
+  echo "Rubric verdict: ${RUBRIC:-pending (judge request written; rescore after grading)}"
+fi
+
+python3 /tests/verifier.py --rubric "${RUBRIC:-}" 2>>"$STDERR_LOG" | tee -a "$STDOUT_LOG"
+
+echo "reward=$(cat /logs/verifier/reward.txt 2>/dev/null)" | tee -a "$STDOUT_LOG"
+=== tests/verifier.py
+#!/usr/bin/env python3
+"""Turn the JUnit report into the task reward.
+
+The reward is binary: 1.0 only when every configured f2p and p2p test is found exactly once in the
+report and passed; otherwise 0.0. f2p_passed / f2p_total and p2p_passed / p2p_total record how close
+a run came. The verifier reads test outcomes only, never the candidate's source.
+"""
+import html
+import json
+import os
+import sys
+import xml.etree.ElementTree as ET
+
+# ---- canonical reward writer + --rubric gate (template/tests/verifier_reward_block.py) ----
+import atexit, json as _cj, os as _co, sys as _cs
+
+_CANON_JSON = "/logs/verifier/reward.json"
+_CANON_TXT = "/logs/verifier/reward.txt"
+_canon = {}
+
+
+def canon_reward(f2p_passed, f2p_total, p2p_passed, p2p_total, rubric):
+    """THE reward policy for the whole corpus. BINARY -- there is no partial credit.
+
+    tests_passed is 1.0 only when every f2p test passes AND every p2p test still passes. A
+    strict subset of f2p passing is not partial progress worth scoring: the task is unsolved,
+    so it is 0.0.
+
+    reward is the same value, zeroed when the rubric judge failed a criterion. A "pass" or a
+    "not graded" verdict never lowers the score -- the judge must never be able to penalise a
+    run it could not grade.
+    """
+    f, t = int(f2p_passed), int(f2p_total)
+    p, q = int(p2p_passed), int(p2p_total)
+    solved = bool(t) and f == t and p == q
+    tests_passed = 1.0 if solved else 0.0
+    _canon.clear()
+    _canon.update({
+        "reward": 0.0 if rubric == "fail" else tests_passed,
+        "tests_passed": tests_passed,
+        "f2p_passed": f, "f2p_total": t,
+        "p2p_passed": p, "p2p_total": q,
+        "rubric_passed": {"pass": 1, "fail": 0}.get(rubric, -1),
+    })
+    return _canon["reward"]
+
+
+@atexit.register
+def _canon_flush():
+    if not _canon:
+        return
+    try:
+        _co.makedirs(_co.path.dirname(_CANON_JSON), exist_ok=True)
+        with open(_CANON_JSON, "w") as _h:
+            _cj.dump(_canon, _h, indent=2)
+        # reward.txt too: harbor prefers reward.json, but the sandbox teardown script and the
+        # lighthouse UI read reward.txt. Writing both from one dict means they cannot disagree.
+        with open(_CANON_TXT, "w") as _h:
+            _h.write(str(_canon["reward"]))
+    except Exception as _exc:
+        print("WARNING: could not write %s: %s" % (_CANON_JSON, _exc), file=_cs.stderr)
+
+
+def rubric_verdict(argv):
+    """The verdict test.sh hands in as `--rubric pass|fail|""`.
+
+    Anything that is not an explicit pass/fail -- including the empty string test.sh passes
+    when judge.py wrote no verdict -- means "not graded", which must never penalise the run.
+    """
+    if "--rubric" not in argv:
+        return None
+    i = argv.index("--rubric")
+    value = argv[i + 1].strip().lower() if i + 1 < len(argv) else ""
+    return value if value in ("pass", "fail") else None
+
+
+CONF = json.load(open("/tests/config.json"))
+F2P, P2P = CONF["f2p"], CONF["p2p"]
+REPORT = os.environ.get("JUNIT_OUT", "/logs/verifier/junit.xml")
+OUT_DIR = "/logs/verifier"
+
+
+def load_junit(path):
+    """Every reported test, keyed by "classname name" and by name; a key seen twice with different
+    outcomes counts as failed."""
+    results = {}
+    if not os.path.exists(path):
+        return results
+    try:
+        root = ET.parse(path).getroot()
+    except ET.ParseError:
+        return results
+    for tc in root.iter("testcase"):
+        tags = {c.tag for c in tc}
+        outcome = "skip" if "skipped" in tags else ("fail" if tags & {"failure", "error"} else "pass")
+        full = f"{tc.get('classname', '')} {tc.get('name', '')}".strip()
+        for key in {full, tc.get("name", "")}:
+            if key in results and results[key] != outcome:
+                results[key] = "fail"
+            else:
+                results[key] = outcome
+    return results
+
+
+def junit_key(test_id):
+    """A pytest node id (tests/test_x.py::TestA::test_b[png]) as the JUnit report names it
+    ("tests.test_x.TestA test_b[png]"); other ids unchanged."""
+    if "::" not in test_id:
+        return test_id
+    parts = test_id.split("::")
+    mod = parts[0][:-3] if parts[0].endswith(".py") else parts[0]
+    return f"{'.'.join([mod.replace('/', '.')] + parts[1:-1])} {parts[-1]}"
+
+
+def resolve(test_id, results):
+    """The outcome of one configured test: an exact key match first (the id as written, or a
+    pytest node id in JUnit form), else the single reported test whose key ends with it. Missing
+    or ambiguous counts as not passed."""
+    keys = [test_id, junit_key(test_id)]
+    if " :: " in test_id:  # "file :: describe › test" (playwright list output)
+        keys.append(test_id.replace(" :: ", " ", 1))
+    if " > " in test_id:  # "describe > test": jest-junit joins with a space, playwright with " › "
+        head, rest = test_id.split(" > ", 1)
+        keys += [test_id.replace(" > ", " "), test_id.replace(" > ", " › "), head + " " + rest.replace(" > ", " › ")]
+    keys += [k.replace('"', "") for k in keys]  # jest-junit drops quotation marks from names
+    keys += [html.unescape(k) for k in keys]  # an id copied from a JUnit file may keep &apos; &quot;
+    keys = list(dict.fromkeys(keys))
+    for key in keys:
+        if key in results:
+            return results[key]
+    for key in keys:
+        hits = {k: v for k, v in results.items() if k.endswith(key)}
+        if hits and len(set(hits.values())) == 1:
+            return next(iter(hits.values()))
+        if hits:
+            return "ambiguous"
+    # "file > test" with a describe level left out: a test in that file whose name ends the same
+    parts = test_id.split(" > ")
+    if len(parts) >= 2 and ("." in parts[0] or "/" in parts[0]):
+        hits = {k: v for k, v in results.items() if k.startswith(parts[0] + " ") and k.endswith(parts[-1])}
+        if hits and len(set(hits.values())) == 1:
+            return next(iter(hits.values()))
+        if hits:
+            return "ambiguous"
+    return "missing"
+
+
+def main():
+    results = load_junit(REPORT)
+    detail = {}
+    f2p_ok = 0
+    for t in F2P:
+        r = resolve(t, results)
+        detail[f"f2p::{t}"] = r
+        f2p_ok += r == "pass"
+    p2p_ok = 0
+    for t in P2P:
+        r = resolve(t, results)
+        detail[f"p2p::{t}"] = r
+        p2p_ok += r == "pass"
+    rubric = rubric_verdict(sys.argv[1:])
+    canon_reward(f2p_ok, len(F2P), p2p_ok, len(P2P), rubric)
+    reward = dict(_canon)
+    os.makedirs(OUT_DIR, exist_ok=True)
+    json.dump(reward, open(f"{OUT_DIR}/reward.json", "w"), indent=2)
+    json.dump(detail, open(f"{OUT_DIR}/reward_detail.json", "w"), indent=2)
+    open(f"{OUT_DIR}/reward.txt", "w").write(str(reward["reward"]))
+    print(json.dumps(reward))
+
+
+if __name__ == "__main__":
+    main()
+total 132
+drwxrwxr-x 2 1002 1002  4096 Nov 13 16:29 .
+drwxrwxr-x 4 1002 1002  4096 Nov 13 16:29 ..
+-rw-rw-r-- 1 1002 1002   830 Nov 13 16:29 ASSET_MANIFEST.json
+-rw-rw-r-- 1 1002 1002 36666 Nov 13 16:29 current.png
+-rw-rw-r-- 1 1002 1002 84717 Nov 13 16:29 mockup.png

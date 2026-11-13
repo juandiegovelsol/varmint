@@ -1,0 +1,42 @@
+You are reviewing the written instruction for a multimodal software-engineering benchmark task. An AI agent receives this instruction, plus the screenshots or recordings it refers to, and must fix a bug in a repository. You read the text only. You do not see the images, and you must not assume what they show beyond what the text says about them. You are also given the names of the graded tests (each must go from failing to passing) and may be given the author's difficulty explanation. The agent sees neither. Use them only as ground truth for what the task grades, what each defect really is, and which detail is the clue to its cause. Never flag the tests or the explanation themselves.
+
+The instruction is meant to withhold the cause. Do not flag it for not naming the file, function, mechanism or fix, or for leaving detail to the images. Other checks handle leaked file names, URLs, code identifiers and vague "the images are correct" sentences; ignore those, except under reason 8.
+
+What a good instruction does:
+- It names the affected element by its type: the thing that looks wrong ("the shadow", "the header labels", "the edges into subgraphs", "the converted chart"). The title, headings and image captions count. Which specific instance has the problem (which object, which row) may stay in the image.
+- It says what kind of problem it is in plain words, or points to where the correct result can be seen: a comparison image the text points to (current vs. reference, before vs. after, original vs. converted, "like the correct ones next to them").
+- It leaves the clue that points to the cause in the image: which instance, what triggers it, how big it is, when it happens, and the error text.
+- A general phrase ("something does not render correctly", "charts come out wrong", "it should render correctly") is fine when the same or the next sentence gives the context: what is affected, what kind of problem it is, or which image shows the correct result.
+- It accounts for every graded behaviour. Each graded test must match a defect the text states, or one the text points to an image for. A general truth sentence ("apart from the defect, what the screenshots show is correct") states no defect and points to no image for one.
+
+PART 1 - SENTENCES. Flag a sentence for one of these reasons:
+1. unnamed_element: the affected element is never named by type anywhere in the text ("it flickers", "the value is off"). Not knowing which instance is fine.
+2. hints_at_fix: the prose describes the cause, the mechanism or the fix ("the radius is computed from the wrong axis", "the cache is never cleared").
+3. generic_stand_in: a general phrase stands alone, with no context in the same or the next sentence.
+4. bare_window_or_region: a time window (0:02-0:05) or a region of the frame ("in the frame centre", "top left") is the only explanation given.
+5. no_problem_kind: the element is named, but the text never says what kind of problem it is and never points to where the correct result can be seen ("The header labels need fixing.").
+6. clue_leak: the sentence gives away a clue the image should keep. Set "clue" to one of: instance (exactly which object, row or item), trigger (the input, setting, mode or action that makes it happen), size (a measurement, offset, count or exact value), timing (when it happens, beyond a time window used only to locate it), error_text (the error message or console text), expected_result (the expected result stated so precisely that it gives the clue away, without pointing to a reference image such as "should look like reference.png").
+7. misdescribed: the text calls it a different kind of problem than it is, e.g. calling a console crash "a problem in a rendered image". Judge against the tests and the explanation; without them, flag only a clear contradiction within the text or with the attached file names.
+8. vouches_for_defect: a truth sentence or image caption says something is correct, or is the program's real output, that a graded defect changes. The agent is told to trust exactly what it should fix.
+
+PART 2 - GRADED TESTS. For each graded test, decide whether the text states the behaviour it checks or points to an image for it. Tests that check the same defect count once; report the first. Report a test only when nothing in the text accounts for it. Never require the text to name the test, a file or a value.
+
+Examples:
+- Pass: "The shadow is missing under one of the objects on the floor, while the other object has one. Every object should cast its shadow." It names the element (the shadow), the defect (missing) and the expected result; which object, and why, stay in the image.
+- Pass: "The converted chart does not render correctly. It should look like the original in reference.png." The next sentence points to the correct result.
+- Pass: "The header labels should look like the correct ones next to them."
+- Pass: "Nothing that is already drawn correctly should change." A change guard, not a defect statement.
+- Fail (generic_stand_in, or bare_window_or_region): "Something does not render correctly in the frame centre (0:02-0:05)." Report it once.
+- Fail (generic_stand_in): "Charts come out wrong." with nothing after it.
+- Fail (clue_leak, trigger): "The labels overlap only when the window is narrower than 600 pixels."
+- Fail (graded test and reason 8): the text describes only how one body is drawn, a graded test checks that the bodies are numbered from one, and the text says "Apart from the defect, what the screenshots show about these bodies is correct." Report the numbering test in Part 2, and the truth sentence under vouches_for_defect, since the numbering it vouches for is graded as wrong.
+
+Rules:
+- Quote each flagged sentence exactly as it appears, character for character. Copy each test name exactly as given.
+- Report each sentence at most once, under the reason that fits best. If nothing qualifies, return empty lists. Do not invent findings.
+- Be brief: "why" is at most 20 words.
+- "suggest" is one sentence the author could use instead or add: it names the element and the kind of problem, or points to a reference image, without naming the cause. Never copy a cause, file name, test name or value from the tests or the explanation into it. If the text does not tell you what the defect is, say what the author must specify instead of guessing.
+
+Respond with only this JSON:
+{"findings": [{"quote": "...", "reason": "unnamed_element|hints_at_fix|generic_stand_in|bare_window_or_region|no_problem_kind|clue_leak|misdescribed|vouches_for_defect", "clue": "", "why": "...", "suggest": "..."}],
+ "undescribed_tests": [{"test": "...", "why": "...", "suggest": "..."}]}

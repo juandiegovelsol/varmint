@@ -1,0 +1,920 @@
+diff --git a/apps/ai-dial-admin/src/components/Runs/Compare/ExecutionResults/tests/ExecutionResultsTab.spec.tsx b/apps/ai-dial-admin/src/components/Runs/Compare/ExecutionResults/tests/ExecutionResultsTab.spec.tsx
+index 7eea986c9..1d2c7d939 100644
+--- a/apps/ai-dial-admin/src/components/Runs/Compare/ExecutionResults/tests/ExecutionResultsTab.spec.tsx
++++ b/apps/ai-dial-admin/src/components/Runs/Compare/ExecutionResults/tests/ExecutionResultsTab.spec.tsx
+@@ -1,12 +1,23 @@
+ import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+ import userEvent from '@testing-library/user-event';
+ import { FC, useCallback, useState } from 'react';
+-import { beforeEach, describe, expect, test, vi } from 'vitest';
++import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
+ 
+ import { ExecutionResultsTabUiState } from '@/src/components/Runs/Compare/models';
+ import { createDefaultCompareViewTabState } from '@/src/components/Runs/Compare/use-compare-view-tab-state';
+ import { getCompareRuns } from '@/src/components/Runs/Compare/utils';
+ 
++import { RunsI18nKey } from '@/src/constants/i18n';
++
++import {
++  headerLook,
++  isRightAligned,
++  isSentenceCase,
++  isSmallSemibold,
++  loadPageStyles,
++  PageStyles,
++} from '../../../tests/header-look';
++
+ import ExecutionResultsTab from '../ExecutionResultsTab';
+ import { ExtractionResultStatus } from '@/src/models/evaluation/run';
+ 
+@@ -465,3 +476,124 @@ describe('ExecutionResultsTab', () => {
+     );
+   });
+ });
++
++// ---- header row: reading a rendered header -----------------------------------------------------------
++const headerText = (element: Element) => element.textContent?.replace(/\s+/g, ' ').trim();
++
++const findHeaderLabel = (cell: Element, text: string): HTMLElement | undefined =>
++  Array.from(cell.querySelectorAll<HTMLElement>('*')).find(
++    (element) =>
++      headerText(element) === text && !Array.from(element.children).some((child) => headerText(child) === text),
++  );
++
++const findHeader = async (selector: string, text: string) =>
++  waitFor(() => {
++    const cell = Array.from(document.querySelectorAll(selector)).find((candidate) => headerText(candidate) === text);
++    const label = cell && findHeaderLabel(cell, text);
++    if (!cell || !label) throw new Error(`header "${text}" is not rendered`);
++    return { cell, label };
++  });
++
++// Every check below reads the look the label ends up with under the app's real stylesheet (see header-look).
++const expectSmallSemiboldSentenceCase = (styles: PageStyles, label: Element, text: string) => {
++  const look = headerLook(styles, label);
++  expect(isSmallSemibold(look), `"${text}" is small semibold text, got ${JSON.stringify(look)}`).toBe(true);
++  expect(isSentenceCase(look), `"${text}" keeps its own letter case and spacing, got ${JSON.stringify(look)}`).toBe(
++    true,
++  );
++};
++
++const expectSmallSemiboldGroupLabel = (styles: PageStyles, label: Element, text: string) => {
++  // The grid's own group label already has the design's look; a custom group label must match it.
++  if (label.closest('.ag-header-group-text')) return;
++  const look = headerLook(styles, label);
++  expect(isSmallSemibold(look), `"${text}" is small semibold text, got ${JSON.stringify(look)}`).toBe(true);
++};
++
++// The test i18n renders keys, so the column the app labels "Delta" reads as its key here.
++const DELTA_HEADER = RunsI18nKey.RunCompareDelta;
++
++describe('ExecutionResultsTab header row', () => {
++  let widthStubs: { mockRestore: () => void }[] = [];
++  let styles: PageStyles;
++
++  beforeAll(async () => {
++    styles = await loadPageStyles();
++  }, 120_000);
++  const primaryRow = {
++    id: 'result-1',
++    testCaseId: 'tc-1',
++    responseStatusCode: 200,
++    runIndex: 0,
++    executionStatus: ExtractionResultStatus.SUCCESS,
++    testCaseName: 'Test Case 1',
++    metricValues: { Accuracy: { precision: 0.5 } },
++    extractedColumns: { answer: 'London' },
++  };
++
++  const renderHeaderRow = () =>
++    renderExecutionResultsTab({
++      initialState: {
++        results: [primaryRow],
++        comparedResults: [
++          { ...primaryRow, id: 'result-2', metricValues: { Accuracy: { precision: 0.8 } }, extractedColumns: {} },
++        ],
++      },
++    });
++
++  beforeEach(() => {
++    getRunMock.mockReset();
++    getTestCaseRunResultsMock.mockReset();
++    getRunMock.mockImplementation((id: string) => Promise.resolve({ id, testSuiteId: 'suite-1', testRunName: id }));
++    getTestCaseRunResultsMock.mockResolvedValue({ content: [] });
++    // jsdom lays nothing out, so the grid would see a zero-wide viewport and skip the columns past it.
++    widthStubs = (['clientWidth', 'offsetWidth'] as const).map((property) =>
++      vi.spyOn(HTMLElement.prototype, property, 'get').mockReturnValue(4000),
++    );
++  });
++
++  afterEach(() => {
++    widthStubs.forEach((stub) => stub.mockRestore());
++  });
++
++  test('Test Case name and Delta headers read as small semibold sentence-case text', async () => {
++    renderHeaderRow();
++
++    for (const text of ['Test Case name', DELTA_HEADER]) {
++      const { label } = await findHeader('.ag-header-cell', text);
++      expectSmallSemiboldSentenceCase(styles, label, text);
++    }
++  });
++
++  test('the Delta header lines up with its right-aligned values', async () => {
++    renderHeaderRow();
++
++    const { cell, label } = await findHeader('.ag-header-cell', DELTA_HEADER);
++    expect(isRightAligned(styles, cell, label)).toBe(true);
++  });
++
++  test('column group labels read as small semibold text', async () => {
++    renderHeaderRow();
++
++    for (const text of ['Accuracy', 'precision', 'Extracted', 'answer']) {
++      const { label } = await findHeader('.ag-header-group-cell', text);
++      expectSmallSemiboldGroupLabel(styles, label, text);
++    }
++  });
++
++  test('group header rows are as tall as the column header row', async () => {
++    renderHeaderRow();
++    await findHeader('.ag-header-group-cell', 'Accuracy');
++
++    const height = (row: Element) => (row as HTMLElement).style.height;
++    const columnRows = Array.from(document.querySelectorAll('.ag-header-row-column'));
++    const groupRows = Array.from(document.querySelectorAll('.ag-header-row-group'));
++
++    expect(columnRows.length).toBeGreaterThan(0);
++    expect(groupRows.length).toBeGreaterThan(0);
++    const columnRowHeight = height(columnRows[0]);
++    // The column header row keeps its 40px height (the evenly spaced header rows in the design).
++    expect(columnRowHeight).toBe('40px');
++    expect(groupRows.map(height)).toEqual(groupRows.map(() => columnRowHeight));
++  });
++});
+diff --git a/apps/ai-dial-admin/src/components/Runs/View/tests/ExtractionResultHeaderRow.spec.tsx b/apps/ai-dial-admin/src/components/Runs/View/tests/ExtractionResultHeaderRow.spec.tsx
+new file mode 100644
+index 000000000..a8ea8df1f
+--- /dev/null
++++ b/apps/ai-dial-admin/src/components/Runs/View/tests/ExtractionResultHeaderRow.spec.tsx
+@@ -0,0 +1,207 @@
++import { render, waitFor } from '@testing-library/react';
++import { ColDef, ColGroupDef } from 'ag-grid-community';
++import { FC, useCallback, useState } from 'react';
++import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
++
++import { AnalyticsResult, ExtractionResultStatus } from '@/src/models/evaluation/run';
++
++import {
++  headerLook,
++  isRightAligned,
++  isSentenceCase,
++  isSmallSemibold,
++  loadPageStyles,
++  PageStyles,
++} from '../../tests/header-look';
++
++import ExtractionResultTab from '../ExtractionResult';
++import { ExtractionResultTabUiState } from '../models';
++import { createDefaultRunViewTabState } from '../use-run-view-tab-state';
++import { getAnalyticsColumns } from '../utils';
++
++vi.mock('@/src/context/AppContext', () => ({
++  useAppContext: () => ({
++    sidebar: { show: false, content: null, showSidebar: vi.fn(), closeSidebar: vi.fn() },
++    featureFlags: { deploymentsEnabled: true },
++    isReadOnlyAdmin: false,
++  }),
++}));
++
++vi.mock('@/src/app/[lang]/runs/actions', () => ({
++  getMetricSnapshots: vi.fn().mockResolvedValue([]),
++  getTestCaseRunResults: vi.fn().mockResolvedValue({ content: [] }),
++  getTestCaseRunResultDetails: vi.fn().mockResolvedValue(null),
++}));
++
++vi.mock('@/src/components/Runs/View/RowDetails/ExecutionRowDetailBottomPanel', () => ({
++  default: () => null,
++}));
++
++// Two results of one run, shaped like the run in the screenshot and showing only its columns: the score is
++// missing in the first result (a dash there), the exact match is missing in every result (a dash all the way
++// down its column).
++const RESULTS = [
++  {
++    id: 'r1',
++    executionStatus: ExtractionResultStatus.SUCCESS,
++    testCaseName: 'Round 2',
++    runIndex: 0,
++    requestIndex: 0,
++    totalRequests: 2,
++    turnIndex: 1,
++    totalTurns: 2,
++    responseStatusCode: 200,
++    executionInfo: { durationMs: 471 },
++    metricValues: {
++      'DeepEval: Answer Relevancy': { score: null },
++      'Exact Match': { exact_match: null },
++    },
++    extractedColumns: { answer: 'London', answer2: 'London' },
++  },
++  {
++    id: 'r2',
++    executionStatus: ExtractionResultStatus.SUCCESS,
++    testCaseName: 'Round 2',
++    runIndex: 1,
++    requestIndex: 1,
++    totalRequests: 2,
++    turnIndex: 0,
++    totalTurns: 2,
++    responseStatusCode: 200,
++    executionInfo: { durationMs: 796 },
++    metricValues: {
++      'DeepEval: Answer Relevancy': { score: 1 },
++      'Exact Match': { exact_match: null },
++    },
++    extractedColumns: { answer: 'Hello! How can I help you today?' },
++  },
++] as unknown as AnalyticsResult[];
++
++const LEAF_HEADERS = {
++  numeric: ['# Run number', 'Request', 'Total requests', 'Turn', 'Total turns', 'HTTP', 'Duration'],
++  metric: ['score', 'exact_match'],
++  text: ['Test Case name', 'answer', 'answer2'],
++};
++const GROUP_HEADERS = ['Execution', 'DeepEval: Answer Relevancy', 'Exact Match', 'Extracted'];
++
++// Every column is switched on, as an operator can do from the Columns panel, so that every header renders.
++const showEveryColumn = (columns: (ColDef | ColGroupDef)[]): (ColDef | ColGroupDef)[] =>
++  columns.map((column) =>
++    'children' in column && Array.isArray(column.children)
++      ? { ...column, children: showEveryColumn(column.children) }
++      : { ...column, hide: false },
++  );
++
++const Harness: FC = () => {
++  const [state, setState] = useState<ExtractionResultTabUiState>(() => {
++    const colDefs = showEveryColumn(getAnalyticsColumns(RESULTS)) as ColDef[];
++    return {
++      ...createDefaultRunViewTabState().extractionResult,
++      results: RESULTS,
++      colDefs,
++      panelColDefs: colDefs,
++    };
++  });
++  const patchState = useCallback((patch: Partial<ExtractionResultTabUiState>) => {
++    setState((prev) => ({ ...prev, ...patch }));
++  }, []);
++
++  return (
++    <div style={{ width: 4000, height: 800 }}>
++      <ExtractionResultTab
++        run={{ id: 'run-1' } as never}
++        extractionResultState={state}
++        setExtractionResultState={patchState}
++      />
++    </div>
++  );
++};
++
++// ---- reading a rendered header ----------------------------------------------------------------------
++const ownText = (element: Element) => element.textContent?.replace(/\s+/g, ' ').trim();
++
++/** The innermost element of the header cell whose whole text is the label. */
++const findLabel = (cell: Element, text: string): HTMLElement | undefined =>
++  Array.from(cell.querySelectorAll<HTMLElement>('*')).find(
++    (element) => ownText(element) === text && !Array.from(element.children).some((child) => ownText(child) === text),
++  );
++
++const findHeader = async (selector: string, text: string) =>
++  waitFor(() => {
++    const cell = Array.from(document.querySelectorAll(selector)).find((candidate) => ownText(candidate) === text);
++    const label = cell && findLabel(cell, text);
++    if (!cell || !label) throw new Error(`header "${text}" is not rendered`);
++    return { cell, label };
++  });
++
++// Every check below reads the look the label ends up with under the app's real stylesheet (see header-look).
++const expectSmallSemiboldSentenceCase = (styles: PageStyles, label: Element, text: string) => {
++  const look = headerLook(styles, label);
++  expect(isSmallSemibold(look), `"${text}" is small semibold text, got ${JSON.stringify(look)}`).toBe(true);
++  expect(isSentenceCase(look), `"${text}" keeps its own letter case and spacing, got ${JSON.stringify(look)}`).toBe(
++    true,
++  );
++};
++
++const expectSmallSemiboldGroupLabel = (styles: PageStyles, label: Element, text: string) => {
++  // The grid's own group label already has the design's look; a custom group label must match it.
++  if (label.closest('.ag-header-group-text')) return;
++  const look = headerLook(styles, label);
++  expect(isSmallSemibold(look), `"${text}" is small semibold text, got ${JSON.stringify(look)}`).toBe(true);
++};
++
++describe('Extraction result grid header row', () => {
++  let widthStubs: { mockRestore: () => void }[] = [];
++  let styles: PageStyles;
++
++  beforeAll(async () => {
++    styles = await loadPageStyles();
++  }, 120_000);
++
++  beforeEach(() => {
++    // jsdom lays nothing out, so the grid would see a zero-wide viewport and skip the columns past it.
++    widthStubs = (['clientWidth', 'offsetWidth'] as const).map((property) =>
++      vi.spyOn(HTMLElement.prototype, property, 'get').mockReturnValue(4000),
++    );
++  });
++
++  afterEach(() => {
++    widthStubs.forEach((stub) => stub.mockRestore());
++  });
++
++  test('every column header reads as small semibold sentence-case text', async () => {
++    render(<Harness />);
++
++    for (const text of [...LEAF_HEADERS.text, ...LEAF_HEADERS.numeric, ...LEAF_HEADERS.metric]) {
++      const { label } = await findHeader('.ag-header-cell', text);
++      expectSmallSemiboldSentenceCase(styles, label, text);
++    }
++  });
++
++  test('numeric column headers line up with their right-aligned values', async () => {
++    render(<Harness />);
++
++    for (const text of [...LEAF_HEADERS.numeric, ...LEAF_HEADERS.metric]) {
++      const { cell, label } = await findHeader('.ag-header-cell', text);
++      expect(isRightAligned(styles, cell, label), `"${text}" header is right-aligned`).toBe(true);
++    }
++  });
++
++  test('text column headers stay left-aligned', async () => {
++    render(<Harness />);
++
++    for (const text of LEAF_HEADERS.text) {
++      const { cell, label } = await findHeader('.ag-header-cell', text);
++      expect(isRightAligned(styles, cell, label), `"${text}" header is left-aligned`).toBe(false);
++    }
++  });
++
++  test('column group labels read as small semibold text', async () => {
++    render(<Harness />);
++
++    for (const text of GROUP_HEADERS) {
++      const { label } = await findHeader('.ag-header-group-cell', text);
++      expectSmallSemiboldGroupLabel(styles, label, text);
++    }
++  });
++});
+diff --git a/apps/ai-dial-admin/src/components/Runs/View/tests/utils.spec.ts b/apps/ai-dial-admin/src/components/Runs/View/tests/utils.spec.ts
+index 933df7d6a..845ec5d6d 100644
+--- a/apps/ai-dial-admin/src/components/Runs/View/tests/utils.spec.ts
++++ b/apps/ai-dial-admin/src/components/Runs/View/tests/utils.spec.ts
+@@ -7,8 +7,6 @@ import {
+   STATUS_COLUMN_WIDTH,
+   TEST_CASE_NAME_COLUMN_WIDTH,
+ } from '@/src/components/Runs/grid-column-layout';
+-import EllipsisHeader from '@/src/components/Grid/HeaderComponents/EllipsisHeader';
+-import EllipsisHeaderGroup from '@/src/components/Grid/HeaderComponents/EllipsisHeaderGroup';
+ import { NO_BORDER_CLASS } from '@/src/constants/ag-grid';
+ import { AnalyticsResult } from '@/src/models/evaluation/run';
+ import { FilterOperatorDto } from '@/src/types/request';
+@@ -101,9 +99,6 @@ describe('Runs View :: getAnalyticsColumns', () => {
+     expect(columns[4]).toEqual(expect.objectContaining({ headerName: 'INPUT BINDINGS' }));
+     expect(columns[5]).toEqual(expect.objectContaining({ headerName: 'Extracted' }));
+ 
+-    expect(columns[2]).toEqual(expect.objectContaining({ headerGroupComponent: EllipsisHeaderGroup }));
+-    expect(columns[3]).toEqual(expect.objectContaining({ headerGroupComponent: EllipsisHeaderGroup }));
+-
+     const accuracyChildren = (columns[2] as any).children;
+     expect(accuracyChildren).toHaveLength(1);
+     expect(accuracyChildren[0]).toEqual(
+@@ -116,7 +111,6 @@ describe('Runs View :: getAnalyticsColumns', () => {
+         floatingFilter: true,
+         width: METRIC_COLUMN_WIDTH,
+         cellClass: ['p-0', NO_BORDER_CLASS],
+-        headerClass: 'align-right',
+       }),
+     );
+     expect(accuracyChildren[0].cellStyle).toBeUndefined();
+@@ -184,27 +178,6 @@ describe('Runs View :: getAnalyticsColumns', () => {
+     expect(schema.extractedColumns).toEqual({ answer: 'Hi', verification: 'Yes' });
+   });
+ 
+-  test('Should render metric, extracted and input leaf headers through the ellipsis header', () => {
+-    const results = [
+-      {
+-        metricValues: { Accuracy: { accuracy: 0.95 } },
+-        testCaseData: { prompt: 'hello' },
+-        extractedColumns: { answer: 'Hi' },
+-      },
+-    ] as any[];
+-
+-    const columns = getAnalyticsColumns(results as any);
+-    const firstLeafOf = (headerName: string) =>
+-      (columns.find((column: any) => column.headerName === headerName) as any).children[0];
+-
+-    expect(firstLeafOf('Accuracy').headerComponentParams).toEqual({
+-      innerHeaderComponent: EllipsisHeader,
+-      innerHeaderComponentParams: { isRightAligned: true },
+-    });
+-    expect(firstLeafOf('Extracted').headerComponentParams).toEqual({ innerHeaderComponent: EllipsisHeader });
+-    expect(firstLeafOf('INPUT BINDINGS').headerComponentParams).toEqual({ innerHeaderComponent: EllipsisHeader });
+-  });
+-
+   test('Should merge extracted column keys from all rows, so a request chain shows every column', () => {
+     const results = [
+       { requestIndex: 0, extractedColumns: { answer: 'Hello!' } },
+@@ -754,20 +727,6 @@ const getExecutionColumn = (colId: string, results = [] as any[]) => {
+ describe('Runs View :: executionColumns # (runIndex) valueGetter', () => {
+   const getRunIndexCol = (results = [] as any[]) => getExecutionColumn('runIndex', results);
+ 
+-  test('Should retain the native sortable header around the ellipsis content', () => {
+-    const col = getRunIndexCol();
+-    expect(col).toEqual(
+-      expect.objectContaining({
+-        sortable: true,
+-        headerComponentParams: {
+-          innerHeaderComponent: expect.any(Function),
+-          innerHeaderComponentParams: { isRightAligned: true },
+-        },
+-      }),
+-    );
+-    expect(col.headerComponent).toBeUndefined();
+-  });
+-
+   test('Should display 1-based index (backend runIndex is 0-based)', () => {
+     const col = getRunIndexCol();
+     expect(col.valueGetter({ data: { runIndex: 0 } })).toBe(1);
+@@ -802,13 +761,8 @@ describe('Runs View :: executionColumns Request valueGetter', () => {
+         headerName: 'Request',
+         colId: 'requestIndex',
+         sortable: true,
+-        headerComponentParams: {
+-          innerHeaderComponent: expect.any(Function),
+-          innerHeaderComponentParams: { isRightAligned: true },
+-        },
+       }),
+     );
+-    expect(col.headerComponent).toBeUndefined();
+   });
+ 
+   test('Should display 1-based request number for a 0-based requestIndex', () => {
+@@ -874,13 +828,8 @@ describe('Runs View :: executionColumns Turn valueGetter', () => {
+         headerName: 'Turn',
+         colId: 'turnIndex',
+         sortable: true,
+-        headerComponentParams: {
+-          innerHeaderComponent: expect.any(Function),
+-          innerHeaderComponentParams: { isRightAligned: true },
+-        },
+       }),
+     );
+-    expect(col.headerComponent).toBeUndefined();
+   });
+ 
+   test('Should display 1-based turn number for a 0-based turnIndex', () => {
+@@ -936,24 +885,14 @@ describe('Runs View :: executionColumns Total turns valueGetter', () => {
+ });
+ 
+ describe('Runs View :: executionColumns are right-aligned', () => {
+-  test.each(['runIndex', 'requestIndex', 'totalRequests', 'turnIndex', 'totalTurns'])(
+-    '%s carries the align-right cell and header classes',
+-    (colId) => {
+-      const col = getExecutionColumn(colId);
+-      expect(col).toEqual(expect.objectContaining({ cellClass: 'align-right', headerClass: 'align-right' }));
+-    },
+-  );
+-
+   test('HTTP column keeps its status coloring and adds align-right', () => {
+     const col = getExecutionColumn('http');
+-    expect(col.headerClass).toBe('align-right');
+     expect(col.cellClass({ data: { responseStatusCode: 404 } })).toBe('align-right text-warning');
+     expect(col.cellClass({ data: {} })).toBe('align-right');
+   });
+ 
+   test('Duration column keeps its status coloring and adds align-right', () => {
+     const col = getExecutionColumn('duration');
+-    expect(col.headerClass).toBe('align-right');
+     expect(col.cellClass({ data: { responseStatusCode: 500 } })).toBe('align-right text-error');
+     expect(col.cellClass({ data: {} })).toBe('align-right');
+   });
+diff --git a/apps/ai-dial-admin/src/components/Runs/tests/header-look.ts b/apps/ai-dial-admin/src/components/Runs/tests/header-look.ts
+new file mode 100644
+index 000000000..77b9598ff
+--- /dev/null
++++ b/apps/ai-dial-admin/src/components/Runs/tests/header-look.ts
+@@ -0,0 +1,414 @@
++/**
++ * Reads how a rendered grid header actually looks, for the header-row specs.
++ *
++ * jsdom loads no stylesheet, so a class name alone says nothing about the look. This helper builds the
++ * page's real stylesheet the way the app ships it — the ui-kit and file-manager styles, then the app's own
++ * `global.scss` compiled by Sass and Tailwind — and runs a small CSS cascade (layers, `!important`,
++ * specificity, source order, inline styles, inheritance, `var()`) over the rendered DOM. A header passes
++ * or fails on the look it ends up with, whether that comes from a utility class, an arbitrary value, an
++ * app stylesheet rule, an `@utility`, a kit class or an inline style.
++ *
++ * ag-grid's own theme CSS is injected at runtime and is not present in jsdom; the one ag-grid rule the
++ * header specs depend on (its right-aligned column type reverses the label row) is added by hand.
++ */
++import fs from 'node:fs';
++import { createRequire } from 'node:module';
++import path from 'node:path';
++import { fileURLToPath, pathToFileURL } from 'node:url';
++
++import tailwindcss from '@tailwindcss/postcss';
++import postcss, { AtRule, ChildNode, Container, Rule } from 'postcss';
++import * as sass from 'sass';
++
++const require = createRequire(import.meta.url);
++const APP_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
++
++// ---- stylesheet ------------------------------------------------------------------------------------
++
++/** Inherited properties among the ones the specs read; custom properties inherit too. */
++const INHERITED = new Set(['font-size', 'font-weight', 'text-transform', 'letter-spacing', 'text-align']);
++const READ = new Set([...INHERITED, 'justify-content', 'flex-direction']);
++
++interface Declaration {
++  value: string;
++  important: boolean;
++}
++
++interface StyleRule {
++  selectors: string[];
++  declarations: Map<string, Declaration>;
++  /** Index of the cascade layer, or null when unlayered. */
++  layer: number | null;
++  order: number;
++}
++
++export interface PageStyles {
++  rules: StyleRule[];
++  layerCount: number;
++}
++
++const compileAppStylesheet = async (): Promise<string> => {
++  const entry = path.join(APP_DIR, 'src/app/[lang]/global.scss');
++  const compiled = sass.compile(entry, {
++    importers: [
++      {
++        findFileUrl: (url: string) => (url.startsWith('@/') ? pathToFileURL(path.join(APP_DIR, url.slice(2))) : null),
++      },
++    ],
++    silenceDeprecations: ['import'],
++    logger: sass.Logger.silent,
++  });
++  const result = await postcss([tailwindcss({ base: APP_DIR })]).process(compiled.css, { from: entry });
++  return result.css;
++};
++
++/** Flattens nesting: `&` stands for the parent; a child without `&` is a descendant of it. */
++const nestSelectors = (parents: string[], selectors: string[]): string[] => {
++  if (parents.length === 0) return selectors;
++  const parent = parents.length === 1 ? parents[0] : `:is(${parents.join(', ')})`;
++  return selectors.map((selector) =>
++    selector.includes('&') ? selector.replace(/&/g, `:is(${parent})`) : `:is(${parent}) ${selector}`,
++  );
++};
++
++const collectRules = (sheets: string[]): PageStyles => {
++  const layers: string[] = [];
++  const layerIndex = (name: string) => {
++    if (!layers.includes(name)) layers.push(name);
++    return layers.indexOf(name);
++  };
++  const rules: StyleRule[] = [];
++  let order = 0;
++  let anonymous = 0;
++
++  const walk = (container: Container<ChildNode>, parents: string[], layer: string | null) => {
++    container.each((node) => {
++      if (node.type === 'atrule') {
++        const at = node as AtRule;
++        if (at.name === 'layer') {
++          if (!at.nodes) {
++            at.params.split(',').forEach((name) => layerIndex(layer ? `${layer}.${name.trim()}` : name.trim()));
++            return;
++          }
++          const name = at.params.trim() || `<anonymous-${anonymous++}>`;
++          const full = layer ? `${layer}.${name}` : name;
++          layerIndex(full);
++          walk(at, parents, full);
++        } else if (at.name === 'utility' && at.nodes) {
++          // A user-defined utility applies like a class of the same name.
++          walkRule(at, nestSelectors(parents, [`.${at.params.trim()}`]), layer);
++        }
++        // @media / @supports / @container / @keyframes / @property / @font-face do not apply here.
++        return;
++      }
++      if (node.type === 'rule') walkRule(node as Rule, nestSelectors(parents, (node as Rule).selectors), layer);
++    });
++  };
++
++  const walkRule = (rule: Container<ChildNode>, selectors: string[], layer: string | null) => {
++    const declarations = new Map<string, Declaration>();
++    rule.each((child) => {
++      if (child.type === 'decl' && (READ.has(child.prop) || child.prop.startsWith('--'))) {
++        declarations.set(child.prop, { value: child.value.trim(), important: child.important });
++      }
++    });
++    if (declarations.size > 0) {
++      rules.push({ selectors, declarations, layer: layer === null ? null : layerIndex(layer), order: order++ });
++    }
++    walk(rule, selectors, layer);
++  };
++
++  sheets.forEach((css) => walk(postcss.parse(css), [], null));
++  return { rules, layerCount: layers.length };
++};
++
++// ag-grid's right-aligned column type reverses the header label row (from ag-grid's own theme CSS).
++const AG_GRID_RULES = '.ag-right-aligned-header .ag-header-cell-label { flex-direction: row-reverse; }';
++
++let pageStyles: Promise<PageStyles> | undefined;
++
++/** The page's stylesheet, in the order the app loads it. Built once per test file. */
++export const loadPageStyles = (): Promise<PageStyles> => {
++  pageStyles ??= (async () => {
++    const read = (specifier: string) => fs.readFileSync(require.resolve(specifier), 'utf8');
++    return collectRules([
++      AG_GRID_RULES,
++      read('@epam/ai-dial-ui-kit/styles.css'),
++      read('@epam/ai-dial-react-file-manager/styles.css'),
++      await compileAppStylesheet(),
++    ]);
++  })();
++  return pageStyles;
++};
++
++// ---- cascade ---------------------------------------------------------------------------------------
++
++type Specificity = [number, number, number];
++
++const addSpecificity = (a: Specificity, b: Specificity): Specificity => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
++const compareSpecificity = (a: Specificity, b: Specificity) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
++
++const splitTopLevel = (list: string): string[] => {
++  const parts: string[] = [];
++  let depth = 0;
++  let current = '';
++  for (let i = 0; i < list.length; i++) {
++    const char = list[i];
++    if (char === '\\') {
++      current += char + (list[i + 1] ?? '');
++      i++;
++      continue;
++    }
++    if (char === '(' || char === '[') depth++;
++    if (char === ')' || char === ']') depth--;
++    if (char === ',' && depth === 0) {
++      parts.push(current);
++      current = '';
++    } else {
++      current += char;
++    }
++  }
++  return [...parts, current].map((part) => part.trim()).filter(Boolean);
++};
++
++const specificity = (selector: string): Specificity => {
++  let result: Specificity = [0, 0, 0];
++  let i = 0;
++  const readIdent = () => {
++    while (i < selector.length && /[\w\-\\ -￿]/.test(selector[i])) i += selector[i] === '\\' ? 2 : 1;
++  };
++  const readArgs = (): string => {
++    let depth = 0;
++    const start = i;
++    for (; i < selector.length; i++) {
++      if (selector[i] === '\\') {
++        i++;
++        continue;
++      }
++      if (selector[i] === '(') depth++;
++      if (selector[i] === ')' && --depth === 0) {
++        i++;
++        break;
++      }
++    }
++    return selector.slice(start + 1, i - 1);
++  };
++  while (i < selector.length) {
++    const char = selector[i];
++    if (char === '#') {
++      i++;
++      readIdent();
++      result = addSpecificity(result, [1, 0, 0]);
++    } else if (char === '.') {
++      i++;
++      readIdent();
++      result = addSpecificity(result, [0, 1, 0]);
++    } else if (char === '[') {
++      while (i < selector.length && selector[i] !== ']') i += selector[i] === '\\' ? 2 : 1;
++      i++;
++      result = addSpecificity(result, [0, 1, 0]);
++    } else if (char === ':') {
++      const element = selector[i + 1] === ':';
++      i += element ? 2 : 1;
++      const start = i;
++      readIdent();
++      const name = selector.slice(start, i).toLowerCase();
++      const args = selector[i] === '(' ? readArgs() : null;
++      if (element) {
++        result = addSpecificity(result, [0, 0, 1]);
++      } else if (name === 'where') {
++        // no specificity
++      } else if (['is', 'not', 'has', 'matches'].includes(name) && args !== null) {
++        const most = splitTopLevel(args)
++          .map(specificity)
++          .reduce<Specificity>((max, next) => (compareSpecificity(next, max) > 0 ? next : max), [0, 0, 0]);
++        result = addSpecificity(result, most);
++      } else {
++        result = addSpecificity(result, [0, 1, 0]);
++      }
++    } else if (/[a-zA-Z]/.test(char)) {
++      readIdent();
++      result = addSpecificity(result, [0, 0, 1]);
++    } else {
++      i++;
++    }
++  }
++  return result;
++};
++
++interface Candidate extends Declaration {
++  /** Cascade rank, compared left to right; higher wins. */
++  rank: number[];
++}
++
++const matchingSpecificity = (element: Element, selectors: string[]): Specificity | null => {
++  let best: Specificity | null = null;
++  for (const selector of selectors) {
++    if (selector.includes('::')) continue;
++    let matches = false;
++    try {
++      matches = element.matches(selector);
++    } catch {
++      matches = false;
++    }
++    if (!matches) continue;
++    const own = specificity(selector);
++    if (!best || compareSpecificity(own, best) > 0) best = own;
++  }
++  return best;
++};
++
++const matchedRules = new WeakMap<Element, { rule: StyleRule; specificity: Specificity }[]>();
++
++const rulesFor = (styles: PageStyles, element: Element) => {
++  let matched = matchedRules.get(element);
++  if (!matched) {
++    matched = [];
++    for (const rule of styles.rules) {
++      const found = matchingSpecificity(element, rule.selectors);
++      if (found) matched.push({ rule, specificity: found });
++    }
++    matchedRules.set(element, matched);
++  }
++  return matched;
++};
++
++/** The value the cascade gives `property` on this element itself, before inheritance. */
++const cascadedValue = (styles: PageStyles, element: Element, property: string): string | undefined => {
++  const candidates: Candidate[] = [];
++  for (const { rule, specificity: own } of rulesFor(styles, element)) {
++    const declaration = rule.declarations.get(property);
++    if (!declaration) continue;
++    // Normal declarations: unlayered beat layered, later layers beat earlier ones. `!important` reverses
++    // the layer order and beats every normal declaration.
++    const layerRank = declaration.important
++      ? rule.layer === null
++        ? -1
++        : styles.layerCount - rule.layer
++      : rule.layer === null
++        ? styles.layerCount
++        : rule.layer;
++    candidates.push({ ...declaration, rank: [declaration.important ? 2 : 0, layerRank, ...own, rule.order] });
++  }
++  const inline = (element as HTMLElement).style;
++  const inlineValue = inline?.getPropertyValue(property);
++  if (inlineValue) {
++    const important = inline.getPropertyPriority(property) === 'important';
++    candidates.push({ value: inlineValue.trim(), important, rank: [important ? 3 : 1] });
++  }
++  const winner = candidates.sort((a, b) => {
++    for (let i = 0; i < Math.max(a.rank.length, b.rank.length); i++) {
++      const delta = (a.rank[i] ?? 0) - (b.rank[i] ?? 0);
++      if (delta !== 0) return delta;
++    }
++    return 0;
++  })[candidates.length - 1];
++  return winner?.value;
++};
++
++/** Replaces every `var(--name, fallback)` with the property's value on this element. */
++const resolveVariables = (styles: PageStyles, element: Element, value: string, depth = 0): string | undefined => {
++  if (depth > 20) return undefined;
++  const start = value.indexOf('var(');
++  if (start === -1) return value;
++  let depthCount = 0;
++  let end = start + 3;
++  for (; end < value.length; end++) {
++    if (value[end] === '(') depthCount++;
++    if (value[end] === ')' && --depthCount === 0) break;
++  }
++  const [name, ...fallbackParts] = splitTopLevel(value.slice(start + 4, end));
++  const fallback = fallbackParts.length > 0 ? value.slice(start + 4, end).slice(value.slice(start + 4, end).indexOf(',') + 1).trim() : undefined;
++  const replacement = computedValue(styles, element, name.trim(), depth + 1) ?? (fallback !== undefined ? resolveVariables(styles, element, fallback, depth + 1) : undefined);
++  if (replacement === undefined) return undefined;
++  return resolveVariables(styles, element, value.slice(0, start) + replacement + value.slice(end + 1), depth + 1);
++};
++
++/** The value `property` ends up with on this element: cascade, inheritance and `var()` resolved. */
++export const computedValue = (
++  styles: PageStyles,
++  element: Element,
++  property: string,
++  depth = 0,
++): string | undefined => {
++  const inherits = INHERITED.has(property) || property.startsWith('--');
++  const cascaded = cascadedValue(styles, element, property);
++  if (cascaded === undefined || cascaded === 'inherit' || (cascaded === 'unset' && inherits)) {
++    return inherits && element.parentElement ? computedValue(styles, element.parentElement, property, depth) : undefined;
++  }
++  if (cascaded === 'initial' || cascaded === 'unset') return undefined;
++  return resolveVariables(styles, element, cascaded, depth);
++};
++
++// ---- the header look -------------------------------------------------------------------------------
++
++const toPx = (value: string | undefined): number | undefined => {
++  if (!value) return undefined;
++  const match = /^(-?[\d.]+)(px|rem)?$/.exec(value.trim());
++  if (!match) return undefined;
++  return parseFloat(match[1]) * (match[2] === 'rem' ? 16 : 1);
++};
++
++const toWeight = (value: string | undefined): number | undefined => {
++  if (!value) return undefined;
++  if (value === 'normal') return 400;
++  if (value === 'bold') return 700;
++  const weight = Number(value);
++  return Number.isFinite(weight) ? weight : undefined;
++};
++
++const hasNoExtraSpacing = (value: string | undefined): boolean => {
++  if (!value || value === 'normal') return value === 'normal';
++  const match = /^(-?[\d.]+)(px|em|rem)?$/.exec(value.trim());
++  if (!match) return false;
++  const amount = Math.abs(parseFloat(match[1]));
++  return match[2] === 'px' ? amount <= 0.2 : amount <= 0.0125;
++};
++
++export interface HeaderLook {
++  fontSizePx?: number;
++  fontWeight?: number;
++  textTransform?: string;
++  letterSpacing?: string;
++}
++
++export const headerLook = (styles: PageStyles, label: Element): HeaderLook => ({
++  fontSizePx: toPx(computedValue(styles, label, 'font-size')),
++  fontWeight: toWeight(computedValue(styles, label, 'font-weight')),
++  textTransform: computedValue(styles, label, 'text-transform'),
++  letterSpacing: computedValue(styles, label, 'letter-spacing'),
++});
++
++/** The design's header text: small (14px) text, semibold (medium to bold reads the same in the images). */
++export const isSmallSemibold = (look: HeaderLook) =>
++  look.fontSizePx !== undefined &&
++  look.fontSizePx >= 13 &&
++  look.fontSizePx <= 15 &&
++  look.fontWeight !== undefined &&
++  look.fontWeight >= 500 &&
++  look.fontWeight <= 700;
++
++/** The label keeps its own letter case and gets no extra letter spacing. */
++export const isSentenceCase = (look: HeaderLook) =>
++  (look.textTransform === undefined || look.textTransform === 'none') && hasNoExtraSpacing(look.letterSpacing ?? 'normal');
++
++const END = new Set(['flex-end', 'end', 'right']);
++
++/**
++ * Whether the label sits at the right edge of its header cell. Inside the grid's own label row the label is
++ * only as wide as its text, so only the row's justification or direction moves it; a header component that
++ * replaces the whole label row positions its label itself, by text alignment or a flex justification.
++ */
++export const isRightAligned = (styles: PageStyles, cell: Element, label: Element): boolean => {
++  const row = label.closest('.ag-header-cell-label');
++  if (row && cell.contains(row)) {
++    const justify = computedValue(styles, row, 'justify-content') ?? 'normal';
++    const reversed = (computedValue(styles, row, 'flex-direction') ?? 'row') === 'row-reverse';
++    return reversed ? !END.has(justify) : END.has(justify);
++  }
++  if (END.has(computedValue(styles, label, 'text-align') ?? '')) return true;
++  for (let node = label.parentElement; node && node !== cell.parentElement; node = node.parentElement) {
++    if (END.has(computedValue(styles, node, 'justify-content') ?? '')) return true;
++  }
++  return false;
++};

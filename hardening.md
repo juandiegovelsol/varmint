@@ -3,7 +3,7 @@
 This guide explains how to inject additional bugs into a task so the model has more to solve. There are two parts:
 
 - **Part A — Author the bug** (clone the repo in the sandbox, edit code, export the diff).
-- **Part B — Wire it into the task** (drop the diff into `assets/bugs/`, update the `Dockerfile`, add a detecting test + fix).
+- **Part B — Wire it into the task** (drop the diff into `environment/bugs/`, update the `Dockerfile`, add a detecting test + fix).
 
 The repo URL, commit hash, and file paths in the commands below are examples taken from this task (`apache/superset`). Swap in the values from your own task's `task.toml` (`repo_url`, `base_commit`) and the files you're editing.
 
@@ -29,6 +29,19 @@ T="$(cd Tasks/*/ && pwd)"; echo "$T"     # -> /home/sandbox/Tasks/<task_id>
 ```
 
 (V1 tasks, before TASK101, had the bundle directly in `Tasks/`: there `T=/home/sandbox/Tasks`.)
+
+**Required bundle layout (QC checks it).** Bug patches live in `environment/bugs/`, **not** in `environment/assets/`. `assets/` holds only the evidence files listed in `ASSET_MANIFEST.json`:
+
+```
+Tasks/<task_id>/
+├── README.md, instruction.md, task.toml, evidence_bundle.json
+├── environment/
+│   ├── Dockerfile               <- COPY bugs/ /tmp/bugs/  (never assets/bugs/)
+│   ├── bugs/                    <- bug_01.patch, bug_02.patch, ... (build input only)
+│   └── assets/                  <- ASSET_MANIFEST.json + the screenshots, nothing else
+├── solution/                    <- fix.patch, solve.sh
+└── tests/                       <- config.json, test.patch, test.sh, verifier.py
+```
 
 ## How it works (mental model)
 
@@ -67,11 +80,11 @@ Take your time here: this hand-written change is the bug. Don't rush it into the
 **3. Once the bug is in place, export the two diffs (writing the bug patch straight into the task):**
 
 ```shell
-# The bundle does not ship an assets/bugs/ folder - create it once
-mkdir -p "$T/environment/assets/bugs"
+# The bundle does not ship an environment/bugs/ folder - create it once
+mkdir -p "$T/environment/bugs"
 
 # Bug patch (good -> buggy): the Dockerfile applies this
-git -C superset diff > "$T/environment/assets/bugs/bug_01.patch"
+git -C superset diff > "$T/environment/bugs/bug_01.patch"
 
 # Fix patch (buggy -> good): the reverse, kept for the oracle fix in step 4
 git -C superset diff -R > fix_add.patch
@@ -90,70 +103,80 @@ git -C superset diff -R > fix_add.patch
 
 ### 1. Place the bug patch
 
-Keep bug patches in the task's `environment/assets/bugs/` (only `.patch` files here, never test files):
+Keep bug patches in the task's `environment/bugs/` (only `.patch` files here, never test files):
 
 ```
-Tasks/<task_id>/environment/assets/bugs/bug_01.patch
+Tasks/<task_id>/environment/bugs/bug_01.patch
 ```
 
-`bugs/` is build input, not evidence: it gets no `ASSET_MANIFEST.json` / `evidence_bundle.json` entry and is deleted from the image (step 2).
+`bugs/` is build input, not evidence: it sits beside `assets/`, never inside it, gets no `ASSET_MANIFEST.json` / `evidence_bundle.json` entry, and is deleted from the image (step 2). Older bundles with `environment/assets/bugs/` must be moved: `mv "$T/environment/assets/bugs" "$T/environment/bugs"`, and update the Dockerfile `COPY`.
 
 ### 2. Update the Dockerfile to copy → apply → delete
 
-The bug must be applied before the `harbor_base` snapshot, and the patch file must be deleted from the agent-visible dir so the model can't read the answer.
+The bug must be applied before the `harbor_base` snapshot, and the patch files must not survive anywhere in the final image (the reverse of a bug patch is the fix).
 
-The clone URL and commit hash below are examples specific to this task. Adapt them (and keep the rest of the structure) to match your task's existing `Dockerfile`.
+Three things leak a bug if you get them wrong:
 
-```shell
-# [IMPORTANT] Copy bug patches to a TEMP path (not into /app) so they can be
-# applied into the base snapshot and never reach the agent-visible tree.
-COPY assets/bugs/ /tmp/bugs/
+- **The patches themselves.** `/tmp/bugs/` is part of the final image unless you delete it — `rm -rf /tmp/bugs` in the same `RUN` as the apply loop. The same goes for `/app/.harbor_assets/bugs` if the Dockerfile copies the whole `assets/` folder.
+- **File timestamps.** `git apply` makes the patched files the newest in the repo (`find /app -newer package.json` lists them). The V2 template already has a step that sets one timestamp on every file. The apply loop must run **before** that step.
+- **The snapshot.** The apply loop must run before `git init … tag harbor_base`, or the bug isn't in the state the model starts from.
 
-RUN git clone https://github.com/apache/superset /app \
- && git -C /app checkout ff1cf5f24ed29835843853dcd5af9a27918fe6b5 \
- && rm -rf /app/.git \
- # [IMPORTANT] Apply every bug patch BEFORE the snapshot below, so the defect
- # becomes part of harbor_base (the exact state the model starts from).
- && for p in /tmp/bugs/*.patch; do git -C /app apply "$p" || patch -p1 -d /app < "$p"; done \
- && git -C /app init -q \
- && git -C /app -c user.email=h@l -c user.name=h add -A \
- && git -C /app -c user.email=h@l -c user.name=h commit -q -m base \
- # [IMPORTANT] harbor_base = base commit + all bug patches. Must come AFTER the
- # apply loop; the verifier resets to this tag.
- && git -C /app tag harbor_base
-
-# ... npm install step unchanged ...
-
-RUN mkdir -p /logs /app/.harbor_assets
-COPY assets/ /app/.harbor_assets/
-# [IMPORTANT] Delete the bug diffs from the agent-visible dir so the model
-# can't read the answer (the reverse of a bug patch is the fix).
-RUN rm -rf /app/.harbor_assets/bugs
-```
-
-Note: `rm` is enough for anti-cheat. The agent only sees the final merged filesystem, not intermediate build layers, so the deleted patch is unreadable even though it existed in an earlier layer.
-
-**V2 Dockerfiles (TASK101+)** split the same steps into separate `RUN`s — check out `base_commit`, install deps, then a final `RUN rm -rf /app/.git && ... tag harbor_base`. Keep them all; add the copy and the apply loop between the install and that snapshot (after the install, so editing a bug patch doesn't re-run it), plus the delete at the end:
+**V2 Dockerfiles (TASK101+)** use separate `RUN`s: clone or fetch `base_commit`, install deps, set one timestamp on every file, record `harbor_base`, then copy the named screenshots. Leave all of them as they are. Add the copy, the apply loop and the delete **after the install** (so editing a bug patch doesn't re-run `npm ci`) and **before the timestamp step**. Example from TASK102 (`epam/ai-dial-admin-frontend`); swap in your own repo, commit and install command:
 
 ```shell
-RUN git init -q /app \
- && ... && git -C /app -c advice.detachedHead=false checkout <base_commit>     # unchanged
-RUN npm ci --no-audit                                                         # unchanged
+RUN git clone https://github.com/epam/ai-dial-admin-frontend.git /app \
+ && git -C /app -c advice.detachedHead=false checkout 5e1a82bfdf99bde855f4931d795d6e01cdb127d2   # unchanged
+RUN npm ci                                                                    # unchanged
+ENV CI=true                                                                   # unchanged
 
-# [IMPORTANT] bugs into a temp path, applied BEFORE harbor_base is recorded
-COPY assets/bugs/ /tmp/bugs/
-RUN for p in /tmp/bugs/*.patch; do git -C /app apply "$p" || patch -p1 -d /app < "$p"; done
+# [IMPORTANT] Injected bugs: copied to a temp path, applied BEFORE the timestamp step and the
+# harbor_base snapshot, and deleted in the same RUN so no patch reaches the final image.
+COPY bugs/ /tmp/bugs/
+RUN set -e; for p in /tmp/bugs/*.patch; do git -C /app apply "$p" || patch -p1 -d /app < "$p"; done; \
+    rm -rf /tmp/bugs
 
-# Drop the upstream history and record the task base; the fix commit must be unreachable.
+# One timestamp for every file: which file changed last must not point at the bug.
+RUN find /app -mindepth 1 -exec touch -h -t 202301010000 {} +                # unchanged, AFTER the apply
+
+# Drop upstream history and record the task base; the fix commit must stay unreachable from here.
 RUN rm -rf /app/.git \
  && git -C /app init -q \
  && ... \
  && git -C /app tag harbor_base                                               # unchanged
 
+# Visual evidence for the agent only (never the whole assets/ folder, never tests/ or solution/).
+RUN mkdir -p /logs /app/.harbor_assets
+COPY assets/current.png assets/mockup.png /app/.harbor_assets/                # unchanged
+```
+
+Keep the screenshot `COPY` naming the files one by one (or `assets/*.png`), so only evidence reaches `.harbor_assets/`. If your Dockerfile has no timestamp step (older V2 tasks such as TASK101), add the reset to the apply `RUN`, after `rm -rf /tmp/bugs`:
+
+```shell
+    cd /app; git ls-files -z | xargs -0 touch -h -r package.json; \
+    find . -path ./node_modules -prune -o -path ./.git -prune -o -type d -print0 | xargs -0 touch -h -r package.json
+```
+
+**V1 Dockerfiles (before TASK101)** clone, check out, drop `.git` and tag `harbor_base` in a single `RUN`, and copy the whole `assets/` folder. Put the apply loop inside that `RUN`, between `rm -rf /app/.git` and `git init`. Delete both copies of the patches:
+
+```shell
+COPY assets/bugs/ /tmp/bugs/
+
+RUN git clone https://github.com/apache/superset /app \
+ && git -C /app checkout ff1cf5f24ed29835843853dcd5af9a27918fe6b5 \
+ && rm -rf /app/.git \
+ && for p in /tmp/bugs/*.patch; do git -C /app apply "$p" || patch -p1 -d /app < "$p"; done \
+ && rm -rf /tmp/bugs \
+ && git -C /app init -q \
+ && git -C /app -c user.email=h@l -c user.name=h add -A \
+ && git -C /app -c user.email=h@l -c user.name=h commit -q -m base \
+ && git -C /app tag harbor_base
+
 RUN mkdir -p /logs /app/.harbor_assets
 COPY assets/ /app/.harbor_assets/
-RUN rm -rf /app/.harbor_assets/bugs        # [IMPORTANT] the reverse of a bug patch is the fix
+RUN rm -rf /app/.harbor_assets/bugs        # [IMPORTANT] whole-folder COPY: remove the patches again
 ```
+
+Note: `rm` is enough for anti-cheat. The agent only sees the final merged filesystem, not intermediate build layers. A deleted patch can't be read even though an earlier layer held it. A patch you never delete, like a leftover `/tmp/bugs/`, can be read.
 
 ### 3. Add a detecting test
 
@@ -185,9 +208,9 @@ cd ..
 
 List every test path the original `test.patch` touched (`grep '^diff --git' "$T/tests/test.patch"` before step 3) — a path left out of the `git diff` disappears from the task.
 
-Then register the new test's name under `f2p` in **both** `$T/task.toml` and `$T/tests/config.json` (tests that must keep passing go under `p2p`). The two lists must be identical: the verifier reads `config.json` to decide which tests count, and QC fails a task whose two lists differ. The names must match the test titles exactly, since the verifier keys the reward off them.
+Then register the new test's name under `f2p` in **both** `$T/task.toml` (the `[metadata]` table) and `$T/tests/config.json` (tests that must keep passing go under `p2p`). The two lists must be identical: the verifier reads `config.json` to decide which tests count, and QC fails a task whose two lists differ. Each name is the full test title as JUnit reports it, with the `describe` blocks joined by ` > ` (e.g. `EllipsisHeader alignment > is not special-cased to one header label`). It must match exactly and be unique across the listed files. The V2 reward is binary: every f2p and p2p test must be found **exactly once** in the report and pass. A misspelled or duplicated name scores 0.
 
-If the new test lives in a file the task did not test before, also add that file to `config.json` → `test_files` and to the runner command in `$T/tests/test.sh` — in V2 harnesses that is the `run_tests()` block near the top, which names each test file explicitly; a test in an unlisted file never runs and reads as `missing`.
+If the new test lives in a file the task did not test before, also add that file to `config.json` → `test_files` and to the runner command in `$T/tests/test.sh`. In V2 harnesses that is the `run_tests()` block near the top, which names each test file explicitly. A test in an unlisted file never runs and reads as `missing`. If the new test relies on a new helper or config file outside `test.patch`, add that path to `PROTECTED_DIRS` in the same block, so a candidate can't overwrite it.
 
 **Never put source changes in `test.patch`.** The verifier resets the `test.patch` paths to `harbor_base` and re-applies `test.patch`, so it must contain test files only — diffing the explicit test path (step 3 above) guarantees that.
 
@@ -195,7 +218,7 @@ If the new test lives in a file the task did not test before, also add that file
 
 This is where `fix_add.patch` (from Part A) gets folded into the oracle fix.
 
-`$T/solution/fix.patch` already fixes the original bug, and the oracle must now fix **both** the original and the new bug. This matters because `solve.sh` runs **only** `git apply /solution/fix.patch` — it never applies your bug patches or `fix_add.patch` — so your new fix won't take effect unless it lives inside `fix.patch`.
+`$T/solution/fix.patch` already fixes the original bug, and the oracle must now fix **both** the original and the new bug. This matters because `solve.sh` applies **only** `/solution/fix.patch` (`git apply`, falling back to `patch -p1`). It never applies your bug patches or `fix_add.patch` — so your new fix won't take effect unless it lives inside `fix.patch`.
 
 **You do not hand-edit `fix.patch`.** Don't open it and paste in hunks. Instead you let git regenerate the file: rebuild the exact buggy state the oracle runs against (`harbor_base` = base commit + all bug patches), apply every fix on top, then dump a fresh diff that **overwrites** `fix.patch`. Run from the sandbox root, reusing the `superset/` clone from Part A. (The paths and file names below are examples specific to this task — substitute your own.)
 
@@ -207,7 +230,7 @@ cd superset
 #    --index everywhere: a patch that CREATES a file leaves it untracked otherwise,
 #    and the commit / the diff below would miss it.
 git reset -q --hard && git clean -fdq
-git apply --index "$T"/environment/assets/bugs/*.patch
+git apply --index "$T"/environment/bugs/*.patch
 git -c user.email=h@l -c user.name=h commit -qm buggy-baseline
 
 # 2) Apply the fixes ON TOP of that buggy commit:
@@ -239,15 +262,25 @@ docker run --rm -v "$T/tests:/tests:ro" task-env bash -lc 'bash /tests/test.sh; 
 # After the oracle fix -> all tests should PASS
 docker run --rm -v "$T/tests:/tests:ro" -v "$T/solution:/solution:ro" task-env \
   bash -lc 'bash /solution/solve.sh && bash /tests/test.sh; cat /logs/verifier/reward.txt'
+
+# Leak check -> all three must print nothing
+docker run --rm task-env bash -lc '
+  ls /tmp/bugs /app/.harbor_assets/bugs 2>/dev/null
+  ls /app/.harbor_assets | grep -v -e "\.png$" -e "\.jpe\?g$" -e "\.gif$" -e "\.webp$"
+  find /app -mindepth 1 -newer /app/package.json \
+    -not -path "/app/.git*" -not -path "/app/.harbor_assets*" | head'
 ```
+
+The buggy run should show reward `0`, with your new f2p test `fail` in `/logs/verifier/reward_detail.json`. If it shows `missing`, the test never ran or its name doesn't match. The oracle run should show `1`.
 
 Then re-establish the real gate through the runner (Task-Playbook Step V): `bash ~/.claude/skills/mmswe-runner/mm_run.sh /home/sandbox/Tasks/*/ oracle` (1.0) and `... nop` (0.0).
 
 ## Key rules
 
-- Apply bugs **before** the `git init … tag harbor_base` step, or the snapshot won't contain them.
+- Apply bugs **before** the `git init … tag harbor_base` step, or the snapshot won't contain them, and **before** the V2 timestamp step (`find /app -mindepth 1 -exec touch …`), or the patched files stand out by mtime.
 - **Never** put test files in a bug patch. The verifier resets `test.patch` paths to `harbor_base` and re-applies its own tests, so those edits are discarded.
 - Every bug needs a matching `f2p` test — in `task.toml` **and** `tests/config.json` — or the model gets no reward for solving it.
 - Keep `solution/fix.patch` in sync so the oracle still passes, and `files_edited` in sync with it.
-- Delete `assets/bugs/` from `/app/.harbor_assets/` in the `Dockerfile` so the diff never leaks to the model.
+- V2 layout: bug patches in `environment/bugs/` (Dockerfile `COPY bugs/ /tmp/bugs/`), never in `environment/assets/`; `assets/` holds only the manifest-listed evidence.
+- No bug patch may survive in the final image. Run `rm -rf /tmp/bugs` in the apply `RUN`. Keep the V2 screenshot `COPY` naming the files one by one. If the Dockerfile copies the whole `assets/` folder, also `rm -rf /app/.harbor_assets/bugs`.
 - Scratch work (the repo clone, `fix_add.patch`) stays outside `Tasks/`: everything inside `Tasks/<task_id>/` is the deliverable.

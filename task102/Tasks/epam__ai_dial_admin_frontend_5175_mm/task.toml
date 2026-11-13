@@ -1,0 +1,225 @@
+version = "1.0"
+reward_type = "binary"
+
+[task]
+name = "scale-ai/epam__ai_dial_admin_frontend_5175_mm"
+
+[metadata]
+task_id = "epam__ai_dial_admin_frontend_5175_mm"
+title = "Problem in the top rows"
+repository_name = "epam/ai-dial-admin-frontend"
+repo_url = "https://github.com/epam/ai-dial-admin-frontend"
+issue_number = 5175
+pr_number = 5259
+base_commit = "5e1a82bfdf99bde855f4931d795d6e01cdb127d2"
+fix_commit = "a1bbd2078566e4849fcc638ac57512fc6cb9e8e8"
+task_type = "design_reference"
+language = "TypeScript"
+framework = "ag-grid (React/Next.js)"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = """
+current.png is rendered headlessly from this task's buggy build (real grid components, the app's own stylesheets and dark palette), so it shows every defect the model starts from: uppercase, letter-spaced labels of mixed sizes; SCORE / EXACT_MATCH labels at the left of columns whose values sit at the right; metric group labels lighter than Execution / Extracted. mockup.png (upstream) shows the target look on another page: small semibold sentence-case labels, numeric labels flush right over their values, evenly spaced header rows, semibold group labels. Neither image names a file, component or grid, and the mockup is itself a second page (Run Comparison) that has to match too.
+
+Root causes a solver has to find by reading code, none of them identifiable from the source alone without the images:
+1. The kit styles the grid's own header text span as 10px uppercase letter-spaced text. The app's EllipsisHeader is rendered inside that span and never undoes 'uppercase'/'tracking', and several leaves (Test Case name, Total turns, HTTP, Duration in the run grid; Test Case name and Delta in the comparison grid) do not use it at all and render through the plain default header, so they keep the kit look.
+2. Metric columns in the run grid pick their header alignment from the first value the merged schema saw for that metric: a metric whose first result has no value yet (the dashes in current.png's first rows) or never has a value loses the column's right-aligned header class, so its label sits left over right-aligned numbers. Only that header class moves the label (the app right-justifies the header label row for it); restoring just the inner component's right-aligned params changes nothing on screen. A shallow repair (prefer a non-null sample) still breaks for a metric that is empty in every row.
+3. The shared group-header component uses regular-weight text, so every custom group label (metric groups in both grids, and the Execution/Extracted groups once wired) is lighter than the semibold group labels in both images.
+4. The Run Comparison grid forces 28px group-header rows under a 40px column-header row; the mockup shows evenly spaced header rows, which only measuring the image reveals.
+
+Fixing the obvious typography (1) leaves 2–4 failing; each is caught by its own render-based test that mounts the real grids (ag-grid in jsdom) and reads the look each header label ends up with under the app's real stylesheet (ui-kit CSS plus the app's global.scss compiled by Sass and Tailwind, run through a CSS cascade over the rendered DOM), so any implementation that produces the right header row passes, whether through utility classes, arbitrary values, stylesheet rules, inline styles or a custom header component. Size 13-15px and weight 500-700 are accepted, since the images cannot separate those values. Guards keep text-column headers left-aligned and the Delta header right-aligned, so blanket alignment hacks fail.
+"""
+files_edited = [
+  "apps/ai-dial-admin/src/components/Grid/HeaderComponents/EllipsisHeader.tsx",
+  "apps/ai-dial-admin/src/components/Grid/HeaderComponents/EllipsisHeaderGroup.tsx",
+  "apps/ai-dial-admin/src/components/Runs/Compare/ExecutionResults/ExecutionResultsTab.tsx",
+  "apps/ai-dial-admin/src/components/Runs/Compare/ExecutionResults/constants.ts",
+  "apps/ai-dial-admin/src/components/Runs/Compare/ExecutionResults/utils/columns.ts",
+  "apps/ai-dial-admin/src/components/Runs/View/utils.ts",
+  "apps/ai-dial-admin/src/components/Runs/grid-column-layout.ts",
+]
+f2p = [
+  "Extraction result grid header row > every column header reads as small semibold sentence-case text",
+  "Extraction result grid header row > numeric column headers line up with their right-aligned values",
+  "Extraction result grid header row > column group labels read as small semibold text",
+  "ExecutionResultsTab header row > Test Case name and Delta headers read as small semibold sentence-case text",
+  "ExecutionResultsTab header row > column group labels read as small semibold text",
+  "ExecutionResultsTab header row > group header rows are as tall as the column header row",
+]
+p2p = [
+  "ScoreCellRenderer > renders a right-aligned, colored number for an absolute score",
+  "ScoreCellRenderer > applies the bucket background and text Tailwind classes to the cell",
+  "ScoreCellRenderer > renders a signed delta",
+  "ScoreCellRenderer > renders a zero delta with no bucket color",
+  "ScoreCellRenderer > renders missing values as a secondary-text dash",
+  "ScoreCellRenderer > renders out-of-range numbers as plain primary text, not a score bucket",
+  "ScoreCellRenderer > draws no border on a visible score cell — adjacent cells read as one field",
+  "ScoreCellRenderer > a zero delta — no bucket — draws a neutral right border on a layer-2 background",
+  "ScoreCellRenderer > hides the value text while keeping the color when the column is too narrow",
+  "ScoreCellRenderer > shows a visible accent-colored right+bottom border once the value is hidden",
+  "ScoreCellRenderer > exposes the hidden value through an accessible name",
+  "ScoreCellRenderer > hides the dash for a missing value when values are hidden — an empty cell, not a dash",
+  "ScoreCellRenderer > a hidden missing-value cell still gets a neutral right border and an accessible name",
+  "ScoreCellRenderer > still shows the dash for a missing value when the column is wide enough",
+  "ScoreCellRenderer > a visible dash cell draws a neutral right border so neighboring dash cells stay separated",
+  "ScoreCellRenderer > renders the 'default' tier text size and padding at its minimum width",
+  "ScoreCellRenderer > renders the 'medium' tier text size and padding at its minimum width",
+  "ScoreCellRenderer > renders the 'small' tier text size and padding at its minimum width",
+  "ScoreCellRenderer > steps down to the next tier one pixel below a tier minimum width",
+  "ScoreCellRenderer > hides the value one pixel below the smallest tier",
+  "ScoreCellRenderer > delta mode needs a wider column than absolute mode for the same tier",
+  "ScoreCellRenderer > hides a delta value below the smallest delta tier even where an absolute value would still show",
+  "ScoreCellRenderer > renders the default tier when the column width is unknown",
+  "ScoreCellRenderer > applies the tier text size to the missing-value dash",
+  "ScoreCellRenderer — heat map layout width > sizes the value from the grid layout width rather than the column own width",
+  "ScoreCellRenderer — heat map layout width > falls back to the column width when the context carries no layout width",
+  "CompareRunIndexHeader alignment > right-aligns the badge and label when isRightAligned is set",
+  "CompareRunIndexHeader alignment > does not right-align the badge and label by default",
+  "CompareRunIndexHeader alignment > right-aligns a badge-only header when isRightAligned is set",
+  "CompareRunIndexHeader alignment > centers a badge-only header by default",
+  "Extraction result grid header row > text column headers stay left-aligned",
+  "Runs View :: RESULT_FILTERS > Should return run and suite filters for provided run",
+  "Runs View :: RESULT_FILTERS > Should return empty values when run ids are missing",
+  "Runs View :: getCellClass > Should return empty class for undefined status code",
+  "Runs View :: getCellClass > Should return success for 2xx status code",
+  "Runs View :: getCellClass > Should return warning for 4xx status code",
+  "Runs View :: getCellClass > Should return error for non-2xx/4xx status code",
+  "Runs View :: getAnalyticsColumns > Should build static, nested metric group and extracted columns",
+  "Runs View :: getAnalyticsColumns > getRowDetailFieldSchema unions metric, test-case, and extracted keys across rows",
+  "Runs View :: getAnalyticsColumns > Should merge extracted column keys from all rows, so a request chain shows every column",
+  "Runs View :: getAnalyticsColumns > Should read each merged extracted column from its own row",
+  "Runs View :: getAnalyticsColumns > Should merge input binding keys from all rows",
+  "Runs View :: getAnalyticsColumns > Should merge metric keys from all rows into column groups",
+  "Runs View :: getAnalyticsColumns > Should assign unique colIds when multiple metrics share the same leaf key",
+  "Runs View :: getAnalyticsColumns > getMetricGroupOrder skips unnamed groups and non-metric headers",
+  "Runs View :: getAnalyticsColumns > getMetricGroupOrder returns metric headers in grid column order",
+  "Runs View :: getAnalyticsColumns > Should handle empty results",
+  "Runs View :: getAnalyticsColumns > Should sort error metric cells last for ascending and first for descending",
+  "Runs View :: getAnalyticsColumns > Should sort numeric metrics by value",
+  "Runs View :: getAnalyticsColumns > Should render blank cell without crash when a metric group is skipped entirely for a row (condition false)",
+  "Runs View :: getFormattedDuration > Should return dash for undefined duration",
+  "Runs View :: getFormattedDuration > Should return milliseconds for duration under 1000",
+  "Runs View :: getFormattedDuration > Should return seconds for duration 1000 or above",
+  "Runs View :: getFormattedDuration > Should handle zero duration",
+  "Runs View :: getPanelTitle > Should format title with test case name and run index",
+  "Runs View :: getPanelTitle > Should default run index to 0 when missing",
+  "Runs View :: getPanelTitle > Should handle null result",
+  "Runs View :: getDetailEntries > Should convert record to key-value tuple array",
+  "Runs View :: getDetailEntries > Should keep object values as objects",
+  "Runs View :: getDetailEntries > Should handle empty record",
+  "Runs View :: getDetailEntries > Should return string-array values as string[]",
+  "Runs View :: getDetailEntries > Should keep mixed arrays as arrays",
+  "Runs View :: getDetailEntries > Should stringify number values",
+  "Runs View :: getDetailNestedEntries > Should create sections from nested metric values",
+  "Runs View :: getDetailNestedEntries > Should fall back to additionalData error when metricValues has only null error",
+  "Runs View :: getDetailNestedEntries > Should keep original values when error is not null",
+  "Runs View :: getDetailNestedEntries > Should keep null error as entry when no additionalData provided",
+  "Runs View :: getDetailNestedEntries > Should append nested additionalData sub-entries after the main entry",
+  "Runs View :: getDetailNestedEntries > Should not expand when additionalData value is a primitive",
+  "Runs View :: getDetailNestedEntries > Should not expand when additionalData value is an array",
+  "Runs View :: getDetailNestedEntries > Should handle mix of expandable and non-expandable additional data",
+  "Runs View :: getDetailNestedEntries > Should handle additionalData with no matching group key",
+  "Runs View :: getDetailNestedEntries > Should handle empty data",
+  "Runs View :: getMetricGroups > Should return empty array for undefined metricValues",
+  "Runs View :: getMetricGroups > Should return empty array for empty metricValues",
+  "Runs View :: getMetricGroups > Should return normal metric group with numeric values",
+  "Runs View :: getMetricGroups > Should detect failed metric group with error fallback from metricInfos",
+  "Runs View :: getMetricGroups > Should include metricInfos for groups with additional data",
+  "Runs View :: getMetricGroups > Should handle multiple groups with mixed success and failure",
+  "Runs View :: getMetricGroups > Should handle null metric values as errors",
+  "Runs View :: getMetricGroups > Should omit a metric skipped by a false condition (absent from metricValues) without crashing",
+  "Runs View :: getMetricGroups > Should surface metric whose JSONata condition errored via metricInfos error",
+  "Runs View :: snapshotsToBindingsMap > Should map named snapshots to bindings record",
+  "Runs View :: snapshotsToBindingsMap > Should skip snapshots without tsmdName",
+  "Runs View :: snapshotsToBindingsMap > Should return empty record for empty array",
+  "Runs View :: snapshotsToBindingsMap > Should default undefined bindings to empty arrays",
+  "Runs View :: executionColumns # (runIndex) valueGetter > Should display 1-based index (backend runIndex is 0-based)",
+  "Runs View :: executionColumns # (runIndex) valueGetter > Should return null when data is null",
+  "Runs View :: executionColumns # (runIndex) valueGetter > Should return null when data is undefined",
+  "Runs View :: executionColumns # (runIndex) valueGetter > Should return null when runIndex is undefined",
+  "Runs View :: executionColumns Request valueGetter > Should build a Request column headed \"Request\"",
+  "Runs View :: executionColumns Request valueGetter > Should display 1-based request number for a 0-based requestIndex",
+  "Runs View :: executionColumns Request valueGetter > Should render requestIndex 0 as 1, not blank",
+  "Runs View :: executionColumns Request valueGetter > Should return null when requestIndex is absent (single-request run)",
+  "Runs View :: executionColumns Request valueGetter > Should return null when data is null or undefined",
+  "Runs View :: executionColumns Total requests valueGetter > Should build a Total requests column headed \"Total requests\"",
+  "Runs View :: executionColumns Total requests valueGetter > Should pass totalRequests through unchanged",
+  "Runs View :: executionColumns Total requests valueGetter > Should return null when totalRequests is absent (single-request run)",
+  "Runs View :: executionColumns Total requests valueGetter > Should return null when data is null or undefined",
+  "Runs View :: executionColumns Turn valueGetter > Should build a Turn column headed \"Turn\"",
+  "Runs View :: executionColumns Turn valueGetter > Should display 1-based turn number for a 0-based turnIndex",
+  "Runs View :: executionColumns Turn valueGetter > Should render turnIndex 0 as 1, not blank",
+  "Runs View :: executionColumns Turn valueGetter > Should return null when turnIndex is absent (single-turn run)",
+  "Runs View :: executionColumns Turn valueGetter > Should return null when data is null or undefined",
+  "Runs View :: executionColumns Total turns valueGetter > Should build a Total turns column headed \"Total turns\"",
+  "Runs View :: executionColumns Total turns valueGetter > Should pass totalTurns through unchanged",
+  "Runs View :: executionColumns Total turns valueGetter > Should return null when totalTurns is absent (single-turn run)",
+  "Runs View :: executionColumns Total turns valueGetter > Should return null when data is null or undefined",
+  "Runs View :: executionColumns are right-aligned > HTTP column keeps its status coloring and adds align-right",
+  "Runs View :: executionColumns are right-aligned > Duration column keeps its status coloring and adds align-right",
+  "Runs View :: executionColumns are right-aligned > Duration column exposes the numeric value so sorting follows real duration, formatted only for display",
+  "Runs View :: createEmptyComparePrimaryRow > carries request/turn identity fields from the source row",
+  "Runs View :: createEmptyComparePrimaryRow > leaves identity fields undefined when absent on the source row",
+  "Runs View :: getCompareRowSelectionId > returns primary id when present",
+  "Runs View :: getCompareRowSelectionId > falls back to compared id for compared-only rows",
+  "Runs View :: isMatchedCompareRow > returns true when both sides have result ids",
+  "Runs View :: isMatchedCompareRow > returns false for primary-only rows",
+  "Runs View :: isMatchedCompareRow > returns false for compared-only rows",
+  "Runs View :: mergeByTestCaseId > matches rows by testCaseId",
+  "Runs View :: mergeByTestCaseId > falls back to testCaseName when testCaseId is absent",
+  "Runs View :: mergeByTestCaseId > sets _compared to null for unmatched current rows",
+  "Runs View :: mergeByTestCaseId > sets _compared to null when current row has no key",
+  "Runs View :: mergeByTestCaseId > preserves all current row fields",
+  "Runs View :: mergeByTestCaseId > matches rows by testCaseId and runIndex",
+  "Runs View :: mergeByTestCaseId > includes compared-only rows when primary has fewer sub-runs",
+  "Runs View :: mergeByTestCaseId > falls back to testCaseName when testCaseIds differ (detached public copy)",
+  "Runs View :: mergeByTestCaseId > prefers testCaseId match over testCaseName when both available",
+  "Runs View :: mergeByTestCaseId > does not merge rows sharing testCaseId + runIndex but differing turnIndex (multi-turn chain)",
+  "Runs View :: mergeByTestCaseId > does not merge rows sharing testCaseId + runIndex but differing requestIndex (request chain)",
+  "Runs View :: mergeByTestCaseId > falls back to testCaseName + runIndex + requestIndex + turnIndex when testCaseId differs",
+  "Runs View :: mergeByTestCaseId > compared-only row keeps its request/turn identity fields on the primary row",
+  "Runs View :: mergeByTestCaseId > matches multi-turn rows by testCaseId, runIndex, and turnIndex",
+  "Runs View :: mergeByTestCaseId > orders chained rows by requestIndex before turnIndex",
+  "Runs View :: mergeByTestCaseId > does not reuse one compared turn across multiple primary turns",
+  "Runs View :: getAnalyticsColumns default column visibility > hides every index column of a single-request, single-turn run",
+  "Runs View :: getAnalyticsColumns default column visibility > keeps the turn column, but not its total, when the run spans several turns",
+  "Runs View :: getAnalyticsColumns default column visibility > keeps the request column, but not its total, when the run spans several requests",
+  "Runs View :: getAnalyticsColumns default column visibility > keeps the run-number column when a test case was run more than once",
+  "Runs View :: getAnalyticsColumns default column visibility > hides the total columns even when their values differ between results",
+  "Runs View :: getAnalyticsColumns default column visibility > keeps HTTP and Duration visible even when every result carries the same status",
+  "Runs View :: getAnalyticsColumns default column visibility > hides the totals but no index column before any result has loaded",
+  "Runs View :: getAnalyticsColumns default column visibility > leaves the other groups’ defaults untouched",
+  "ExecutionResultsTab > renders a column at the width kept in the tab state",
+  "ExecutionResultsTab > loads compare results for both runs and renders grid",
+  "ExecutionResultsTab > skips fetch when results are already lifted",
+  "ExecutionResultsTab > preserves hideHighlights across remount with lifted state",
+  "ExecutionResultsTab > shows load error when run fetch fails",
+  "ExecutionResultsTab > shows load error when compared run is missing",
+  "ExecutionResultsTab > shows empty state when view differences only has no differing rows",
+  "ExecutionResultsTab > renders nested execution fields in display panel",
+  "ExecutionResultsTab > closes display panel when close button is clicked",
+  "ExecutionResultsTab > view differences only hides rows without metric or status diff",
+  "ExecutionResultsTab > hides diff legend when row detail panel is open",
+  "ExecutionResultsTab > shows HTTP columns in grid when HTTP group is checked in display panel",
+  "ExecutionResultsTab > hides HTTP columns in grid when HTTP group is unchecked in display panel",
+  "ExecutionResultsTab > calls onOpenRowDetail when a row is clicked",
+  "ExecutionResultsTab > calls onOpenRowDetail with focusFieldKey when a mapped cell is clicked",
+  "ExecutionResultsTab header row > the Delta header lines up with its right-aligned values",
+]
+tags = ["multimodal", "design_reference", "ag-grid (react/next.js)", "typescript", "ag-grid", "typography", "design-system", "tables"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

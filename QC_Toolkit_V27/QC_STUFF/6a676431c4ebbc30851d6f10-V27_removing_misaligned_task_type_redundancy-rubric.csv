@@ -1,0 +1,143 @@
+"id","title","questionText","questionDescription","required","useAllSteps","stepIds","useAllErrorCategories","errorCategories","rubricFailureType","answerOptionText","answerOptionScore","answerOptionRequiresJustification"
+"5aeb3eae-c4f3-4cc6-ba50-fda727e40701","Structure - Task Bundle Files","Rate the Task Bundle Files of the Structure dimension.","Are all required harness files in the Tasks/ bundle present, non-empty, unmodified in name/location, and machine-valid? Only files inside environment/assets/ may be renamed/replaced.
+
+For proper file structure, See the Examples & Notes tab of the Spec Doc
+
+**NOTE:** do not use the sandbox to assess. Download the 4 directories, inspect, run docker, patch, and test code locally.  For all options except the last, apply the error category.
+
+**NOTE:** A `rubrics.json` file is not required by the task.","true","true","","false","[All] [All] [Fail - Broken Structure]","","[Fail - Broken Structure] A fixed harness file (task.toml, instruction.md, evidence_bundle.json, environment/Dockerfile, ASSET_MANIFEST.json, solution/fix.patch, solution/solve.sh, tests/config.json, tests/test.patch, tests/test.sh, tests/verifier.py) is renamed/moved/removed/empty, JSON fails to parse, verifier.py fails to compile, or a image fails to decode.","2","true"
+"","","","","","","","","","","All present, non-empty, JSON parses, verifier compiles, images decode.","5","false"
+"cb46c644-7056-46af-818e-4907c56853a2","Structure - Deliverables & Packaging","Rate the Deliverables & Packaging of the Structure dimension.","Are both of the deliverables present, correctly named/placed, and packaged as its own .tar.gz?
+
+`Tasks/` and `Trials/` (packaged as .tar.gz)
+
+Located beneath the sandbox.","true","true","","false","[All] [All] [Fail - Deliverable Packaging]","","[Fail - Deliverable Packaging]
+Either `Tasks.tar.gz` or `Trials.tar.gz` is:
+• Missing or mis-named
+• Unpacks to a wrong/mis-cased top-level folder (""Tasks"" must have a capital 'T')
+• `Trials/` is nested inside `Tasks/` (or vice-versa) instead of being root-level siblings.","2","true"
+"","","","","","","","","","","Both archives are correctly present and unpack as expected","5","false"
+"fa4824bb-9a8b-4ba7-90ee-4b04ad40a8e6","Instruction - Requires the Visual Evidence","Rate the Requires the Visual Evidence of the Instruction dimension.","Does solving the task genuinely require the bundled assets — i.e., the instruction points to the image(s) and the defect can't be diagnosed/localized from the text alone?
+Assess according to the instructions.md and attached image assets
+
+**NOTE:** Do not use the sandbox to assess. Download the 4 directories, inspect, run Docker, patch, and test code locally.
+
+**NOTE:** If there are multiple bundled assets, this dimension is considered passing if at least one of them is required to fully solve the task.
+
+**NOTE**: Do not use the included trajectories as definitive proof or the sole reason as to whether included assets would be required to fully solve the task. (I.e., just because a model was able to accomplish the task without referencing the image in its trajectory does not automatically mean that the image is completely unnecessary in the context of this project.)
+
+**NOTE**: if included, ignore any alt text for the image.
+
+This should be a judgment call—put yourself in the perspective of the developer. Do the included assets meaningfully assist in diagnosing, pinpointing, or solving the issue? (In a way that's more substantial than simple visualization of the issue.)
+It is solvable if it can be done Correctly, Confidently, and Completely; without the image.
+
+Example:
+- Instruction.md: ""There's a game log bug in which 'a' is used incorrectly when preceding vowel-starting words. Check `bug_example.png` for reference.""
+- At first glance, this instruction may seem fully solvable without referring to the image—it describes a trivial bug, along with where the bug is encountered.
+- However, the image—`bug_example.png`—may paint a different picture by showing the following sentence: ""The player was hit by a an Orc for 10 damage!""
+- This bug is different from the typical ""a-instead-of-an"" grammar slip-up—the problem is an extra ""a"" rather than the wrong usage. Therefore, the image does provide sufficiently helpful context in diagnosing the issue—the specifics of this issue wouldn't have been clear from the instructions, alone.","true","true","","false","[All] [All] [Fail - Assests Not Needed]; [All] [All] [Non-Fail Assets misdirected]; [All] [All] [Non-fail - Assets subjectively needed]","","[Fail – Assets Not Needed]
+• The task is fully solvable from the instruction text
+• The asset(s) do not add any useful information that is not already present in the instruction text
+• The instruction never references the asset(s) so the agent isn't even directed to them","2","true"
+"","","","","","","","","","","[Non-Fail - Assets misdirected]
+The instructions note there is an asset included, but gives no pathing, or incorrect pathing","3","true"
+"","","","","","","","","","","[Non-fail - Assets subjectively needed]
+The task is subjectively solvable from the instruction text alone, but the included visual assets provides helpful context or guidance (beyond simple visualization of the bug)","3","true"
+"","","","","","","","","","","The instruction points the agent to the asset(s) and the defect can only be diagnosed/localized by viewing them","5","false"
+"aa0a98d9-ca32-47c2-a79b-85bef6f0c9cb","Instruction – Symptom Specificity","Check the instruction.md file's contents to see if the symptoms are properly listed.","Instruction check: Verify that the instruction names the affected element by its type, i.e., the thing that looks wrong (""the shadow"", ""the header labels"", ""the edges into subgraphs"", ""the converted chart""), without hinting at the fix. The visible defect and the expected result may be stated in the text or shown through a comparison image the text points to (current vs. reference, before vs. after, original vs. converted, ""like the correct ones next to them""). Which specific instance has the problem (which object, which row) may remain in the image.
+
+Symptom-specificity check: General phrases such as ""something does not render correctly"", ""charts come out wrong"" or ""it should render correctly"" are acceptable when the text immediately gives the context: what is affected, what kind of problem it is, or which image shows the correct result. This check fails only when such a phrase stands alone, or when a time window or region is the only explanation given.
+
+Image-dependency check: The text should say what kind of problem it is, or point to where the correct result can be seen. The image should retain the clue that points to the cause: which instance, what triggers it, how big it is, when it happens, and the error text. If stating the expected result would give the clue away, confirm it points to a reference image (""should look like reference.png""). Example: ""The shadow is missing under one of the objects on the floor, while the other object has one. Every object should cast its shadow."" Verify that this names the element (the shadow), the defect (missing), and the expected result. Which object, and why, should stay in the video. The text must not describe the problem incorrectly (e.g., calling a console crash ""a problem in a rendered image"").
+","true","true","","false","[All] [All] [Fail - Unspecific Symptoms]; [All] [All] [Non-Fail - Image-carried Symptom]","","[Fail - Unspecific Symptoms] The instruction does not explain beyond ""something does not render correctly"" / ""it should work correctly"" / a region or time window; or it describes the problem incorrectly; or the with-image trials show agents could not tell the bug from intended behavior.","2","true"
+"","","","","","","","","","","[Non-Fail - Image-carried Symptom]: The instruction names the element and gives the context right away, but leaves the exact defect to a comparison image the text points to. Note: if in the report, it is not a fail - add this flag to feedback, if present.","3","true"
+"","","","","","","","","","","The instructions.md file PASS all of the checks: instruction, symptom-specificity, & image-dependency","5","false"
+"09a72d43-94c6-4b85-a037-ce90899dfd65","Instruction – Task Type","Check the instruction.md file's contents to see if it matches the assigned task type","Task types and their descriptions can be found in the additional notes as well as the project instructions.","true","true","","false","[All] [All] [Fail - Mismatched Task Type]","","[Fail - Mismatched Task Type] The instructions.md file does not reasonably fall under its assigned task type.","2","true"
+"","","","","","","","","","","The instructions.md file reasonably matches the assigned task type","5","false"
+"fead5ab0-48ea-484c-bcac-62d6141d8a0b","Image - Evidence Quality","Rate the Evidence Quality of the Image dimension.","If the real evidence is a video/GIF, a representative still frame may be added in addition, or in it's place.
+Confirm no required image/video/GIF is missing and that each filename/role matches what the image actually shows.
+
+If the reference image is intentionally subversive or contrived then the task should still be flagged for failure (for instance, asking to change the blue background to green when the current background isn't blue).
+
+Applies to egregious situations (no valid interpretation otherwise)
+
+NOTE: Remember that CBs are allowed to inject bugs into the original repo—the asset does not have to be aligned with the original repo (pre-injection), as long as it makes sense with the state of the repo that the agent is presented with (post-injection).","true","true","","false","[All] [All] [Fail - Bad Evidence]","","[Fail - Bad Evidence]
+• The image is wrong/corrupted, missing a required image present in the real issue, or misnamed (e.g. bug actually shows the expected solution)
+• At least one of the assets is wholly and  objectively unrelated to the task (e.g., a random selfie)","2","true"
+"","","","","","","","","","","All required images present, correct, and named for what they show.","5","false"
+"b8ee98f7-ba6a-4423-8e6a-9691530b33b4","Metadata - task_type Accuracy","Rate the task_type Accuracy of the Metadata dimension.","Found in Tasks/task.toml
+
+Check how the CB mapped the image asset to one of the seven task types
+Note: do not penalize if the CBs selection was valid, but another type was a better fit
+
+**NOTE:** do not use the sandbox to assess. Download the 4 directories, inspect, run docker, patch, and test code locally. ","true","true","","false","[All] [All] [Fail - Wrong Task_Type]","","[Fail - Wrong task_type] The task_type does not match the image","2","true"
+"","","","","","","","","","","task_type is a valid value and matches the image asset.","5","false"
+"45d35806-c81d-484f-8936-2a3bd79136cc","Evidence - Chain Consistency","Rate the Chain Consistency of the Evidence dimension.","Do all four evidence references agree with each other? | assets, ASSET_MANIFEST.json, evidence_bundle.json, instruction.md.  For all options except the last, apply the error category.","true","true","","false","[All] [All] [Fail - Evidence Mismatch]; [All] [All] [Non-Fail Evidence Minor Mismatch]","","[Fail - Evidence Mismatch] – The file in environment/assets/, its ASSET_MANIFEST.json entry, and the instruction.md image ref do not all point to the same asset, or do not poit to the asset location in /app/.harbor_assets/...","2","true"
+"","","","","","","","","","","[Non-Fail - Evidence Minor Mismatch] The evidence_bundle.json entry (role/url/local_path under /app/.harbor_assets//description), points to a different asset location/reference than the other 3 references.","3","true"
+"","","","","","","","","","","All four asset references agree.","5","false"
+"9fdc7074-a036-4c03-be43-702c6782bb2d","Golden Fix - Applies Cleanly","Rate the Applies Cleanly of the Golden Fix dimension.","Does solution/fix.patch apply cleanly on harbor_base? ","true","true","","false","[All] [All] [Fail - Patch Won't Apply]","","[Fail - Patch Won’t Apply] git apply --check on harbor_base fails.","2","true"
+"","","","","","","","","","","The patch applies cleanly on harbor_base.","5","false"
+"dcfd57ea-2c72-4d62-936a-138c20d9da30","Golden Fix - Source-Only Scope","Rate the Source-Only Scope of the Golden Fix dimension.","List the patch’s diff --git paths and set-compare them to files_edited(task.toml); they must be equal and contain no test/doc/lockfile/changeset entries.  For all options except the last, apply the error category.","true","true","","false","[All] [All] [Fail - Dirty Fix Scope]","","[Fail - Dirty Fix Scope] The patch edits test files, docs, changelog, lockfile, or .changeset noise, or its edited paths differ from task.toml's files_edited","2","true"
+"","","","","","","","","","","Source files only, exactly equal to files_edited.","5","false"
+"e5ad0cad-c837-44a2-80b2-f8c1e97bd9e8","Tests - Implementation Overfit","Rate the Implementation Overfit of the Tests dimension.","For each assertion ask: “would a correct fix written a different way still pass?” If a test checks exact bytes, function/file names, or a literal CSS/source string, it will cause invalid fails — loosen or drop it.
+
+----- Context -----
+When considering whether a test is overfit, we need to devise hypothetical implementations that the model could generate which the test would unfairly penalize. Additionally, we should also consider the context of the repo's pre-existing codebase—an implementation may be considered technically ""valid"" if it doesn't directly clash with expectations, but it's only ""plausible"" if it mimics pre-existing code in some way. (I.e., An experienced repo contributor would likely write the implementation in a similar way.)
+
+Note that if an implementation does not align with well-established, intentional design choices within the repo—e.g., a reoccurring factory template or some other design pattern—then it should not be considered as ""valid"". (An experienced repo contributor would follow the repo's expected conventions.)
+
+----- Important Definitions -----
+A ""valid"" implementation solves the prompt's explicit requirements while not actively clashing with the repo's implicit expectations (e.g., established design patterns, naming conventions, etc.).
+
+A ""plausible"" implementation is a valid implementation that also has any precedent in the repo. (E.g., if a pre-existing function handles something by doing XYZ, then an implementation which also does XYZ can be considered ""plausible"".) If there hasn't been an opportunity for the repo to establish this precedent, then general/common practice may be considered instead.
+
+**Note**: Tests can default to applicable industry standards when prompt is imprecise or leaves room for subjectivity.
+
+**IMPORTANT: See ""Examples & Notes"" tab in spec sheet for further explanation and details.**
+
+-----
+**NOTE:** do not use the sandbox to assess. Download the 4 directories, inspect, run docker, patch, and test code locally.
+","true","true","","false","[All] [All] [Fail - Overfit Tests]; [All] [All] [Non-Fail - Slightly Overfit]","","[Fail - Overfit Tests]
+• At least one test penalizes a ""plausible"" implementation (see notes)
+• At least one test is overfit to the golden response (exact names, bytes, layout, or an asserted source/CSS string) without cause","2","true"
+"","","","","","","","","","","[Non-Fail - Slightly Overfit]
+• At least one test penalizes a ""valid"" implementation (not ""plausible"")","3","true"
+"","","","","","","","","","","No unit tests penalize a ""valid"" or ""plausible"" implementation.","5","false"
+"a3df4c3c-1499-4af2-b647-15347c18d6c9","Tests - f2p/p2p Identifier Validity","Rate the f2p/p2p Identifier Validity of the Tests dimension.","Do the f2p/p2p identifiers exist in the test files and each match exactly one test?
+
+f2p and p2p identifiers are located at Tasks/task.toml and Tasks/tests/config.json. The lists must contain the same tests (reordering is ok).  For all options except the last, apply the error category.","true","true","","false","[All] [All] [Fail - Bad Test IDs]","","[Fail - Bad Test IDs]
+•An f2p/p2p identifier does not exist in the test files.
+•The f2p and p2p identifiers do not contain the same lists in config.json and task.toml","2","true"
+"","","","","","","","","","","Every identifier exists and matches exactly one test. and the identifier locations are the same.","5","false"
+"d57dffaf-bd50-4a32-a50d-6b30c8a6faa9","Tests - p2p Classification","Rate the p2p Classification of the Tests dimension.","Does every p2p test genuinely pass on the untouched base? ","true","true","","false","[All] [All] [Fail - Mislabeled p2p]","","Fail - Mislabeled p2p] A test labeled p2p fails on base (e.g. the PR changed its baseline/snapshot) and is really a fail-to-pass.","2","true"
+"","","","","","","","","","","Every p2p passes on base and on fix.","5","false"
+"c34975a0-89d6-4ad6-ba90-b59d5b835b61","Tests - Discriminating (f2p)","Rate the Discriminating (f2p) of the Tests dimension.","Does every f2p test fail on base and pass on fix?  For all options except the last, apply the error category.","true","true","","false","[All] [All] [Fail - Non-Discriminating]","","[Fail - Non-Discriminating] At least one f2p passes on base as well as on fix (proves nothing).","2","true"
+"","","","","","","","","","","Every f2p fails on base and passes on fix.","5","false"
+"9eb2be76-18fd-4a35-a536-987e0acb7c70","Tests - Determinism","Rate the Determinism of the Tests dimension.","Do the tests give the same result on every run?  For all options except the last, apply the error category.","true","true","","false","[All] [All] [Fail - Flaky Tests]; [All] [All] [Fail - Network Configuration]","","[Fail - Flaky Tests] Timing, animation, network, or unpinned fonts make a test non-deterministic.
+Note: Installing dependencies necessary for testing should not be considered a determinism concern due to network dependence, but a secondary check should be performed to determine if task.toml is configured correctly to account for this -- see [Fail - Network Configuration]","2","true"
+"","","","","","","","","","","[Fail - Network Configuration] The test suite installs 1+ dependencies, but task.toml is either set to ""no-network"" instead of ""allowlist"" (for its `network_mode` in the `[verifier]` section), or the allowlist in task.toml omits 1+ of the domains necessary for those instructions (in its `allowed_hosts` list in the `[verifier]` section).","2","true"
+"","","","","","","","","","","Pinned/headless, no timing/network dependence; a control gives the same result every run.","5","false"
+"0b8b42ec-477b-4e0e-8e36-deaa52ba292d","Hardening - Difficulty (Model Trial Fails)","Rate the Difficulty (Model Trial Fails) of the Hardening dimension.","====================
+Trial Requirements
+Each Task must fall into either of these 2 options. Either is acceptable for any task.
+Option A, 7 trials (pass@4): 3 runs without images: all failing (reward < 1.0). 4 runs with images: exactly 1 passing (reward = 1.0) and 3 failing.
+Option B, 11 trials (pass@8): 3 runs without images: all failing. 8 runs with images: 1 or 2 passing and 7 or 6 failing.
+====================
+**NOTE:** Do not use the sandbox to assess. Download the directories, inspect, run Docker, patch, and test code locally.  For all options except the last, apply the error category.","true","true","","false","[All] [All] [Fail - Trial Threshold Not Met]","","[Fail - Trial Threshold Not Met] the task matches neither option. Examples listed: 0/4, 2/4, 0/8, 3/8 or more, any pass without images, or a trial count other than 7 or 11.","2","true"
+"","","","","","","","","","","The task meets Option A (1/4) or Option B (1/8 or 2/8).","5","false"
+"dc8633cd-b46f-46bf-a009-85481f741aa7","Hardening - Real & Feasible","Rate the Real & Feasible of the Hardening dimension.","Is the hardened task still a coherent real issue that a capable agent could solve from symptom + image alone?  For all options except the last, apply the error category.
+
+NOTE: Remember that CBs are allowed to inject bugs into the original repo—the asset does not have to be aligned with the original repo (pre-injection), as long as it makes sense with the state of the repo that the agent is presented with (post-injection).","true","true","","false","[All] [All] [Fail - Unreal or Infeasible]","","[Fail - Unreal or Infeasible]
+Hardening exhibits a fix no real developer would write","2","true"
+"","","","","","","","","","","A genuine, coherent issue that stays solvable from the symptom + image.","5","false"
+"a30d49ab-b332-4789-ada8-22416532ea0b","Gate - Oracle/Nop","Rate the Oracle/Nop of the Gate dimension.","After the contributor's changes, does the golden fix score 1.0 and the untouched base 0.0, with the verifier reaching completion and idempotent on re-run?
+
+**NOTE:** Do not use the sandbox to assess. Follow the Harbor setup guide found in the Audit Workflow from the spec sheet.","true","true","","false","[All] [All] [Fail - Gate Broken]","","[Fail - Gate Broken]
+• Oracle ≠ 1.0, Nop ≠ 0.0
+• Verifier did not run to completion (no stage banners / reward=, or “could not apply test.patch”)
+• A re-run is not idempotent (i.e., different results)","2","true"
+"","","","","","","","","","","• Oracle = 1.0, nop = 0.0
+• Verifier completed
+• Idempotent","5","false"
+"e1bfcb5e-0ca2-4bd9-adf6-2cd4795cab70","Unauditable","Is this task unauditable?","Used for when the task is unauditable or spam","true","true","","false","[All] [Calibration] [Fail - Un-auditable]","","This task is unauditable","1","true"
+"","","","","","","","","","","This task is not unauditable","5","false"

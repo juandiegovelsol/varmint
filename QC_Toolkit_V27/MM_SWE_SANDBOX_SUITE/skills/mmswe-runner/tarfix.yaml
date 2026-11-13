@@ -1,0 +1,13 @@
+# vs-sheriff compose override.
+# 1. TAR_OPTIONS=--no-same-owner — GNU tar honors this env var on every invocation,
+#    fixing "Cannot change ownership to uid ..." extraction failures under the
+#    sandbox's nested-docker user namespace (e.g. flutter's gradle-wrapper fetch).
+# 2. network_mode: host — same as the runner's generated override, so this file can
+#    also be passed to the trial via --hostnet-file without losing proxy access.
+# Service name must match harbor's environment service (default "main"; override
+# with COMPOSE_SVC for mm_run.sh, or edit here for direct harbor runs).
+services:
+  main:
+    network_mode: host
+    environment:
+      TAR_OPTIONS: --no-same-owner

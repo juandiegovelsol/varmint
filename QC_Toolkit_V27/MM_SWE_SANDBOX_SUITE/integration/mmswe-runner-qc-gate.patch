@@ -1,0 +1,323 @@
+--- skills/mmswe-runner/mm_run.sh
++++ skills/mmswe-runner/mm_run.sh
+@@ -96,6 +96,10 @@
+ #   (rubrics: if tests/rubrics.json exists, judge creds are exported for [verifier.env],
+ #    rewards are reported per key, and a failed in-container judge falls back to
+ #    host-side grading via mm_grade_rubrics.py)
++#   --n_trial=N     trial only: N independent attempts (pass@k). Default 1. Each
++#                   attempt is a full agent run, so N times the spend. NOTE: this
++#                   is NOT --n-trials/-l, which limits how many trials analyze reads.
++#   --no-qc         run harbor check even if the QC audit finds bundle FAILs
+ #   --no-file-check run harbor check even if required task files are missing
+ #   --no-integrity-check  run harbor check even if task metadata is internally inconsistent
+ #    (base_commit vs Dockerfile, files_edited vs fix.patch, f2p/p2p vs config.json, etc. —
+@@ -110,6 +114,8 @@
+ 
+ TASK_DIR=""; MODE=""
+ MODEL="anthropic/claude-opus-4-8"; AGENT="claude-code"
++N_ATTEMPTS=1                          # trial attempts (pass@k); --n_trial=N overrides.
++                                      # NB: distinct from N_TRIALS/-l, the analyze limit.
+ # check and analyze both default to claude-sonnet-5 — that is what the anonymizer
+ # serves for these two. Harbor's own defaults (claude-sonnet-4-6, claude-haiku-4-5) are
+ # NOT served, and an unserved name does not come back as a clean 404: the agent retries,
+@@ -120,6 +126,7 @@
+ ROOT=""; ROOT_GIVEN=0; HENV="docker"; PREFLIGHT=1; KEEP=0
+ FILE_CHECK=1                          # check mode verifies the task file names first
+ INTEGRITY_CHECK=1                     # check mode cross-checks task metadata for internal consistency
++QC_CHECK=1                            # check mode runs the MM SWE QC audit first (--no-qc skips)
+ HOSTNET=1; HOSTNET_FILE=""            # host-networking compose override (replaces the bridge)
+ HOSTNET_FILE_GIVEN=0                  # --hostnet-file was passed explicitly (disables isolation)
+ # ---- network isolation (the anti-cheat) -------------------------------------
+@@ -177,6 +184,9 @@
+     --no-preflight) PREFLIGHT=0; shift;;
+     --no-file-check) FILE_CHECK=0; shift;;
+     --no-integrity-check) INTEGRITY_CHECK=0; shift;;
++    --no-qc) QC_CHECK=0; shift;;
++    --n_trial=*) N_ATTEMPTS="${1#*=}"; shift;;
++    --n_trial) N_ATTEMPTS="$2"; shift 2;;
+     --keep) KEEP=1; shift;;
+     --no-hostnet) HOSTNET=0; ISOLATE=0; shift;;
+     --hostnet-file) HOSTNET_FILE="$2"; HOSTNET=1; HOSTNET_FILE_GIVEN=1; ISOLATE=0; shift 2;;
+@@ -191,6 +201,14 @@
+     *) if [ -z "$TASK_DIR" ]; then TASK_DIR="$1"; elif [ -z "$MODE" ]; then MODE="$1"; fi; shift;;
+   esac
+ done
++case "$N_ATTEMPTS" in
++  ''|*[!0-9]*) echo "--n_trial must be a positive integer (got: '$N_ATTEMPTS')" >&2; exit 2;;
++esac
++[ "$N_ATTEMPTS" -ge 1 ] || { echo "--n_trial must be >= 1 (got: $N_ATTEMPTS)" >&2; exit 2; }
++if [ "$N_ATTEMPTS" -gt 1 ] && [ "$MODE" != "trial" ]; then
++  echo "--n_trial only applies to \`trial\` (mode is '${MODE:-none}'); ignoring it" >&2
++  N_ATTEMPTS=1
++fi
+ [ -n "$TASK_DIR" ] && [ -n "$MODE" ] || { echo "usage: mm_run.sh <task-dir> <oracle|nop|trial|check|analyze> [opts]" >&2; exit 2; }
+ [ -d "$TASK_DIR" ] || { echo "error: no such directory: $TASK_DIR" >&2; exit 2; }
+ 
+@@ -713,6 +731,46 @@
+   local rc=$?; report "$ROOT/$jobname" "$mode"; return $rc
+ }
+ 
++report_attempts(){  # $1 = job dir. EVERY attempt, plus the pass@k tally.
++  # `report` takes the first reward it finds, which at k>1 would describe one attempt as if it
++  # were the whole run. pass@k is a distribution, so all of them are printed.
++  local d="$1" n=0 solved=0 f r
++  say "attempts under $d:"
++  while IFS= read -r f; do
++    [ -n "$f" ] || continue
++    r="$(python3 -c "import json,sys;d=json.load(open(sys.argv[1]));r=d.get('rewards') or (d.get('verifier_result') or {}).get('rewards') or d;print(r.get('reward') if isinstance(r,dict) and r.get('reward') is not None else '')" "$f" 2>/dev/null)"
++    n=$((n+1))
++    say "  attempt $n: reward=${r:-<none>}   ($(dirname "$f" | sed "s|^$d/||"))"
++    case "$r" in 1|1.0|1.00) solved=$((solved+1));; esac
++  done < <(find "$d" -name result.json 2>/dev/null | sort)
++  if [ "$n" -eq 0 ]; then say "  no result.json found under $d"; return 0; fi
++  say "pass@$n: $solved/$n attempt(s) scored 1.0"
++  # #14 is a judgement call once k>1: one solve in seven still shows the model CAN do it, but
++  # where the line sits is the reviewer's call, so the distribution is reported, not a verdict.
++  [ "$solved" -gt 0 ] && say "  NOTE: at least one attempt solved it - weigh against v2 #14 (Not Hard Enough)."
++  return 0
++}
++
++report_attempts(){  # $1 = job dir. EVERY attempt, plus the pass@k tally.
++  # `report` takes the first reward it finds, which at k>1 would describe one attempt as if it
++  # were the whole run. pass@k is a distribution, so all of them are printed.
++  local d="$1" n=0 solved=0 f r
++  say "attempts under $d:"
++  while IFS= read -r f; do
++    [ -n "$f" ] || continue
++    r="$(python3 -c "import json,sys;d=json.load(open(sys.argv[1]));r=d.get('rewards') or (d.get('verifier_result') or {}).get('rewards') or d;print(r.get('reward') if isinstance(r,dict) and r.get('reward') is not None else '')" "$f" 2>/dev/null)"
++    n=$((n+1))
++    say "  attempt $n: reward=${r:-<none>}   ($(dirname "$f" | sed "s|^$d/||"))"
++    case "$r" in 1|1.0|1.00) solved=$((solved+1));; esac
++  done < <(find "$d" -name result.json 2>/dev/null | sort)
++  if [ "$n" -eq 0 ]; then say "  no result.json found under $d"; return 0; fi
++  say "pass@$n: $solved/$n attempt(s) scored 1.0"
++  # #14 is a judgement call once k>1: one solve in seven still shows the model CAN do it, but
++  # where the line sits is the reviewer's call, so the distribution is reported, not a verdict.
++  [ "$solved" -gt 0 ] && say "  NOTE: at least one attempt solved it - weigh against v2 #14 (Not Hard Enough)."
++  return 0
++}
++
+ # ---------------------------------------------------------------------- trial
+ run_trial(){
+   # Output goes STRAIGHT into <ROOT>/Trials — no per-task subfolder. harbor writes a
+@@ -880,9 +938,19 @@
+   # only, so setup/agent-install keep the environment baseline and the agent does not.
+   [ "$SEALED" = 1 ] && [ -n "$ALLOW_AGENT_HOST" ] && hargs+=(--allow-agent-host "$ALLOW_AGENT_HOST")
+   [ -n "$HOSTNET_FILE" ]   && hargs+=(--extra-docker-compose "$HOSTNET_FILE")
++  if [ "$N_ATTEMPTS" -gt 1 ]; then
++    hargs+=(-k "$N_ATTEMPTS")
++    say "n_trial=$N_ATTEMPTS - $N_ATTEMPTS independent agent attempts (pass@$N_ATTEMPTS)."
++    say "  that is ${N_ATTEMPTS}x the model spend and wall clock of a single trial."
++  fi
+   say_harbor "${hargs[@]}"   # masked: this array carries ANTHROPIC_API_KEY
+   harbor "${hargs[@]}"
+-  local rc=$?; report "$ROOT/Trials" trial; return $rc
++  # pass@k. Each attempt is a FULL agent run, so N attempts is N times the model spend and
++  # wall clock - said plainly rather than left buried in the harbor line.
++  local rc=$?
++  if [ "$N_ATTEMPTS" -gt 1 ]; then report_attempts "$ROOT/Trials"
++  else report "$ROOT/Trials" trial; fi
++  return $rc
+ }
+ 
+ # ---------------------------------------------------------- task file structure
+@@ -937,6 +1005,64 @@
+ # ------------------------------------------------------------- check / analyze
+ # Both are rubric-judge jobs, not unit-test jobs: they produce no reward.txt, so
+ # they report through report_rubric() instead of report().
++# ---------------------------------------------------------------- QC gate (check mode)
++# THIRD pre-flight, after the file-name and metadata gates and for the same reason they exist: a
++# check run costs credentials and wall clock, so anything decidable locally is decided first.
++# This one runs the MM SWE QC skill's full audit.
++#
++# --gate-tier bundle separates DISPLAY from BLOCKING, and both halves matter:
++#   * the CB sees EVERY finding, at the phase actually on disk - a stale Oracle or a broken
++#     1.0/0.0 gate is printed in full, not compressed into a one-line OPEN list. Showing a CB
++#     only what you are willing to block on hides real defects from them.
++#   * only bundle-tier FAILs count toward the exit code, because `harbor check` grades the TASK,
++#     not the runs. A stale Oracle must be SHOWN and must not cost the run.
++# (An earlier version passed --phase bundle, which did both jobs at once and could therefore only
++#  show what it would block on.)
++#
++# `qc` only - never `auto` or `verify`. qc reads files and calls no runner, so there is no path
++# back into this script and no recursion.
++QC_FIX=""
++resolve_qc(){
++  local c
++  for c in "${MM_QC_FIX:-}" \
++           "$HOME/.claude/skills/mm-swe-qc-fix-sandbox/fix.py" \
++           "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)/fix.py"; do
++    [ -n "$c" ] && [ -f "$c" ] && { QC_FIX="$c"; return 0; }
++  done
++  return 1
++}
++
++qc_gate(){
++  local task="$1"
++  if ! resolve_qc; then
++    say "WARNING: MM SWE QC skill not found - the QC gate was SKIPPED, not passed."
++    say "         Install mm-swe-qc-fix-sandbox or set \$MM_QC_FIX to its fix.py."
++    return 0
++  fi
++  say "QC audit via $QC_FIX (read-only; no fixes, no docker)"
++  python3 "$QC_FIX" qc "$task" --gate-tier bundle --no-report && return 0
++
++  # QC found bundle-level FAILs. The decision to spend the run anyway is the USER'S, so ask -
++  # but only when there is a human on the other end of stdin.
++  if [ -t 0 ]; then
++    printf '\n'
++    say "QC found bundle-level FAIL(s) above."
++    printf '[mm_run] spend a check run on this task anyway? [y/N] '
++    local ans=""; read -r ans </dev/tty || ans=""
++    case "$ans" in
++      y|Y|yes|YES) say "proceeding at your request - the findings above still stand."; return 0;;
++      *) say "stopped. Fix the FAILs above, or re-run with --no-qc to skip this gate."; return 1;;
++    esac
++  fi
++
++  # Non-interactive (an agent, a script, CI): there is nobody to ask here, so DO NOT guess.
++  # Exit 7 - distinct from the other gates' 2 - means "QC found issues, ask the user and re-run".
++  say "QC found bundle-level FAIL(s) above, and stdin is not a terminal so you cannot be asked."
++  say "Ask the CB whether to spend the run, then re-run with --no-qc to proceed."
++  return 7
++}
++
++
+ run_check(){
+   if [ "$FILE_CHECK" = 1 ]; then
+     say "task $TASK_ID — checking required files under $TASK_DIR"
+@@ -954,6 +1080,11 @@
+       return 2
+     }
+   fi
++  if [ "$QC_CHECK" = 1 ]; then
++    say "task $TASK_ID — QC audit before spending a check run"
++    qc_gate "$TASK_DIR"; qcrc=$?
++    [ "$qcrc" = 0 ] || return "$qcrc"
++  fi
+   mkdir -p "$ROOT"
+   [ "$KEEP" = 1 ] || rm -rf "${ROOT:?}/Check"
+   resolve_creds
+--- skills/mmswe-runner/SKILL.md
++++ skills/mmswe-runner/SKILL.md
+@@ -274,6 +274,18 @@
+ invisible to harbor.
+ 
+ The gate is check-only; `oracle`, `nop`, `trial`, and `analyze` are untouched.
++
++A **third** pre-flight follows it: the MM SWE QC audit (`fix.py qc --phase bundle`), resolved via
++`$MM_QC_FIX` -> `~/.claude/skills/mm-swe-qc-fix-sandbox/fix.py` -> the copy beside this runner. It
++is read-only and calls no runner, so there is no recursion. It passes `--gate-tier bundle`, which
++shows the CB **every** finding at the phase on disk while letting only bundle-tier FAILs stop
++the run — `harbor check` grades the TASK, not the runs, so a stale Oracle is shown and does not
++cost the run. A `GATE SCOPE:` line states how many were blocking versus shown-only.
++
++On bundle FAILs it **asks** rather than deciding — the choice to pay for a run anyway is the
++user's. With a terminal it prompts `[y/N]`. Without one (an agent, CI) it exits **7**, meaning
++"findings above, ask the user and re-run with `--no-qc`" — it never guesses. `--no-qc` skips the
++gate. If the QC skill is absent it says the gate was SKIPPED, not passed.
+ `--no-file-check` skips it and runs harbor check regardless.
+ 
+ Two things to know about their output:
+@@ -329,10 +341,14 @@
+ | `--userns-host` | off | add `userns_mode: host` (retry aid for tar chown) |
+ | `--hostnet-file F` | generated | supply your own compose override |
+ | `--no-disallow-tools` | tools blocked | leave WebSearch/WebFetch/EnterPlanMode enabled |
++| `--n_trial=N` | `1` | **trial only**: N independent attempts (pass@k → harbor `-k`). Each attempt is a full agent run, so N× the spend. Not to be confused with `-l`/`--n-trials`, which limits how many trials *analyze* reads |
+ | `--keep` | overwrite | keep a previous run dir instead of deleting it |
+ 
+-Single attempt by design — harbor's default `n_attempts` is 1, so no pass@k flags are
+-passed. Add `-n` only if you later want pass@k.
++Single attempt by default — harbor's `n_attempts` is 1 unless you ask otherwise. Pass
++`--n_trial=N` for pass@k; the runner then prints **every** attempt's reward plus a
++`pass@N: k/N` tally, because a single blended number would describe one attempt as if it
++were the run. Whether one solve out of N counts against v2 #14 (Not Hard Enough) is a
++judgement call, so the distribution is reported and the verdict left to you.
+ 
+ ## Rubrics / LLM judge (optional)
+ 
+--- commands/run-check.md
++++ commands/run-check.md
+@@ -14,3 +14,82 @@
+ 
+ Note this grades **the task** (is it well-built?), which is different from the task's own
+ `tests/rubrics.json`, which grades **a submission**. Don't conflate them.
++
++## The QC gate runs first
++
++`check` runs the MM SWE QC audit before spending the credentialed run — a third pre-flight
++alongside the existing file-name and metadata gates, for the same reason: anything decidable
++locally is decided before you pay for a model opinion.
++
++**Every finding is printed, in full, always.** The gate uses `--gate-tier bundle`, which separates
++what is *shown* from what is *blocked on*: the audit renders at the phase actually on disk, so a
++stale Oracle, a broken 1.0/0.0 gate or an inert f2p test appears as a full finding — while only
++bundle-tier FAILs can stop the run. A line states the split:
++
++    GATE SCOPE: blocking on bundle-tier FAILs only (1 blocking, 5 shown-but-not-blocking).
++      not blocking: gate_checksum_mismatch, oracle_recorded_no_reward, …
++
++**You MUST report every issue to the CB. Never ask whether they want to see them, never summarise
++only the blockers, and never withhold the non-blocking ones.** They are looking at their own task;
++a defect you saw and did not mention is worse than no audit. Group them so it can be skimmed —
++blocking first, then shown-but-not-blocking, then candidates and advisories — but show them all.
++
++### Say it in words, not in ids
++
++The ids (`instr_solvable_without_image`, `reward_json_nonnumeric`, `s_fix_patch_spans_2`) exist so
++`--approve <id>` can name a fix and so the JSON can be parsed. **They are not English.** Never
++paste one at a CB as though it explained itself. Say what is wrong, in a sentence they could repeat
++to a colleague, and put the id in parentheses only if they will need to type it.
++
++Use the glossary shipped with the QC skill — it maps every id to a plain sentence:
++
++    ~/.claude/skills/mm-swe-qc-fix-sandbox/FINDINGS_GLOSSARY.md
++
++Read it when you report. A few for orientation: `instr_solvable_without_image` → "Can this be fixed
++without looking at the screenshots?" · `reward_json_nonnumeric` → "`verifier.py` writes values
++harbor can't read, so runs record no reward at all" · `oracle_stale` → "the Oracle run is older
++than the current task files". The auto-generated ids (`b_…`, `d_…`, `f_…`, `h_…`,
++`i_…`, `r_…`, `s_…`) are slugs cut from their own message text — always reword those.
++
++### Worked example
++
++Bad — a list of labels:
++
++    QC found: judge_drift (FAIL), reward_json_nonnumeric (FAIL), oracle_stale,
++    nop_stale, gate_checksum_mismatch, instr_solvable_without_image (CAND)
++
++Good — the same audit, said out loud:
++
++    Two things block the check run:
++
++    - `tests/verifier.py` writes values harbor can't parse, so every run records
++      no reward at all — reward.txt says 1.0 but harbor stored nothing. This is
++      why your three runs came back empty.
++    - `tests/judge.py` has been edited away from the template, which changes
++      grading semantics invisibly. One command fixes it.
++
++    Shown but not blocking a check run:
++
++    - All three runs predate your current task files, and Trials was produced
++      against a different version again — so none of those rewards describe the
++      code as it stands. You'll want to re-run oracle and nop.
++
++    Worth your eye:
++
++    - Can this be fixed without the screenshots? The instruction never names
++      forced-colors mode; it says "the display mode shown in the attached
++      screenshot". So the image is load-bearing — which is correct for an MM SWE
++      task. Just confirm the poster really shows it.
++
++    Clean: bundle files, golden-fix scope, test identifiers, task_type, evidence chain.
++
++**Exit 7 means "QC found bundle FAILs and nobody could be asked."** You are not a terminal, so the
++script refuses to guess. When you see it:
++
++1. Report the whole audit in your own words — worst first, what each means, what you propose.
++2. Ask with `AskUserQuestion` **only** whether to spend the check run anyway.
++3. Only if they say yes, re-run with `--no-qc`.
++
++Never pass `--no-qc` pre-emptively. Exit 2 is still the older gates (missing files / inconsistent
++metadata) and is not a "spend it anyway" question — those genuinely cannot produce a useful verdict.
++Run with a terminal attached and the script asks directly instead.

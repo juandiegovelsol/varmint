@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "checks": {
+        "behavior_in_task_description": {
+          "explanation": "This is a design-reference task, and instruction.md's three bullets line up with what the hidden tests check. Labels must match the mockup in size, weight, letter case and letter spacing; the tests accept 13-15px, weight 500-700, no uppercase and no extra spacing. Labels over numeric columns go right and all other labels go left; the tests check numeric/metric headers are right-aligned and text headers are left-aligned. Header rows must be evenly spaced; the tests check the group header rows are as tall as the 40px column header row. 'Every table of this kind, including the one shown in mockup.png' covers the second grid (Run Comparison) the tests mount. The exact value ranges come from the images, which is what this kind of task intends.",
+          "outcome": "pass"
+        },
+        "behavior_in_tests": {
+          "explanation": "Each stated requirement has a test, for both the Extraction result grid and the Run Comparison grid. Column-label typography, group-label weight, right alignment of numeric and metric headers (including a metric that is empty in every row), left alignment of text headers, Delta alignment and header-row heights are all checked. They run against the real ag-grid render with a CSS cascade built from the app's real stylesheet, and a large p2p suite guards against regressions.",
+          "outcome": "pass"
+        },
+        "informative_test_structure": {
+          "explanation": "The tests sit in clearly named describe blocks ('Extraction result grid header row', 'ExecutionResultsTab header row') with descriptive test names. Helpers are commented, header-look.ts has a thorough doc comment explaining the CSS-cascade approach, and assertion messages name the label being checked. test.sh and verifier.py are organized into commented numbered steps.",
+          "outcome": "pass"
+        },
+        "anti_cheating_measures": {
+          "explanation": "The bug patches are applied and deleted in the same Docker layer. Upstream git history is removed and replaced with a single base commit, and file timestamps are made uniform. Only the two images are copied in; evidence_bundle.json, tests and solution are not. test.sh restores the test files and test plumbing from harbor_base before applying the hidden tests, so the agent cannot tamper with the harness. The tests check the rendered computed look rather than specific class names, so string matching is not a shortcut. The agent runs with no network.",
+          "outcome": "pass"
+        },
+        "structured_data_schema": {
+          "explanation": "The task is a UI styling fix and produces no structured output such as JSON, CSV or an API.",
+          "outcome": "not_applicable"
+        },
+        "pinned_dependencies": {
+          "explanation": "The base image is pinned (node:24.22.2-alpine3.24), the repo is checked out at a fixed commit, and dependencies are installed with npm ci from the lockfile. apk packages are unpinned, which is acceptable.",
+          "outcome": "pass"
+        },
+        "typos": {
+          "explanation": "No typos found in paths, file names, test IDs or commands. The test file paths in config.json, test.sh and test.patch match, and the f2p/p2p names match the test titles.",
+          "outcome": "pass"
+        },
+        "tests_or_solution_in_image": {
+          "explanation": "The Dockerfile copies only bugs/ (deleted right after applying) and the two PNG assets. tests/ and solution/ are never copied in.",
+          "outcome": "pass"
+        },
+        "test_deps_in_image": {
+          "explanation": "The image gets no extra test-only packages. The tests use the repository's own dev dependencies (vitest, sass, tailwind/postcss) from npm ci, and the bash/git/python3 apk packages are a general need for applying patches and running test.sh.",
+          "outcome": "pass"
+        },
+        "hardcoded_solution": {
+          "explanation": "solve.sh applies fix.patch, the developer's actual source change across 7 files (header components, column definitions, grid options). It does not echo final outputs.",
+          "outcome": "pass"
+        },
+        "file_reference_mentioned": {
+          "explanation": "The agent edits existing source code and produces no output files for the tests to check. The image paths it needs to inspect are stated explicitly.",
+          "outcome": "not_applicable"
+        }
+      },
+      "cost_usd": 0.4305616,
+      "task_name": "epam__ai_dial_admin_frontend_5175_mm",
+      "error": null
+    }
+  ]
+}

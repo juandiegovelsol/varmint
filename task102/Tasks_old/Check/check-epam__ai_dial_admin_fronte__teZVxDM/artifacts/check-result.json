@@ -1,0 +1,46 @@
+{
+  "behavior_in_task_description": {
+    "outcome": "pass",
+    "explanation": "The instruction covers each thing the f2p tests check: column and group labels share the mockup's size, weight, case and letter spacing; headers over numeric columns are right-aligned whatever values the column holds, and all other headers are left-aligned; header rows are evenly spaced; and this applies to every table of this kind, including the mockup's comparison grid. The tests accept a range (13-15px, weight 500-700) and judge the computed CSS cascade, so most implementations pass. The row-height test is stricter than the others: it reads the inline row heights ag-grid sets and expects them to equal the 40px column row. Equal row heights is still the natural reading of 'evenly spaced'."
+  },
+  "behavior_in_tests": {
+    "outcome": "pass",
+    "explanation": "Each requirement has a test. Typography is checked on every leaf and group header in both the Extraction result grid and the ExecutionResultsTab (comparison) grid. Right alignment is checked for numeric and metric columns, including metrics that are null in some or all rows (the 'whatever values' clause), and for Delta. Left alignment is guarded for text columns. Equal group and column row heights are checked. P2P tests guard against regressions."
+  },
+  "informative_test_structure": {
+    "outcome": "pass",
+    "explanation": "The tests sit in named describe blocks ('Extraction result grid header row', 'ExecutionResultsTab header row'), and each test name states the behavior it checks. Assertion messages are descriptive. The fixtures (RESULTS, LEAF_HEADERS, GROUP_HEADERS) are commented. The shared header-look.ts helper has a header comment and labeled sections explaining the CSS-cascade approach."
+  },
+  "anti_cheating_measures": {
+    "outcome": "pass",
+    "explanation": "Upstream git history is removed and the repo is re-initialised at a single base commit. File timestamps are flattened so the last-modified file doesn't point at the bug. Bug patches are deleted in the same layer they are applied. Only the two images are copied into the image. Tests are hidden, and test.sh restores the protected harness files and test files before applying test.patch. The agent runs without network access. Tests check the rendered DOM against the real compiled stylesheets, so string matching on class names won't pass."
+  },
+  "structured_data_schema": {
+    "outcome": "not_applicable",
+    "explanation": "The task is a UI styling and alignment fix. It asks for no structured output."
+  },
+  "pinned_dependencies": {
+    "outcome": "pass",
+    "explanation": "The base image is pinned (node:24.22.2-alpine3.24), the repo is checked out at an exact commit, and npm ci installs from the lockfile. The apk packages are unpinned, which is acceptable."
+  },
+  "typos": {
+    "outcome": "pass",
+    "explanation": "No typos were found in paths, filenames, test IDs or commands. The asset paths in the instruction match the Dockerfile COPY destinations, and the test IDs in config.json match the test names in test.patch."
+  },
+  "tests_or_solution_in_image": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile copies only bugs/ (deleted in the same RUN) and the two PNG assets. tests/ and solution/ are not copied."
+  },
+  "test_deps_in_image": {
+    "outcome": "pass",
+    "explanation": "The tests rely on the repo's own dev dependencies (vitest, sass, tailwind/postcss), which npm ci installs as part of the project. No separate test-only tooling is baked into the image beyond the python3 and bash the verifier scripts need."
+  },
+  "hardcoded_solution": {
+    "outcome": "pass",
+    "explanation": "solve.sh applies fix.patch, a real source change across several components: EllipsisHeader and group-header typography, value-independent metric header alignment, header components wired into the remaining columns, and group header height. It does not echo a final answer."
+  },
+  "file_reference_mentioned": {
+    "outcome": "not_applicable",
+    "explanation": "The agent edits existing source code and does not need to produce any named output files. The input images are referenced by their exact paths."
+  }
+}
