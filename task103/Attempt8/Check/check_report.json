@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "checks": {
+        "behavior_in_task_description": {
+          "explanation": "This is a fix-the-bug-from-the-video task, so the expected behaviour is described in terms of what the player sees. The instruction asks for a normal coin burst (coins spread out, come to rest, and Tux can collect them) and says coins in water should drift down slowly. The tests check those same things in the real game binary: the burst throws coins to both sides, landed coins stop instead of travelling, Tux can pick them up, and coins sink slowly (including ones that hit the water fast). The numeric thresholds are tolerances on that described behaviour, not new requirements, and no new interface or file is required.",
+          "outcome": "pass"
+        },
+        "behavior_in_tests": {
+          "explanation": "Each behaviour named in the instruction has its own test: burst spread (releases_full_burst, scatters_to_both_sides), coming to rest (landed_coins_come_to_rest, coins_settle_on_floor), collection (released_coins_can_be_collected) and slow drift in water (floats_in_water_by_1s, still_sinking_at_1_6s, sinks_slowly_from_rest). Two pass-to-pass tests check that the level runs and that coins still fall normally before reaching the water.",
+          "outcome": "pass"
+        },
+        "informative_test_structure": {
+          "explanation": "evaluate_heavycoin.py opens with a docstring explaining both test levels, their geometry and the log format. Every test case is a named JUnit entry with a descriptive failure message giving the expected value. test.sh is split into clearly commented sections. Some template comments mention wx, which is not this project, but that does not make the tests hard to follow.",
+          "outcome": "pass"
+        },
+        "anti_cheating_measures": {
+          "explanation": "The bug patches are applied and deleted in the same Docker RUN step. Upstream git history is removed, so the fix commit cannot be reached. File timestamps are all set to the same value, so the last-modified file does not point at the bug. The agent has no network access. The tests are hidden and restored before they run, and they check behaviour in the running game rather than reading the source.",
+          "outcome": "pass"
+        },
+        "structured_data_schema": {
+          "explanation": "The agent fixes C++ source code and produces no structured output.",
+          "outcome": "not_applicable"
+        },
+        "pinned_dependencies": {
+          "explanation": "Only apt packages are installed, and those do not need pinning. SuperTux is checked out at a fixed commit, and its submodules are pinned by that commit. No pip packages are used.",
+          "outcome": "pass"
+        },
+        "typos": {
+          "explanation": "No typos were found in file paths, commands, test IDs or variable names that could cause failures. The test IDs match across config.json, task.toml and the evaluator, and the source paths are correct. There are small inconsistencies only in comments and metadata: leftover template comments about wx, and an unset REPORTS array that expands to nothing. Neither affects correctness.",
+          "outcome": "pass"
+        },
+        "tests_or_solution_in_image": {
+          "explanation": "The Dockerfile copies only the bug patches (deleted right after use), the CA bundle and recording.mp4. Neither tests/ nor solution/ is copied into the image.",
+          "outcome": "pass"
+        },
+        "test_deps_in_image": {
+          "explanation": "The image installs only build dependencies, python3 and tools for inspecting the video (ffmpeg). The tests run the game binary and plain Python 3 with no extra test-only packages.",
+          "outcome": "pass"
+        },
+        "hardcoded_solution": {
+          "explanation": "solve.sh applies fix.patch, a real source fix: it adds water physics, restores the burst velocity fan, fixes the landing velocity and bounce threshold, and changes the collision group. It does not print a precomputed answer.",
+          "outcome": "pass"
+        },
+        "file_reference_mentioned": {
+          "explanation": "The agent does not need to produce any output file. The task is a source-code fix, and the only file the instruction references, the input video, is given with its full path.",
+          "outcome": "not_applicable"
+        }
+      },
+      "cost_usd": 0.26462220000000003,
+      "task_name": "supertux__supertux_3729_mm",
+      "error": null
+    }
+  ]
+}

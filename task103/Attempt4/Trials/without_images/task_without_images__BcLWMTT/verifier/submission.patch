@@ -1,0 +1,90 @@
+diff --git a/src/object/coin.cpp b/src/object/coin.cpp
+index 28585be..3b81ce1 100644
+--- a/src/object/coin.cpp
++++ b/src/object/coin.cpp
+@@ -16,6 +16,8 @@
+ 
+ #include "object/coin.hpp"
+ 
++#include <cmath>
++
+ #include "audio/sound_manager.hpp"
+ #include "audio/sound_source.hpp"
+ #include "editor/editor.hpp"
+@@ -25,6 +27,7 @@
+ #include "supertux/flip_level_transformer.hpp"
+ #include "supertux/level.hpp"
+ #include "supertux/sector.hpp"
++#include "supertux/tile.hpp"
+ #include "util/reader_mapping.hpp"
+ #include "util/writer.hpp"
+ 
+@@ -269,11 +272,46 @@ HeavyCoin::HeavyCoin(const ReaderMapping& reader, bool count_stats) :
+   set_group(COLGROUP_MOVING);
+ }
+ 
++namespace {
++
++// Maximum speed at which a heavy coin sinks through water (pixels/second).
++const float WATER_SINK_SPEED = 100.0f;
++// Gravity is weaker under water, so coins accelerate gently up to the sink speed.
++const float WATER_GRAVITY_MODIFIER = 0.3f;
++// Exponential drag applied to motion that isn't sinking (per second).
++const float WATER_DRAG = 4.0f;
++
++} // namespace
++
+ void
+ HeavyCoin::update(float dt_sec)
+ {
++  const bool in_water = !Sector::get().is_free_of_tiles(get_bbox(), true, Tile::WATER);
++  m_physic.set_gravity_modifier(in_water ? WATER_GRAVITY_MODIFIER : 1.0f);
++
+   // Enable physics.
+-  m_col.set_movement(m_physic.get_movement(dt_sec));
++  Vector movement = m_physic.get_movement(dt_sec);
++
++  if (in_water)
++  {
++    // Water slows the coin down, however fast it entered: horizontal motion and
++    // motion against gravity are damped, and sinking is capped to a slow drift.
++    const float gravity = Sector::get().get_gravity();
++    const float down = (gravity < 0.0f) ? -1.0f : 1.0f;
++    const float damping = std::exp(-WATER_DRAG * dt_sec);
++
++    float vx = m_physic.get_velocity_x() * damping;
++    float vy_down = m_physic.get_velocity_y() * down;
++    if (vy_down < 0.0f)
++      vy_down *= damping;
++    else if (vy_down > WATER_SINK_SPEED)
++      vy_down = WATER_SINK_SPEED;
++
++    m_physic.set_velocity(vx, vy_down * down);
++    movement = m_physic.get_velocity() * dt_sec;
++  }
++
++  m_col.set_movement(movement);
+ }
+ 
+ void
+@@ -289,6 +327,7 @@ HeavyCoin::collision_solid(const CollisionHit& hit)
+       m_physic.set_velocity_y(-99);
+     } else {
+       m_physic.set_velocity_y(0);
++      m_physic.set_velocity_x(0);
+     }
+   }
+   if (hit.right || hit.left) {
+diff --git a/src/object/coin_explode.cpp b/src/object/coin_explode.cpp
+index 592fa64..dc2cfd8 100644
+--- a/src/object/coin_explode.cpp
++++ b/src/object/coin_explode.cpp
+@@ -46,7 +46,7 @@ CoinExplode::update(float )
+   {
+     for (const float side : { 1.f, -1.f })
+     {
+-      const Vector velocity = Vector(vector.x, vector.y * side) * (mag - gameRandom.randf(rand));
++      const Vector velocity = Vector(vector.x * side, vector.y) * (mag - gameRandom.randf(rand));
+       Sector::get().add<HeavyCoin>(position, velocity, m_count_stats, m_sprite);
+     }
+   }

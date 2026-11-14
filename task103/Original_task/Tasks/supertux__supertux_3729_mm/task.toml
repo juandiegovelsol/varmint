@@ -1,0 +1,54 @@
+version = "1.0"
+reward_type = "binary"
+
+[task]
+name = "scale-ai/supertux__supertux_3729_mm"
+
+[metadata]
+task_id = "supertux__supertux_3729_mm"
+title = "Coins dropped into the water sink straight down and freeze at the bottom"
+repository_name = "SuperTux/supertux"
+repo_url = "https://github.com/SuperTux/supertux"
+issue_number = 3729
+pr_number = 3771
+base_commit = "4b5663fc0c3ba08a8f8bd2ec8b75b5c02f82f7c7"
+fix_commit = "d1d16705985c881346fedd1e29ac4dbafa071604"
+task_type = "2d_video"
+language = "C++"
+framework = "SuperTux"
+cross_file = false
+visual_essentiality = "required"
+difficulty = "medium"
+difficulty_explanation = """
+The image is needed because the bug is a timing/degree defect, not a structural or visual-layout one: the only way to know that affected coins reach the chasm floor almost instantly and then show essentially zero pixel motion for the rest of a 14-second clip (rather than, say, sinking somewhat slower than ideal) is to watch the rendered frames over time; the text report can describe the end state but not the precise near-zero-motion evidence that corroborates the test's tight numeric thresholds (y<300 at 1s, y<374 at 3s).
+
+The fix itself is confined to a single function in a single file (HeavyCoin::update in src/object/coin.cpp), but it is not a trivial one-line change: nothing in the base code hints at the solution (the function body is a bare '// Enable physics.' comment), and the correct approach -- checking the coin's bounding box against Sector::is_free_of_tiles(..., Tile::WATER), then adjusting m_physic's gravity modifier and capping downward velocity -- mirrors a pattern that only exists in an unrelated class hierarchy (BadGuy::update in src/badguy/badguy.cpp), which the agent has to go discover and recognize as the right analogy. The agent also has to choose a gravity modifier and velocity cap that are not just qualitatively floatier but quantitatively tight enough to satisfy the f2p assertions' specific y-position thresholds at specific simulated times, so a shallow or hand-wavy fix (e.g. just zeroing gravity in water, or capping velocity without reducing gravity) would plausibly still fail one of the two f2p checks.
+"""
+files_edited = [
+  "src/object/coin.cpp",
+]
+f2p = [
+  "HeavyCoinWaterTest.floats_in_water_by_1s",
+  "HeavyCoinWaterTest.still_above_floor_at_3s",
+]
+p2p = [
+  "HeavyCoinWaterTest.produces_trajectory",
+  "HeavyCoinWaterTest.still_falling_before_water",
+  "HeavyCoinWaterTest.has_entered_water_by_0_6s",
+]
+tags = ["multimodal", "2d_video", "temporal_interaction", "beyond_browser", "recording", "supertux", "c++", "2d-platformer", "physics", "water"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

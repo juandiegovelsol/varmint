@@ -1,0 +1,59 @@
+version = "1.0"
+reward_type = "binary"
+
+[task]
+name = "scale-ai/supertux__supertux_3729_mm"
+
+[metadata]
+task_id = "supertux__supertux_3729_mm"
+title = "Coins from a bumped bonus block misbehave in the flooded cave"
+repository_name = "SuperTux/supertux"
+repo_url = "https://github.com/SuperTux/supertux"
+issue_number = 3729
+pr_number = 3771
+base_commit = "4b5663fc0c3ba08a8f8bd2ec8b75b5c02f82f7c7"
+fix_commit = "d1d16705985c881346fedd1e29ac4dbafa071604"
+task_type = "temporal_interaction"
+language = "C++"
+framework = "SuperTux"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = """
+Three independent defects in the coin-burst pipeline, spread over two files (src/object/coin_explode.cpp and src/object/coin.cpp), all visible only as motion in the attached recording and all affecting the same coins at once: (1) the bonus block's burst throws every coin to one side, and half of them straight down onto the block, because the mirrored half of the velocity fan flips the wrong axis; (2) heavy coins ignore water entirely, so coins that fall into the flooded chasm reach the bottom at full speed (the upstream issue #3729); (3) a coin that lands keeps its horizontal speed and skates along the floor forever, bouncing from wall to wall.
+
+The text names none of these. The agent has to step through the clip from the burst onward and separate three overlapping symptoms (one-sided/downward launch, no slowdown in water, endless sliding on the chasm floor), then map each to its own code path: the fan construction in CoinExplode::update, HeavyCoin::update (no water handling at all; the right pattern exists only in unrelated classes such as Rock and BadGuy), and the landing branch of HeavyCoin::collision_solid. Fixing the most obvious symptom (water) leaves the other two in place, and copying Rock's water code verbatim (gravity modifier only) still lets coins that hit the water fast plunge to the bottom, which the clip shows and the instruction calls out. Each defect has its own behavioural f2p test run in the real game binary (scripted levels, no source inspection), with thresholds checked against several independent correct fixes.
+"""
+files_edited = [
+  "src/object/coin.cpp",
+  "src/object/coin_explode.cpp",
+]
+f2p = [
+  "HeavyCoinWaterTest.floats_in_water_by_1s",
+  "HeavyCoinWaterTest.still_sinking_at_2s",
+  "HeavyCoinWaterTest.sinks_slowly_from_rest",
+  "HeavyCoinBurstTest.scatters_to_both_sides",
+  "HeavyCoinBurstTest.landed_coins_come_to_rest",
+]
+p2p = [
+  "HeavyCoinWaterTest.produces_trajectory",
+  "HeavyCoinWaterTest.still_falling_before_water",
+  "HeavyCoinWaterTest.has_entered_water_by_0_6s",
+  "HeavyCoinBurstTest.block_releases_coins",
+]
+tags = ["multimodal", "2d_video", "temporal_interaction", "beyond_browser", "recording", "supertux", "c++", "2d-platformer", "physics", "water", "injected_bugs", "cross_file"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

@@ -15,7 +15,7 @@ A table of the same kind, shown on a different page.
 It should look and work correctly. The top rows of every table of this kind, including the one shown in `mockup.png`, should look like `mockup.png`:
 
 - every label in those rows has the same size, weight, letter case and letter spacing as in `mockup.png`, column labels and group labels alike;
-- a label over a column of numbers or scores sits at the right edge of its column, like the values below it, even when some or all of its cells show only a dash; every other label sits at the left;
+- a label over a column of numbers or scores sits at the right edge of its column, like the values below it; every other label sits at the left;
 - the rows are evenly spaced, as in `mockup.png`.
 
 ### Environment

@@ -1,0 +1,35 @@
+diff --git a/apps/ai-dial-admin/src/components/Runs/View/utils.ts b/apps/ai-dial-admin/src/components/Runs/View/utils.ts
+index 1548660a0..17be6a469 100644
+--- a/apps/ai-dial-admin/src/components/Runs/View/utils.ts
++++ b/apps/ai-dial-admin/src/components/Runs/View/utils.ts
+@@ -112,21 +112,26 @@ const mergeMetricValuesSchema = (results: AnalyticsResult[]): Record<string, Rec
+   return merged;
+ };
+ 
++/** Numbers line up on the right under their header; any other value keeps the text layout. */
++const metricAlignment = (sample: unknown): Partial<ColDef> =>
++  typeof sample === 'number'
++    ? { ...rightAlignedColumn, headerComponentParams: RIGHT_ALIGNED_ELLIPSIS_HEADER_PARAMS }
++    : { headerComponentParams: ELLIPSIS_HEADER_PARAMS };
++
+ const getMetricsColumns = (metrics: Record<string, Record<string, unknown>>) => {
+   return Object.entries(metrics).map(([groupKey, groupValues]) => ({
+     headerName: groupKey,
+     headerGroupComponent: EllipsisHeaderGroup,
+-    children: Object.keys(groupValues).map(
+-      (key) =>
++    children: Object.entries(groupValues).map(
++      ([key, sample]) =>
+         ({
+           field: `${groupKey}_${key}`,
+           colId: `${groupKey}_${key}`,
+           headerName: key,
+-          headerComponentParams: RIGHT_ALIGNED_ELLIPSIS_HEADER_PARAMS,
+           cellRenderer: ScoreCellRenderer,
+           ...NUMBER_FILTER_COL_DEF,
+           ...fixedWidthColDef(METRIC_COLUMN_WIDTH),
+-          ...rightAlignedColumn,
++          ...metricAlignment(sample),
+           cellClass: ['p-0', NO_BORDER_CLASS],
+           valueGetter: (params) => {
+             const groupExists = params.data?.metricValues != null && groupKey in params.data.metricValues;

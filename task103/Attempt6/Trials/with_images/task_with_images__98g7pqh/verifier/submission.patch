@@ -1,0 +1,69 @@
+diff --git a/src/object/coin.cpp b/src/object/coin.cpp
+index 38b2eb9..ae4b4aa 100644
+--- a/src/object/coin.cpp
++++ b/src/object/coin.cpp
+@@ -25,6 +25,7 @@
+ #include "supertux/flip_level_transformer.hpp"
+ #include "supertux/level.hpp"
+ #include "supertux/sector.hpp"
++#include "supertux/tile.hpp"
+ #include "util/reader_mapping.hpp"
+ #include "util/writer.hpp"
+ 
+@@ -255,7 +256,7 @@ HeavyCoin::HeavyCoin(const Vector& pos, const Vector& init_velocity, bool count_
+ {
+   m_physic.enable_gravity(true);
+   SoundManager::current()->preload("sounds/coin2.ogg");
+-  set_group(COLGROUP_MOVING_ONLY_STATIC);
++  set_group(COLGROUP_MOVING);
+   m_physic.set_velocity(init_velocity);
+ }
+ 
+@@ -266,14 +267,19 @@ HeavyCoin::HeavyCoin(const ReaderMapping& reader, bool count_stats) :
+ {
+   m_physic.enable_gravity(true);
+   SoundManager::current()->preload("sounds/coin2.ogg");
+-  set_group(COLGROUP_MOVING_ONLY_STATIC);
++  set_group(COLGROUP_MOVING);
+ }
+ 
+ void
+ HeavyCoin::update(float dt_sec)
+ {
++  // Coins sink slowly while in water.
++  const bool in_water = !Sector::get().is_free_of_tiles(get_bbox(), true, Tile::WATER);
++  m_physic.set_gravity_modifier(in_water ? 0.2f : 1.f);
++
+   // Enable physics.
+-  m_col.set_movement(m_physic.get_movement(dt_sec));
++  m_col.set_movement(m_physic.get_movement(dt_sec) *
++                     Vector(in_water ? 0.4f : 1.f, in_water ? 0.6f : 1.f));
+ }
+ 
+ void
+@@ -285,10 +291,11 @@ HeavyCoin::collision_solid(const CollisionHit& hit)
+   if (hit.bottom) {
+     if (m_physic.get_velocity_y() > clink_threshold && !m_last_hit.bottom)
+         SoundManager::current()->play("sounds/coin2.ogg", get_pos());
+-    if (m_physic.get_velocity_y() > 20) {// lets some coins bounce
++    if (m_physic.get_velocity_y() > 200) {// lets some coins bounce
+       m_physic.set_velocity_y(-99);
+     } else {
+       m_physic.set_velocity_y(0);
++      m_physic.set_velocity_x(0);
+     }
+   }
+   if (hit.right || hit.left) {
+diff --git a/src/object/coin_explode.cpp b/src/object/coin_explode.cpp
+index f0a9bd1..df54c29 100644
+--- a/src/object/coin_explode.cpp
++++ b/src/object/coin_explode.cpp
+@@ -45,7 +45,7 @@ CoinExplode::update(float )
+   {
+     for (const float side : { 1.f, -1.f })
+     {
+-      const Vector velocity = Vector(vector.x, vector.y * side) * (mag - gameRandom.randf(rand));
++      const Vector velocity = Vector(vector.x * side, vector.y) * (mag - gameRandom.randf(rand));
+       Sector::get().add<HeavyCoin>(position, velocity, m_count_stats, m_sprite);
+     }
+   }

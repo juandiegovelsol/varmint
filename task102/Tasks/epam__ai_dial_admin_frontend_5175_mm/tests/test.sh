@@ -45,13 +45,11 @@ cd /app || { echo "no /app" | tee -a "$STDERR_LOG"; exit 1; }
 # A THROWAWAY INDEX, never /app/.git/index: `git add` against the real one would leave paths
 # staged and change how the `git checkout harbor_base --` and `git clean` below behave.
 #
-# TRACKED EDITS + A SOURCE WHITELIST, not `add -A` with a blacklist. This image builds wx
-# in-tree AFTER the harbor_base commit (environment/Dockerfile), so everything the build
-# emits is untracked and NOT in wx's .gitignore. A bare `add -A` captured 380MB of .o/.d/.so;
-# excluding those by extension still left ~120 configure-generated files (samples/*/Makefile,
-# bk-deps, version-script, lib/wx/config/*, the utils/wxrc/wxrc binary) because most have no
-# extension to blacklist. Inverting it -- stage tracked modifications, then add only untracked
-# files that LOOK like source -- keeps the agent's work and drops generated output by default.
+# TRACKED EDITS + A SOURCE WHITELIST, not `add -A` with a blacklist. Anything created after
+# the harbor_base commit (installed dependencies, build or test output) is untracked, and a
+# bare `add -A` would sweep it into the patch. Stage tracked modifications, then add only
+# untracked files that LOOK like source -- this keeps the agent's work and drops generated
+# output by default.
 _SUB=/logs/verifier/submission.patch
 _SUBIDX=/tmp/.submission_index
 _SUBSRC=('*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hh' '*.hpp' '*.hxx' '*.inl' '*.m' '*.mm'

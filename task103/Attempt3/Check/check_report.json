@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "checks": {
+        "behavior_in_task_description": {
+          "explanation": "This is a multimodal task, so the recording is part of the spec. The instruction says the released coins should behave correctly, should slow down in water however hard they hit it, and should take about 1.5 s to sink from block height to the floor. It also asks for every visible misbehaviour to be fixed. The tested behaviours all show up in the video: a full burst, coins scattering to both sides, slow sinking in water, and landed coins coming to rest. The numeric thresholds match the stated ~1.5 s sink time and are lenient. No hidden filenames or interfaces are required.",
+          "outcome": "pass"
+        },
+        "behavior_in_tests": {
+          "explanation": "The f2p tests cover each defect. Water slowdown for fast-entering coins is checked at 1 s and 1.6 s. Slow sinking from rest is checked by sinks_slowly_from_rest, which also guards against crawling. The burst is checked for completeness (releases_full_burst), for both-sided scatter (scatters_to_both_sides) and for landed coins stopping (landed_coins_come_to_rest). P2P checks make sure coins still fall and enter the water.",
+          "outcome": "pass"
+        },
+        "informative_test_structure": {
+          "explanation": "evaluate_heavycoin.py opens with a docstring describing the geometry of both test levels and the log formats. Each test has a descriptive ID and a detailed failure message. test.sh is organised into numbered, commented steps, and verifier.py documents its reward policy. Some stale boilerplate comments mention wx, but readability is still fine.",
+          "outcome": "pass"
+        },
+        "anti_cheating_measures": {
+          "explanation": "The bug patches are applied and deleted in the same layer. Git history is wiped and replaced with a single base commit, so the upstream fix commit can't be reached. The agent has no network access. Tests and solution are not in the image. The tests run the real game binary on hidden levels and check behaviour, so string matching won't help, and test files are restored from harbor_base before the hidden tests are applied. File timestamps are normalised so modification times don't point to the bug.",
+          "outcome": "pass"
+        },
+        "structured_data_schema": {
+          "explanation": "The agent fixes C++ source code and produces no structured output.",
+          "outcome": "not_applicable"
+        },
+        "pinned_dependencies": {
+          "explanation": "SuperTux is checked out at a pinned commit. Only apt packages are installed, which don't need pinning. The test scripts use only the Python standard library.",
+          "outcome": "pass"
+        },
+        "typos": {
+          "explanation": "No typos were found in paths, commands or identifiers that would break anything. Test level paths, binary paths and test IDs match across test.sh, config.json, task.toml and test.patch. The undefined REPORTS array expands harmlessly under bash 5.2 (checked). The stale wx comments are cosmetic.",
+          "outcome": "pass"
+        },
+        "tests_or_solution_in_image": {
+          "explanation": "The Dockerfile copies only ca-certificates.crt, the bug patches (deleted right away) and recording.mp4. Neither tests/ nor solution/ is copied.",
+          "outcome": "pass"
+        },
+        "test_deps_in_image": {
+          "explanation": "The image installs only build and runtime dependencies plus ffmpeg/xvfb for looking at the evidence. The tests need nothing extra beyond python3, which is also used for general work.",
+          "outcome": "pass"
+        },
+        "hardcoded_solution": {
+          "explanation": "solve.sh applies a real source patch that reverts the two injected bugs and adds water physics to HeavyCoin::update. That is the code change an agent would make, not an echoed answer.",
+          "outcome": "pass"
+        },
+        "file_reference_mentioned": {
+          "explanation": "The agent doesn't need to produce any output files. The task is a source-code fix, checked by running the game.",
+          "outcome": "not_applicable"
+        }
+      },
+      "cost_usd": 0.257598,
+      "task_name": "supertux__supertux_3729_mm",
+      "error": null
+    }
+  ]
+}

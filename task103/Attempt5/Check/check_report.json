@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "checks": {
+        "behavior_in_task_description": {
+          "explanation": "This is a visual task, so the text is vague on purpose. It points the agent at the recording and says to fix every way the released coins misbehave. The water behaviour the tests check (slow sinking no matter how fast the coin entered, roughly 3 s to sink the height of the tallest kelp) is stated in the text. The burst checks (full fan, coins thrown to both sides) and the check that landed coins come to rest are not named in the text, but they show up as wrong behaviour in the recording the instruction says to fix. The tests only judge the game's runtime behaviour, never specific source code.",
+          "outcome": "pass"
+        },
+        "behavior_in_tests": {
+          "explanation": "The water tests cover slow sinking after a fast entry (dropped coin stays above y<300 at 1 s and is still sinking at 1.6 s) and slow sinking from rest. The burst tests cover the full burst landing (at least 9 of 10 coins), scattering to both sides, and landed coins stopping instead of sliding away. Together these cover every misbehaviour the instruction asks to fix.",
+          "outcome": "pass"
+        },
+        "informative_test_structure": {
+          "explanation": "evaluate_heavycoin.py opens with a docstring that lays out both test levels: geometry, sampling and zones. Each check gets a descriptive test id and a detailed failure message, and the results go into a JUnit report. test.sh is long, but its comments explain what each step does.",
+          "outcome": "pass"
+        },
+        "anti_cheating_measures": {
+          "explanation": "The bug patches are applied and then deleted in the same build layer. Upstream git history is replaced with a single base commit, so the fix commit cannot be reached. All file timestamps are set to one value. The agent has no network access. The hidden tests are scripted game levels that only judge behaviour, and test.sh restores the test paths before applying them. The image holds no answers.",
+          "outcome": "pass"
+        },
+        "structured_data_schema": {
+          "explanation": "The task does not ask for any structured output. It is a code fix judged by how the game behaves.",
+          "outcome": "not_applicable"
+        },
+        "pinned_dependencies": {
+          "explanation": "SuperTux is checked out at a fixed commit, and its submodules are pinned by that commit. Only apt packages are installed (which need not be pinned), and the test scripts use only the Python standard library.",
+          "outcome": "pass"
+        },
+        "typos": {
+          "explanation": "No typos found in paths, commands or test ids that would break anything. test.sh has some leftover boilerplate (comments about wx, and an unset REPORTS array that expands to nothing), but neither affects how the task runs.",
+          "outcome": "pass"
+        },
+        "tests_or_solution_in_image": {
+          "explanation": "The Dockerfile copies only the CA bundle, the bug patches (deleted right after use) and recording.mp4. Nothing from tests/ or solution/ is copied.",
+          "outcome": "pass"
+        },
+        "test_deps_in_image": {
+          "explanation": "The image installs only the build dependencies plus tools the agent needs (ffmpeg, xvfb, python3). The test files arrive through test.patch at verify time, and no test-only packages are baked in.",
+          "outcome": "pass"
+        },
+        "hardcoded_solution": {
+          "explanation": "solve.sh applies a real source patch to coin.cpp and coin_explode.cpp: water physics, the mirrored-axis fix and the landing-velocity fix. It does not print or write the expected output directly.",
+          "outcome": "pass"
+        },
+        "file_reference_mentioned": {
+          "explanation": "The agent does not need to create any output files. It only edits existing source files, and the tests check runtime behaviour.",
+          "outcome": "not_applicable"
+        }
+      },
+      "cost_usd": 0.3207798,
+      "task_name": "supertux__supertux_3729_mm",
+      "error": null
+    }
+  ]
+}

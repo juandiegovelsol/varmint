@@ -1,0 +1,59 @@
+diff --git a/src/object/coin.cpp b/src/object/coin.cpp
+index 28585be..a9b3c42 100644
+--- a/src/object/coin.cpp
++++ b/src/object/coin.cpp
+@@ -16,6 +16,9 @@
+ 
+ #include "object/coin.hpp"
+ 
++#include <algorithm>
++#include <cmath>
++
+ #include "audio/sound_manager.hpp"
+ #include "audio/sound_source.hpp"
+ #include "editor/editor.hpp"
+@@ -272,6 +275,23 @@ HeavyCoin::HeavyCoin(const ReaderMapping& reader, bool count_stats) :
+ void
+ HeavyCoin::update(float dt_sec)
+ {
++  const bool in_water = !Sector::get().is_free_of_tiles(get_bbox(), true, Tile::WATER);
++  m_physic.set_gravity_modifier(in_water ? 0.2f : 1.f);
++
++  if (in_water)
++  {
++    // Water slows the coin down: it drifts down slowly no matter how fast it
++    // entered the water.
++    const float max_sink_speed = 60.f;
++    const float drag = std::exp(-4.f * dt_sec);
++
++    m_physic.set_velocity_x(m_physic.get_velocity_x() * drag);
++    float vy = m_physic.get_velocity_y();
++    if (vy < 0.f)
++      vy *= drag;
++    m_physic.set_velocity_y(std::min(vy, max_sink_speed));
++  }
++
+   // Enable physics.
+   m_col.set_movement(m_physic.get_movement(dt_sec));
+ }
+@@ -289,6 +309,7 @@ HeavyCoin::collision_solid(const CollisionHit& hit)
+       m_physic.set_velocity_y(-99);
+     } else {
+       m_physic.set_velocity_y(0);
++      m_physic.set_velocity_x(0);
+     }
+   }
+   if (hit.right || hit.left) {
+diff --git a/src/object/coin_explode.cpp b/src/object/coin_explode.cpp
+index 592fa64..dc2cfd8 100644
+--- a/src/object/coin_explode.cpp
++++ b/src/object/coin_explode.cpp
+@@ -46,7 +46,7 @@ CoinExplode::update(float )
+   {
+     for (const float side : { 1.f, -1.f })
+     {
+-      const Vector velocity = Vector(vector.x, vector.y * side) * (mag - gameRandom.randf(rand));
++      const Vector velocity = Vector(vector.x * side, vector.y) * (mag - gameRandom.randf(rand));
+       Sector::get().add<HeavyCoin>(position, velocity, m_count_stats, m_sprite);
+     }
+   }

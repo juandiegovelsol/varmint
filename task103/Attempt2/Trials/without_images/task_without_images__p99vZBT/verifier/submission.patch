@@ -1,0 +1,58 @@
+diff --git a/src/object/coin.cpp b/src/object/coin.cpp
+index 28585be..40263a2 100644
+--- a/src/object/coin.cpp
++++ b/src/object/coin.cpp
+@@ -25,6 +25,8 @@
+ #include "supertux/flip_level_transformer.hpp"
+ #include "supertux/level.hpp"
+ #include "supertux/sector.hpp"
++#include "supertux/tile.hpp"
++#include "math/util.hpp"
+ #include "util/reader_mapping.hpp"
+ #include "util/writer.hpp"
+ 
+@@ -272,6 +274,23 @@ HeavyCoin::HeavyCoin(const ReaderMapping& reader, bool count_stats) :
+ void
+ HeavyCoin::update(float dt_sec)
+ {
++  // In water, coins sink slowly regardless of how fast they entered it.
++  const bool in_water = !Sector::get().is_free_of_tiles(get_bbox(), true, Tile::WATER);
++  if (in_water)
++  {
++    static const float WATER_MAX_SINK_SPEED = 50.0f;
++    static const float WATER_MAX_RISE_SPEED = 50.0f;
++    static const float WATER_MAX_DRIFT_SPEED = 30.0f;
++
++    m_physic.set_gravity_modifier(0.2f);
++    m_physic.set_velocity_x(math::clamp(m_physic.get_velocity_x(), -WATER_MAX_DRIFT_SPEED, WATER_MAX_DRIFT_SPEED));
++    m_physic.set_velocity_y(math::clamp(m_physic.get_velocity_y(), -WATER_MAX_RISE_SPEED, WATER_MAX_SINK_SPEED));
++  }
++  else
++  {
++    m_physic.set_gravity_modifier(1.0f);
++  }
++
+   // Enable physics.
+   m_col.set_movement(m_physic.get_movement(dt_sec));
+ }
+@@ -289,6 +308,7 @@ HeavyCoin::collision_solid(const CollisionHit& hit)
+       m_physic.set_velocity_y(-99);
+     } else {
+       m_physic.set_velocity_y(0);
++      m_physic.set_velocity_x(0);
+     }
+   }
+   if (hit.right || hit.left) {
+diff --git a/src/object/coin_explode.cpp b/src/object/coin_explode.cpp
+index 592fa64..dc2cfd8 100644
+--- a/src/object/coin_explode.cpp
++++ b/src/object/coin_explode.cpp
+@@ -46,7 +46,7 @@ CoinExplode::update(float )
+   {
+     for (const float side : { 1.f, -1.f })
+     {
+-      const Vector velocity = Vector(vector.x, vector.y * side) * (mag - gameRandom.randf(rand));
++      const Vector velocity = Vector(vector.x * side, vector.y) * (mag - gameRandom.randf(rand));
+       Sector::get().add<HeavyCoin>(position, velocity, m_count_stats, m_sprite);
+     }
+   }

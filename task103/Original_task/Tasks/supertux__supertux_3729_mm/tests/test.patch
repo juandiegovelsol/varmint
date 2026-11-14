@@ -1,0 +1,143 @@
+diff --git a/tests/integration/heavycoin_water_test.stl b/tests/integration/heavycoin_water_test.stl
+new file mode 100644
+index 0000000..e6c864a
+--- /dev/null
++++ b/tests/integration/heavycoin_water_test.stl
+@@ -0,0 +1,15 @@
++(supertux-level
++  (version 3)
++  (name (_ "Harvest HeavyCoin Water Test"))
++  (author "harvest-step3")
++  (license "CC0")
++  (suppress-pause-menu #t)
++  (sector
++    (name "main")
++    (init-script "Tux.deactivate();\nwait(0.05);\nsector.settings.add_object(\"heavycoin\", \"testcoin\", 160.0, 16.0, \"auto\", \"\");\nwait(0.05);\nfor (local i = 0; i < 60; i += 1) {\n  print(\"COINY \" + i + \" \" + sector.testcoin.get_y() + \"\\n\");\n  wait(0.1);\n}\nprint(\"COINY_DONE\\n\");\n")
++    (ambient-light (color 1 1 1))
++    (gradient (top_color 0.5 0.6 0.9)(bottom_color 0.3 0.3 0.7))
++    (spawnpoint (name "main")(x 400)(y 16))
++    (tilemap (solid #t)(z-pos 0)(width 20)(height 20)(tiles -20 0 -20 0 -20 0 -20 75 -20 75 -20 75 -20 75 -20 75 -20 75 -20 75 -20 75 -20 75 -20 75 -20 48 -20 0 -20 0 -20 0 -20 0 -20 0 -20 0))
++  )
++)
+diff --git a/tests/integration/evaluate_heavycoin.py b/tests/integration/evaluate_heavycoin.py
+new file mode 100644
+index 0000000..5b23636
+--- /dev/null
++++ b/tests/integration/evaluate_heavycoin.py
+@@ -0,0 +1,116 @@
++#!/usr/bin/env python3
++"""Parses the SuperTux game log produced by heavycoin_water_test.stl's
++init-script (lines of the form "COINY <sample-index> <y-position>", one every
++0.1 simulated seconds) and turns the trajectory into pass/fail JUnit
++testcases for the HeavyCoin-ignores-water-physics regression.
++
++Level geometry (tests/integration/heavycoin_water_test.stl, 32px tiles):
++  y in [0, 96)      -- air; the coin free-falls here
++  y in [96, ~384)   -- water (10 tiles deep)
++  y ~= 384          -- resting position once the coin settles on the solid
++                       pool floor tile (the coin's own bbox offset means it
++                       comes to rest a bit above the tile's nominal y=416)
++
++On the base commit HeavyCoin::update() never looks at water tiles, so the
++coin keeps accelerating under full gravity straight through the water and
++hits the floor in well under a second. With the fix, gravity is cut to 10%
++and downward speed is capped at 100px/s as soon as the coin's bbox overlaps
++a WATER tile, so it drifts down far more slowly and is still mid-pool a
++few seconds after the drop.
++"""
++import re
++import sys
++import xml.etree.ElementTree as ET
++
++WATER_TOP = 96.0
++POOL_FLOOR_REST = 384.0
++
++
++def parse_samples(log_path):
++    samples = {}
++    pattern = re.compile(r"COINY (-?\d+) (-?[0-9.]+)")
++    with open(log_path, "r", errors="replace") as f:
++        for line in f:
++            m = pattern.search(line)
++            if m:
++                samples[int(m.group(1))] = float(m.group(2))
++    return samples
++
++
++def main():
++    log_path, junit_path = sys.argv[1], sys.argv[2]
++    requested = sys.argv[3:]
++
++    samples = parse_samples(log_path)
++    sys.stderr.write("parsed samples: %r\n" % (sorted(samples.items()),))
++
++    def y_at(i):
++        return samples.get(i)
++
++    y2, y6, y10, y30 = y_at(2), y_at(6), y_at(10), y_at(30)
++
++    results = []  # (test_id, passed, message)
++
++    have_data = len(samples) >= 40
++    results.append((
++        "HeavyCoinWaterTest.produces_trajectory",
++        have_data,
++        "expected >=40 COINY samples from the init-script, got %d. Raw samples: %r"
++        % (len(samples), sorted(samples.items())),
++    ))
++
++    results.append((
++        "HeavyCoinWaterTest.still_falling_before_water",
++        have_data and y2 is not None and y2 < WATER_TOP,
++        "y at t=0.2s = %r (expected < %.0f, i.e. still above the water surface)" % (y2, WATER_TOP),
++    ))
++
++    results.append((
++        "HeavyCoinWaterTest.has_entered_water_by_0_6s",
++        have_data and y6 is not None and y6 > WATER_TOP,
++        "y at t=0.6s = %r (expected > %.0f, i.e. already past the water surface)" % (y6, WATER_TOP),
++    ))
++
++    results.append((
++        "HeavyCoinWaterTest.floats_in_water_by_1s",
++        have_data and y10 is not None and y10 < 300.0,
++        "y at t=1.0s = %r (expected < 300: a heavy coin submerged in water for "
++        "0.6s should still be drifting down slowly, well short of the resting "
++        "position at y~%.0f; on the bug this reads >= 300 because the coin "
++        "free-falls straight to the floor in well under a second)" % (y10, POOL_FLOOR_REST),
++    ))
++
++    results.append((
++        "HeavyCoinWaterTest.still_above_floor_at_3s",
++        have_data and y30 is not None and y30 < POOL_FLOOR_REST - 10,
++        "y at t=3.0s = %r (expected < %.0f: a heavy coin should still be "
++        "sinking slowly through the pool, not yet resting on the floor at y~%.0f)"
++        % (y30, POOL_FLOOR_REST - 10, POOL_FLOOR_REST),
++    ))
++
++    if requested:
++        results = [r for r in results if r[0] in requested]
++
++    testsuite = ET.Element("testsuite", {
++        "name": "HeavyCoinWaterTest",
++        "tests": str(len(results)),
++        "failures": str(sum(1 for _, ok, _ in results if not ok)),
++    })
++    for test_id, ok, message in results:
++        tc = ET.SubElement(testsuite, "testcase", {
++            "classname": "HeavyCoinWaterTest",
++            "name": test_id,
++        })
++        if not ok:
++            failure = ET.SubElement(tc, "failure", {"message": "assertion failed"})
++            failure.text = message
++        sys.stderr.write("%s: %s -- %s\n" % (test_id, "PASS" if ok else "FAIL", message))
++
++    ET.ElementTree(testsuite).write(junit_path, encoding="unicode", xml_declaration=True)
++
++    if any(not ok for _, ok, _ in results):
++        sys.exit(1)
++
++
++if __name__ == "__main__":
++    main()

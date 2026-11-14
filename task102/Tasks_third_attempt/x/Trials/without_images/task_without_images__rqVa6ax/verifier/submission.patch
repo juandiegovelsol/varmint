@@ -1,0 +1,279 @@
+diff --git a/apps/ai-dial-admin/src/components/Grid/HeaderComponents/CompareRunIndexHeader.tsx b/apps/ai-dial-admin/src/components/Grid/HeaderComponents/CompareRunIndexHeader.tsx
+index 023e01f..f399da9 100644
+--- a/apps/ai-dial-admin/src/components/Grid/HeaderComponents/CompareRunIndexHeader.tsx
++++ b/apps/ai-dial-admin/src/components/Grid/HeaderComponents/CompareRunIndexHeader.tsx
+@@ -24,7 +24,7 @@ const CompareRunIndexHeader: FC<Props> = ({ runIndex, label, isRightAligned }) =
+     )}
+   >
+     <CompareRunIndexBadge runIndex={runIndex} />
+-    {label && <span className="dial-small-semi-text text-secondary truncate">{label}</span>}
++    {label && <span className="dial-caption-lead-semi-text text-secondary truncate">{label}</span>}
+   </div>
+ );
+ 
+diff --git a/apps/ai-dial-admin/src/components/Grid/HeaderComponents/EllipsisHeader.tsx b/apps/ai-dial-admin/src/components/Grid/HeaderComponents/EllipsisHeader.tsx
+index 7a89bb1..a1703bb 100644
+--- a/apps/ai-dial-admin/src/components/Grid/HeaderComponents/EllipsisHeader.tsx
++++ b/apps/ai-dial-admin/src/components/Grid/HeaderComponents/EllipsisHeader.tsx
+@@ -12,7 +12,10 @@ interface Props extends IHeaderParams {
+ const EllipsisHeader: FC<Props> = ({ displayName, isRightAligned }) => (
+   <EllipsisTooltip
+     text={displayName}
+-    className={classNames('min-w-0 max-w-full dial-small-semi-text text-secondary', isRightAligned && 'text-right')}
++    className={classNames(
++      'min-w-0 max-w-full dial-caption-lead-semi-text text-secondary',
++      isRightAligned && 'text-right',
++    )}
+     contentClassName="truncate"
+   />
+ );
+diff --git a/apps/ai-dial-admin/src/components/Grid/HeaderComponents/EllipsisHeaderGroup.tsx b/apps/ai-dial-admin/src/components/Grid/HeaderComponents/EllipsisHeaderGroup.tsx
+index 21c013a..dd665f0 100644
+--- a/apps/ai-dial-admin/src/components/Grid/HeaderComponents/EllipsisHeaderGroup.tsx
++++ b/apps/ai-dial-admin/src/components/Grid/HeaderComponents/EllipsisHeaderGroup.tsx
+@@ -7,7 +7,7 @@ import { EllipsisTooltip } from '@epam/ai-dial-ui-kit';
+ const EllipsisHeaderGroup: FC<IHeaderGroupParams> = ({ displayName }) => (
+   <EllipsisTooltip
+     text={displayName}
+-    className="min-w-0 max-w-full dial-small-text text-secondary"
++    className="min-w-0 max-w-full dial-caption-lead-semi-text text-secondary"
+     contentClassName="truncate"
+   />
+ );
+diff --git a/apps/ai-dial-admin/src/components/Runs/Compare/ExecutionResults/constants.ts b/apps/ai-dial-admin/src/components/Runs/Compare/ExecutionResults/constants.ts
+index 35a7e0a..10cc75a 100644
+--- a/apps/ai-dial-admin/src/components/Runs/Compare/ExecutionResults/constants.ts
++++ b/apps/ai-dial-admin/src/components/Runs/Compare/ExecutionResults/constants.ts
+@@ -1,5 +1,7 @@
+ import { CellClassParams, ColDef } from 'ag-grid-community';
+ 
++import { HEADER_HEIGHT } from '@/src/components/Grid/constants';
++
+ export {
+   DURATION_COLUMN_WIDTH,
+   EXTRACTED_COLUMN_MIN_WIDTH,
+@@ -29,7 +31,8 @@ export const compareScoreColDef: Pick<ColDef, 'width' | 'minWidth' | 'flex' | 's
+   suppressSizeToFit: true,
+ };
+ 
+-export const COMPARE_GROUP_HEADER_HEIGHT = 28;
++/** Group rows match the column-label row so the stacked header rows are evenly spaced. */
++export const COMPARE_GROUP_HEADER_HEIGHT = HEADER_HEIGHT;
+ 
+ export const EXECUTION_GROUP_HEADER = 'Execution';
+ export const EXECUTION_STATUS_GROUP_HEADER = 'Execution status';
+diff --git a/apps/ai-dial-admin/src/components/Runs/Compare/ExecutionResults/utils/columns.ts b/apps/ai-dial-admin/src/components/Runs/Compare/ExecutionResults/utils/columns.ts
+index 251179d..4801ba9 100644
+--- a/apps/ai-dial-admin/src/components/Runs/Compare/ExecutionResults/utils/columns.ts
++++ b/apps/ai-dial-admin/src/components/Runs/Compare/ExecutionResults/utils/columns.ts
+@@ -315,6 +315,7 @@ const getComparedExecutionColumns = (
+   hideHighlights?: boolean,
+ ): ColGroupDef => ({
+   headerName: EXECUTION_GROUP_HEADER,
++  headerGroupComponent: EllipsisHeaderGroup,
+   children: hideUniformColumns(
+     [
+       ...buildRunColumns(runs, hideHighlights, (context) =>
+@@ -354,6 +355,7 @@ const getComparedMetricGroupColumns = (
+ 
+ const getComparedExecutionStatusGroup = (runs: CompareRun[], hideHighlights?: boolean): ColGroupDef => ({
+   headerName: '',
++  headerGroupComponent: EllipsisHeaderGroup,
+   context: { panelName: EXECUTION_STATUS_GROUP_HEADER },
+   children: buildRunColumns(runs, hideHighlights, buildRunStatusColumn),
+ });
+@@ -368,6 +370,7 @@ const getComparedExtractedGroupColumn = (
+ 
+   return {
+     headerName: EXTRACTED_GROUP_HEADER,
++    headerGroupComponent: EllipsisHeaderGroup,
+     children: keys.map((key) => ({
+       headerName: key,
+       headerGroupComponent: EllipsisHeaderGroup,
+diff --git a/apps/ai-dial-admin/src/components/Runs/Compare/ExecutionResults/utils/panel-columns.ts b/apps/ai-dial-admin/src/components/Runs/Compare/ExecutionResults/utils/panel-columns.ts
+index b154165..f82162d 100644
+--- a/apps/ai-dial-admin/src/components/Runs/Compare/ExecutionResults/utils/panel-columns.ts
++++ b/apps/ai-dial-admin/src/components/Runs/Compare/ExecutionResults/utils/panel-columns.ts
+@@ -85,6 +85,7 @@ const nestExecutionGroup = (group: ColGroupDef, runs: CompareRun[]): ColGroupDef
+ 
+   return {
+     headerName: EXECUTION_GROUP_HEADER,
++    headerGroupComponent: EllipsisHeaderGroup,
+     children: EXECUTION_FIELD_GROUPS.map(({ fieldLabel, colId }) =>
+       nestPairedFieldGroup(fieldLabel, colId, leaves, runs),
+     ),
+@@ -108,6 +109,7 @@ const nestExecutionStatusGroup = (group: ColGroupDef, runs: CompareRun[]): ColGr
+ 
+   return {
+     headerName: '',
++    headerGroupComponent: EllipsisHeaderGroup,
+     context: { panelName: EXECUTION_STATUS_GROUP_HEADER },
+     children: wrapRunLeaves(leaves, 'status', runs),
+   };
+@@ -144,6 +146,7 @@ const nestExtractedGroup = (group: ColGroupDef, runs: CompareRun[]): ColGroupDef
+ 
+   return {
+     headerName: EXTRACTED_GROUP_HEADER,
++    headerGroupComponent: EllipsisHeaderGroup,
+     children: fieldKeys.map((key) => ({
+       headerName: key,
+       headerGroupComponent: EllipsisHeaderGroup,
+diff --git a/apps/ai-dial-admin/src/components/Runs/View/tests/utils.spec.ts b/apps/ai-dial-admin/src/components/Runs/View/tests/utils.spec.ts
+index 933df7d..1180b35 100644
+--- a/apps/ai-dial-admin/src/components/Runs/View/tests/utils.spec.ts
++++ b/apps/ai-dial-admin/src/components/Runs/View/tests/utils.spec.ts
+@@ -205,6 +205,55 @@ describe('Runs View :: getAnalyticsColumns', () => {
+     expect(firstLeafOf('INPUT BINDINGS').headerComponentParams).toEqual({ innerHeaderComponent: EllipsisHeader });
+   });
+ 
++  test('Should right-align a metric column whose cells are all missing', () => {
++    const columns = getAnalyticsColumns([{ metricValues: { Accuracy: { accuracy: null } } }] as any);
++    const leaf = (columns.find((column: any) => column.headerName === 'Accuracy') as any).children[0];
++
++    expect(leaf.headerClass).toBe('align-right');
++    expect(leaf.headerComponentParams.innerHeaderComponentParams).toEqual({ isRightAligned: true });
++  });
++
++  test('Should right-align a metric column whose first row is missing a value a later row carries', () => {
++    const columns = getAnalyticsColumns([
++      { metricValues: { Accuracy: { accuracy: null } } },
++      { metricValues: { Accuracy: { accuracy: 0.5 } } },
++    ] as any);
++    const leaf = (columns.find((column: any) => column.headerName === 'Accuracy') as any).children[0];
++
++    expect(leaf.headerClass).toBe('align-right');
++  });
++
++  test('Should keep a non-numeric metric column left-aligned even when an earlier row has no value', () => {
++    const columns = getAnalyticsColumns([
++      { metricValues: { Judge: { verdict: null } } },
++      { metricValues: { Judge: { verdict: 'pass' } } },
++    ] as any);
++    const leaf = (columns.find((column: any) => column.headerName === 'Judge') as any).children[0];
++
++    expect(leaf.headerClass).toBeUndefined();
++    expect(leaf.headerComponentParams).toEqual({ innerHeaderComponent: EllipsisHeader });
++  });
++
++  test('Should render every group label through the same group header', () => {
++    const columns = getAnalyticsColumns([{ metricValues: { Accuracy: { accuracy: 1 } } }] as any);
++
++    columns.forEach((group: any) => expect(group.headerGroupComponent).toBe(EllipsisHeaderGroup));
++  });
++
++  test.each(['totalRequests', 'totalTurns', 'http', 'duration'])(
++    '%s renders its label through the right-aligned ellipsis header',
++    (colId) => {
++      const execution = getAnalyticsColumns([makeResult()]).find((c: any) => c.headerName === 'Execution') as any;
++      const col = execution.children.find((child: any) => child.colId === colId);
++
++      expect(col.headerComponent).toBeUndefined();
++      expect(col.headerComponentParams).toEqual({
++        innerHeaderComponent: EllipsisHeader,
++        innerHeaderComponentParams: { isRightAligned: true },
++      });
++    },
++  );
++
+   test('Should merge extracted column keys from all rows, so a request chain shows every column', () => {
+     const results = [
+       { requestIndex: 0, extractedColumns: { answer: 'Hello!' } },
+diff --git a/apps/ai-dial-admin/src/components/Runs/View/utils.ts b/apps/ai-dial-admin/src/components/Runs/View/utils.ts
+index 17be6a4..5dff2c8 100644
+--- a/apps/ai-dial-admin/src/components/Runs/View/utils.ts
++++ b/apps/ai-dial-admin/src/components/Runs/View/utils.ts
+@@ -105,16 +105,20 @@ const mergeMetricValuesSchema = (results: AnalyticsResult[]): Record<string, Rec
+     for (const [groupKey, groupValues] of Object.entries(mv)) {
+       if (!merged[groupKey]) merged[groupKey] = {};
+       for (const [key, val] of Object.entries(groupValues)) {
+-        if (!(key in merged[groupKey])) merged[groupKey][key] = val;
++        // A missing value says nothing about the column's type, so a later row that carries one replaces it.
++        if (merged[groupKey][key] == null) merged[groupKey][key] = val;
+       }
+     }
+   }
+   return merged;
+ };
+ 
+-/** Numbers line up on the right under their header; any other value keeps the text layout. */
++/**
++ * Scores line up on the right under their header, including a column whose every cell shows a dash;
++ * only a column that carries a non-numeric value keeps the text layout.
++ */
+ const metricAlignment = (sample: unknown): Partial<ColDef> =>
+-  typeof sample === 'number'
++  sample == null || typeof sample === 'number'
+     ? { ...rightAlignedColumn, headerComponentParams: RIGHT_ALIGNED_ELLIPSIS_HEADER_PARAMS }
+     : { headerComponentParams: ELLIPSIS_HEADER_PARAMS };
+ 
+@@ -187,8 +191,7 @@ const executionColumns: ColDef[] = [
+   {
+     field: 'totalRequests',
+     headerName: 'Total requests',
+-    headerComponent: EllipsisHeader,
+-    headerComponentParams: { isRightAligned: true },
++    headerComponentParams: RIGHT_ALIGNED_ELLIPSIS_HEADER_PARAMS,
+     colId: 'totalRequests',
+     hide: true,
+     ...lockedWidthColDef(TOTAL_REQUESTS_COLUMN_WIDTH),
+@@ -200,6 +203,7 @@ const executionColumns: ColDef[] = [
+   {
+     field: 'totalTurns',
+     headerName: 'Total turns',
++    headerComponentParams: RIGHT_ALIGNED_ELLIPSIS_HEADER_PARAMS,
+     colId: 'totalTurns',
+     hide: true,
+     ...lockedWidthColDef(TOTAL_TURNS_COLUMN_WIDTH),
+@@ -210,6 +214,7 @@ const executionColumns: ColDef[] = [
+   {
+     field: 'responseStatusCode',
+     headerName: 'HTTP',
++    headerComponentParams: RIGHT_ALIGNED_ELLIPSIS_HEADER_PARAMS,
+     colId: 'http',
+     ...lockedWidthColDef(HTTP_COLUMN_WIDTH),
+     ...NO_FILTER_COL_DEF,
+@@ -220,6 +225,7 @@ const executionColumns: ColDef[] = [
+   {
+     field: 'durationMs',
+     headerName: 'Duration',
++    headerComponentParams: RIGHT_ALIGNED_ELLIPSIS_HEADER_PARAMS,
+     colId: 'duration',
+     ...lockedWidthColDef(DURATION_COLUMN_WIDTH),
+     ...NO_FILTER_COL_DEF,
+@@ -233,6 +239,7 @@ const executionColumns: ColDef[] = [
+ 
+ const detailsColumns = {
+   headerName: ' ',
++  headerGroupComponent: EllipsisHeaderGroup,
+   context: { panelName: 'Details' },
+   children: [
+     {
+@@ -247,6 +254,7 @@ const detailsColumns = {
+     {
+       field: 'testCaseName',
+       headerName: 'Test Case name',
++      headerComponentParams: ELLIPSIS_HEADER_PARAMS,
+       colId: 'testCaseName',
+       ...fixedWidthColDef(TEST_CASE_NAME_COLUMN_WIDTH),
+       ...TEXT_FILTER_COL_DEF,
+@@ -262,6 +270,7 @@ const detailsColumns = {
+  */
+ const getExecutionGroup = (results: AnalyticsResult[]) => ({
+   headerName: EXECUTION_GROUP_HEADER,
++  headerGroupComponent: EllipsisHeaderGroup,
+   children: hideUniformColumns(executionColumns, getUniformExecutionFields(results)),
+ });
+ 
+@@ -309,10 +318,12 @@ export const getAnalyticsColumns = (results: AnalyticsResult[]) => {
+     ...getMetricsColumns(metrics),
+     {
+       headerName: INPUT_BINDINGS_GROUP_HEADER,
++      headerGroupComponent: EllipsisHeaderGroup,
+       children: getInputColumns(input, true),
+     },
+     {
+       headerName: EXTRACTED_GROUP_HEADER,
++      headerGroupComponent: EllipsisHeaderGroup,
+       children: getExtractedColumns(mergeRecordSchema(results, (result) => result.extractedColumns)),
+     },
+   ];
