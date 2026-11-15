@@ -1,0 +1,72 @@
+diff --git a/src/object/coin.cpp b/src/object/coin.cpp
+index 6c20c2d..04402e5 100644
+--- a/src/object/coin.cpp
++++ b/src/object/coin.cpp
+@@ -23,6 +23,7 @@
+ #include "object/camera.hpp"
+ #include "object/player.hpp"
+ #include "object/tilemap.hpp"
++#include "supertux/tile.hpp"
+ #include "supertux/flip_level_transformer.hpp"
+ #include "supertux/level.hpp"
+ #include "supertux/sector.hpp"
+@@ -273,13 +274,23 @@ HeavyCoin::HeavyCoin(const ReaderMapping& reader, bool count_stats) :
+ void
+ HeavyCoin::update(float dt_sec)
+ {
+-  // A coin that has dropped out of sight below the playfield is lost.
+-  if (get_bbox().get_top() > Sector::get().get_camera().get_rect().get_bottom())
++  // A coin that has fallen out of the sector is lost.
++  if (get_bbox().get_top() > Sector::get().get_height())
+   {
+     remove_me();
+     return;
+   }
+ 
++  // Coins drift down slowly in water.
++  const bool in_water = !Sector::get().is_free_of_tiles(get_bbox(), true, Tile::WATER);
++  m_physic.set_gravity_modifier(in_water ? 0.2f : 1.f);
++  if (in_water)
++  {
++    const float max_sink_speed = 80.f;
++    if (m_physic.get_velocity_y() > max_sink_speed)
++      m_physic.set_velocity_y(max_sink_speed);
++  }
++
+   // Enable physics.
+   m_col.set_movement(m_physic.get_movement(dt_sec));
+ }
+diff --git a/src/object/coin_explode.cpp b/src/object/coin_explode.cpp
+index fc77f31..fe3c34d 100644
+--- a/src/object/coin_explode.cpp
++++ b/src/object/coin_explode.cpp
+@@ -20,7 +20,7 @@
+ #include "object/coin.hpp"
+ #include "supertux/sector.hpp"
+ 
+-#include <list>
++#include <array>
+ 
+ CoinExplode::CoinExplode(const Vector& pos, bool count_stats, const std::string& sprite) :
+   m_sprite(sprite),
+@@ -36,16 +36,16 @@ CoinExplode::update(float )
+   float rand = 30.0f; // Max variation to be subtracted from the magnitude.
+ 
+   // Each coin in the explosion has a different velocity.
+-  static std::list<Vector> coin_velocities = {
++  static const std::array<Vector, 10> coin_velocities = {{
+     { 2.5, -4.5 }, { 2, -5 },
+     { 1.5, -5.5 }, { 1, -6 }, { 0.5, -6.5 },
+     { -2.5, -4.5 }, { -2, -5 },
+     { -1.5, -5.5 }, { -1, -6 }, { -0.5, -6.5 }
+-  };
++  }};
+ 
+-  for (auto& velocity : coin_velocities)
++  for (const auto& direction : coin_velocities)
+   {
+-    velocity *= mag - gameRandom.randf(rand);
++    const Vector velocity = direction * (mag - gameRandom.randf(rand));
+     Sector::get().add<HeavyCoin>(position, velocity, m_count_stats, m_sprite);
+   }
+ 

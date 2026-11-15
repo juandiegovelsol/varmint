@@ -20,12 +20,13 @@ cross_file = true
 visual_essentiality = "required"
 difficulty = "hard"
 difficulty_explanation = """
-Five independent defects in the coin-burst pipeline, spread over two files (src/object/coin_explode.cpp and src/object/coin.cpp), all visible only as motion in the attached recording and all affecting the same coins at once: (1) the bonus block's burst throws every coin to one side, and half of them straight down onto the block, because the mirrored half of the velocity fan flips the wrong axis; (2) heavy coins ignore water entirely, so coins that fall into the flooded chasm reach the bottom at full speed (the upstream issue #3729); (3) a coin that lands keeps its horizontal speed and skates along the floor forever, bouncing from wall to wall; (4) the released coins are put in a collision group that never meets the player, so Tux swims straight through them without picking them up; (5) the landing bounce threshold is so low that every landing counts as a bounce, so a landed coin keeps hopping on the floor instead of coming to rest.
+Five independent defects plus the upstream missing feature, all in the coin-burst pipeline (src/object/coin_explode.cpp and src/object/coin.cpp), all visible only as motion in the attached recording and all affecting the same coins at once: (1) the burst's velocity table is a function-static list that is scaled in place, so the first burst of the session looks right but every later one is thrown thousands of times too hard and the coins rocket out of sight (the clip opens two blocks, the second shows it); (2) heavy coins ignore water entirely, so coins reach the bottom at full speed (the upstream issue #3729), and copying Rock's gravity modifier is not enough because coins that hit the water while falling fast must also be slowed; (3) a coin that lands keeps its horizontal speed and skates along the floor; (4) the released coins are put in a collision group that never meets the player, so Tux swims straight through them; (5) the landing bounce threshold is so low that every landing counts as a bounce, so landed coins keep hopping; (6) a heavy coin is deleted as soon as it is below the bottom edge of the camera view, through a helper called update_visibility() that reads like a rendering step, so resting coins vanish whenever Tux swims up and away and are gone when he comes back to collect them.
 
-The text names none of these. The agent has to step through the clip from the burst onward and separate five overlapping symptoms (one-sided/downward launch, no slowdown in water, endless sliding and hopping on the basin floor, coins Tux passes through without collecting), then map each to its own code path: the fan construction in CoinExplode::update, HeavyCoin::update (no water handling at all; the right pattern exists only in unrelated classes such as Rock and BadGuy), the landing branch of HeavyCoin::collision_solid (two defects there), and the collision group set in the HeavyCoin constructor. Fixing the most obvious symptom (water) leaves the other two in place, and copying Rock's water code verbatim (gravity modifier only) still lets coins that hit the water fast plunge to the bottom, which the clip shows and the instruction calls out. Each defect has its own behavioural f2p test run in the real game binary (scripted levels, no source inspection), with thresholds checked against several independent correct fixes.
+The text names none of these. Defects (1) and (6) only show at specific moments of the clip ((1) for about three frames on the second burst, (6) only once the coins leave the screen), and (6) also hides (4) at the end of the clip: the floor is empty when Tux returns, so the pickup failure is only visible earlier, when he sweeps the floor through the resting coins without collecting any. Each defect has its own behavioural f2p test run in the real game binary (scripted levels, no source inspection): a two-block repeat-burst room with open sky, and a tall shaft where a coin rests far below the camera, in addition to the water and burst levels. Thresholds were checked against the oracle and against each defect re-introduced on its own.
 """
 files_edited = [
   "src/object/coin.cpp",
+  "src/object/coin.hpp",
   "src/object/coin_explode.cpp",
 ]
 f2p = [
@@ -37,6 +38,9 @@ f2p = [
   "HeavyCoinBurstTest.landed_coins_come_to_rest",
   "HeavyCoinWaterTest.coins_settle_on_floor",
   "HeavyCoinBurstTest.released_coins_can_be_collected",
+  "HeavyCoinBurstTest.every_burst_comes_down",
+  "HeavyCoinOffscreenTest.kept_while_out_of_view",
+  "HeavyCoinOffscreenTest.collected_after_coming_back",
 ]
 p2p = [
   "HeavyCoinWaterTest.produces_trajectory",

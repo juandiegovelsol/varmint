@@ -31,10 +31,14 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
 # system package, so no separate SDL2_ttf install is needed here.
 
 # --- Checkout SuperTux at the base commit, directly into /app ---
+# Only the base commit is fetched (depth 1): the history is dropped further down anyway, and a full
+# clone is several times larger and fails often on slow links. Retried, then checked to be the pin.
 WORKDIR /app
-RUN git clone https://github.com/SuperTux/supertux.git . && \
+RUN git init -q /app && git -C /app remote add origin https://github.com/SuperTux/supertux.git && \
+    for i in 1 2 3 4 5; do git -C /app fetch -q --depth 1 origin 4b5663fc0c3ba08a8f8bd2ec8b75b5c02f82f7c7 && break; sleep 10; done && \
     git -C /app -c advice.detachedHead=false checkout 4b5663fc0c3ba08a8f8bd2ec8b75b5c02f82f7c7 && \
-    git -C /app submodule update --init --recursive --depth 1
+    test "$(git -C /app rev-parse HEAD)" = 4b5663fc0c3ba08a8f8bd2ec8b75b5c02f82f7c7 && \
+    for i in 1 2 3 4 5; do git -C /app submodule update --init --recursive --depth 1 && break; sleep 10; done
 
 # [IMPORTANT] Injected bugs: applied to the checkout BEFORE the image's build (so the prebuilt
 # binary matches the sources the agent sees), BEFORE the timestamp step and the harbor_base
@@ -45,9 +49,12 @@ RUN set -e; for p in /tmp/bugs/*.patch; do git -C /app apply "$p" || patch -p1 -
 
 # --- Configure & build once at image-build time, so that applying a small
 # patch later (fix.patch / test.patch) only triggers an incremental rebuild
-# of the handful of changed files instead of a full rebuild from scratch. ---
+# of the handful of changed files instead of a full rebuild from scratch. Same -O2 optimisation as
+# RelWithDebInfo but without -g: identical code, much smaller build/ tree and faster links. ---
 RUN cmake -S /app -B /app/build -GNinja \
       -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+      "-DCMAKE_C_FLAGS_RELWITHDEBINFO=-O2 -DNDEBUG" \
+      "-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=-O2 -DNDEBUG" \
       -DENABLE_OPENGL=OFF \
       -DENABLE_NETWORKING=OFF \
       -DENABLE_DISCORD=OFF \

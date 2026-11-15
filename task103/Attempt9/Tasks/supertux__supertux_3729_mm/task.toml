@@ -1,0 +1,63 @@
+version = "1.0"
+reward_type = "binary"
+
+[task]
+name = "scale-ai/supertux__supertux_3729_mm"
+
+[metadata]
+task_id = "supertux__supertux_3729_mm"
+title = "Some coins misbehave in the flooded cave"
+repository_name = "SuperTux/supertux"
+repo_url = "https://github.com/SuperTux/supertux"
+issue_number = 3729
+pr_number = 3771
+base_commit = "4b5663fc0c3ba08a8f8bd2ec8b75b5c02f82f7c7"
+fix_commit = "d1d16705985c881346fedd1e29ac4dbafa071604"
+task_type = "temporal_interaction"
+language = "C++"
+framework = "SuperTux"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = """
+Five independent defects plus the upstream missing feature, all in the coin-burst pipeline (src/object/coin_explode.cpp and src/object/coin.cpp), all visible only as motion in the attached recording and all affecting the same coins at once: (1) the burst's velocity table is a function-static list that is scaled in place, so the first burst of the session looks right but every later one is thrown thousands of times too hard and the coins rocket out of sight (the clip opens two blocks, the second shows it); (2) heavy coins ignore water entirely, so coins reach the bottom at full speed (the upstream issue #3729), and copying Rock's gravity modifier is not enough because coins that hit the water while falling fast must also be slowed; (3) a coin that lands keeps its horizontal speed and skates along the floor; (4) the released coins are put in a collision group that never meets the player, so Tux swims straight through them; (5) the landing bounce threshold is so low that every landing counts as a bounce, so landed coins keep hopping; (6) a heavy coin deletes itself as soon as it is below the bottom edge of the camera view, which reads like a "fell out of the level" cleanup but makes resting coins vanish whenever Tux swims up and away, so they are gone when he swims back to collect them.
+
+The text names none of these. Defects (1) and (6) are the hard ones: both look like plausible code on a read-through, (1) only shows up on a second burst and (6) only when the coins leave the screen, so the agent has to watch the whole clip, compare the two bursts and notice coins disappearing between the moment Tux leaves them and the moment he returns. Each defect has its own behavioural f2p test run in the real game binary (scripted levels, no source inspection): a two-block repeat-burst room with open sky, and a tall shaft where a coin rests far below the camera, in addition to the water and burst levels. Thresholds were checked against the oracle and against each defect re-introduced on its own.
+"""
+files_edited = [
+  "src/object/coin.cpp",
+  "src/object/coin_explode.cpp",
+]
+f2p = [
+  "HeavyCoinWaterTest.floats_in_water_by_1s",
+  "HeavyCoinWaterTest.still_sinking_at_1_6s",
+  "HeavyCoinWaterTest.sinks_slowly_from_rest",
+  "HeavyCoinBurstTest.releases_full_burst",
+  "HeavyCoinBurstTest.scatters_to_both_sides",
+  "HeavyCoinBurstTest.landed_coins_come_to_rest",
+  "HeavyCoinWaterTest.coins_settle_on_floor",
+  "HeavyCoinBurstTest.released_coins_can_be_collected",
+  "HeavyCoinBurstTest.every_burst_comes_down",
+  "HeavyCoinOffscreenTest.kept_while_out_of_view",
+  "HeavyCoinOffscreenTest.collected_after_coming_back",
+]
+p2p = [
+  "HeavyCoinWaterTest.produces_trajectory",
+  "HeavyCoinWaterTest.still_falling_before_water",
+]
+tags = ["multimodal", "2d_video", "temporal_interaction", "beyond_browser", "recording", "supertux", "c++", "2d-platformer", "physics", "water", "injected_bugs", "cross_file"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

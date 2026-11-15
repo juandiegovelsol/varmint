@@ -53,10 +53,12 @@ PY
   DIR=/app/tests/integration
   WLOG="$(mktemp)"
   BLOG="$(mktemp)"
+  RLOG="$(mktemp)"
+  OLOG="$(mktemp)"
 
   # The levels never quit on their own: each script prints its samples and then a *_DONE marker
-  # (water script ~30 simulated s, burst script ~15 simulated s). The game is stopped as soon as
-  # the marker is in its log; 80 s stays as the hard cap.
+  # (water script ~30 simulated s, burst script ~15, repeat-burst script ~18, out-of-view script
+  # ~5). The game is stopped as soon as the marker is in its log; 80 s stays as the hard cap.
   run_level() {
     timeout -k 5 80 stdbuf -oL -eL "$BIN" --renderer null --disable-sound --disable-music "$1" > "$2" 2>&1 &
     local pid=$!
@@ -67,8 +69,10 @@ PY
   }
   run_level "$DIR/heavycoin_water_test.stl" "$WLOG" COINY_DONE
   run_level "$DIR/heavycoin_burst_test.stl" "$BLOG" BURST_DONE
+  run_level "$DIR/heavycoin_repeat_test.stl" "$RLOG" REPEAT_DONE
+  run_level "$DIR/heavycoin_offscreen_test.stl" "$OLOG" FAR_DONE
 
-  python3 "$DIR/evaluate_heavycoin.py" "$WLOG" "$BLOG" "$JUNIT_OUT" $(cat "$TEST_IDS_FILE")
+  python3 "$DIR/evaluate_heavycoin.py" "$WLOG" "$BLOG" "$RLOG" "$OLOG" "$JUNIT_OUT" $(cat "$TEST_IDS_FILE")
 }
 # Directories holding the repo's test plumbing (configs, helpers) that must also be restored so a
 # candidate cannot replace the harness. Space-separated, relative to /app; '' if none.
