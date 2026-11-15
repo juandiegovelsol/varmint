@@ -1,0 +1,312 @@
+⠋ 0/1 Running trials...                                         0:00:00 -:--:--┌───────────────────── Traceback (most recent call last) ─────────────────────┐
+│ C:\Users\Juan                                                               │
+│ V\AppData\Roaming\uv\tools\harbor\Lib\site-packages\harbor\cli\jobs.py:1568 │
+│ in start                                                                    │
+│                                                                             │
+│   1565 │   # `_run_job` itself prints the summary + invokes the upload      │
+│        finalize                                                             │
+│   1566 │   # (when --upload is set) so everything stays on one event loop.  │
+│        See                                                                  │
+│   1567 │   # the long comment in `HarborHubUploadPlugin.on_job_end` for why │
+│        this matters.                                                        │
+│ > 1568 │   job, job_result = run_async(_run_job())                          │
+│   1569 │                                                                    │
+│   1570 │   if export_traces:                                                │
+│   1571 │   │   from harbor.utils.traces_utils import export_traces as       │
+│        _export_traces                                                       │
+│                                                                             │
+│ C:\Users\Juan                                                               │
+│ V\AppData\Roaming\uv\tools\harbor\Lib\site-packages\harbor\cli\utils.py:61  │
+│ in run_async                                                                │
+│                                                                             │
+│    58 │   Requires Python 3.12+ (which is the minimum version for this      │
+│       project).                                                             │
+│    59 │   """                                                               │
+│    60 │   if sys.platform == "win32":                                       │
+│ >  61 │   │   return asyncio.run(coro,                                      │
+│       loop_factory=asyncio.ProactorEventLoop)                               │
+│    62 │   return asyncio.run(coro)                                          │
+│    63                                                                       │
+│    64                                                                       │
+│                                                                             │
+│ C:\Users\Juan                                                               │
+│ V\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\asyncio │
+│ \runners.py:195 in run                                                      │
+│                                                                             │
+│   192 │   │   │   "asyncio.run() cannot be called from a running event      │
+│       loop")                                                                │
+│   193 │                                                                     │
+│   194 │   with Runner(debug=debug, loop_factory=loop_factory) as runner:    │
+│ > 195 │   │   return runner.run(main)                                       │
+│   196                                                                       │
+│   197                                                                       │
+│   198 def _cancel_all_tasks(loop):                                          │
+│                                                                             │
+│ C:\Users\Juan                                                               │
+│ V\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\asyncio │
+│ \runners.py:118 in run                                                      │
+│                                                                             │
+│   115 │   │                                                                 │
+│   116 │   │   self._interrupt_count = 0                                     │
+│   117 │   │   try:                                                          │
+│ > 118 │   │   │   return self._loop.run_until_complete(task)                │
+│   119 │   │   except exceptions.CancelledError:                             │
+│   120 │   │   │   if self._interrupt_count > 0:                             │
+│   121 │   │   │   │   uncancel = getattr(task, "uncancel", None)            │
+│                                                                             │
+│ C:\Users\Juan                                                               │
+│ V\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\asyncio │
+│ \base_events.py:691 in run_until_complete                                   │
+│                                                                             │
+│    688 │   │   if not future.done():                                        │
+│    689 │   │   │   raise RuntimeError('Event loop stopped before Future     │
+│        completed.')                                                         │
+│    690 │   │                                                                │
+│ >  691 │   │   return future.result()                                       │
+│    692 │                                                                    │
+│    693 │   def stop(self):                                                  │
+│    694 │   │   """Stop running the event loop.                              │
+│                                                                             │
+│ C:\Users\Juan                                                               │
+│ V\AppData\Roaming\uv\tools\harbor\Lib\site-packages\harbor\cli\jobs.py:1521 │
+│ in _run_job                                                                 │
+│                                                                             │
+│   1518 │   │   │   )                                                        │
+│   1519 │   │   │   await hub_plugin.on_job_start(job)                       │
+│   1520 │   │                                                                │
+│ > 1521 │   │   job_result = await job.run()                                 │
+│   1522 │   │                                                                │
+│   1523 │   │   # Print the run summary BEFORE plugin and Harbor Hub         │
+│        finalize so users                                                    │
+│   1524 │   │   # see results even if downstream operations fail.            │
+│                                                                             │
+│ C:\Users\Juan                                                               │
+│ V\AppData\Roaming\uv\tools\harbor\Lib\site-packages\harbor\job.py:803 in    │
+│ run                                                                         │
+│                                                                             │
+│   800 │   │   │   │   │   │   completed=n_existing,                         │
+│   801 │   │   │   │   │   )                                                 │
+│   802 │   │   │   │   │                                                     │
+│ > 803 │   │   │   │   │   trial_results = await                             │
+│       self._run_trials_with_queue(                                          │
+│   804 │   │   │   │   │   │   loading_progress, progress_task,              │
+│       running_progress                                                      │
+│   805 │   │   │   │   │   )                                                 │
+│   806                                                                       │
+│                                                                             │
+│ C:\Users\Juan                                                               │
+│ V\AppData\Roaming\uv\tools\harbor\Lib\site-packages\harbor\job.py:942 in    │
+│ _run_trials_with_queue                                                      │
+│                                                                             │
+│   939 │   │                                                                 │
+│   940 │   │   coros =                                                       │
+│       self._trial_queue.submit_batch(self._remaining_trial_configs)         │
+│   941 │   │                                                                 │
+│ > 942 │   │   async with asyncio.TaskGroup() as tg:                         │
+│   943 │   │   │   tasks = [tg.create_task(coro) for coro in coros]          │
+│   944 │   │                                                                 │
+│   945 │   │   return [t.result() for t in tasks]                            │
+│                                                                             │
+│ C:\Users\Juan                                                               │
+│ V\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\asyncio │
+│ \taskgroups.py:71 in __aexit__                                              │
+│                                                                             │
+│    68 │   async def __aexit__(self, et, exc, tb):                           │
+│    69 │   │   tb = None                                                     │
+│    70 │   │   try:                                                          │
+│ >  71 │   │   │   return await self._aexit(et, exc)                         │
+│    72 │   │   finally:                                                      │
+│    73 │   │   │   # Exceptions are heavy objects that can have object       │
+│    74 │   │   │   # cycles (bad for GC); let's not keep a reference to      │
+│                                                                             │
+│ C:\Users\Juan                                                               │
+│ V\AppData\Roaming\uv\python\cpython-3.12.12-windows-x86_64-none\Lib\asyncio │
+│ \taskgroups.py:164 in _aexit                                                │
+│                                                                             │
+│   161 │   │                                                                 │
+│   162 │   │   if self._errors:                                              │
+│   163 │   │   │   try:                                                      │
+│ > 164 │   │   │   │   raise BaseExceptionGroup(                             │
+│   165 │   │   │   │   │   'unhandled errors in a TaskGroup',                │
+│   166 │   │   │   │   │   self._errors,                                     │
+│   167 │   │   │   │   ) from None                                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+
+┌───────────────────────────── Sub-exception #1 ──────────────────────────────┐
+│ ┌─────────────────── Traceback (most recent call last) ───────────────────┐ │
+│ │ C:\Users\Juan                                                           │ │
+│ │ V\AppData\Roaming\uv\tools\harbor\Lib\site-packages\harbor\trial\queue. │ │
+│ │ py:242 in _run_trial                                                    │ │
+│ │                                                                         │ │
+│ │   239 │   async def _run_trial(self, trial_config: TrialConfig) ->      │ │
+│ │       TrialResult:                                                      │ │
+│ │   240 │   │   """Execute a single trial, acquiring the semaphore for    │ │
+│ │       concurrency control."""                                           │ │
+│ │   241 │   │   async with self._semaphore:                               │ │
+│ │ > 242 │   │   │   return await                                          │ │
+│ │       self._execute_trial_with_retries(trial_config)                    │ │
+│ │   243 │                                                                 │ │
+│ │   244 │   def submit(self, trial_config: TrialConfig) -> Coroutine[Any, │ │
+│ │       Any, TrialResult]:                                                │ │
+│ │   245 │   │   """                                                       │ │
+│ │                                                                         │ │
+│ │ C:\Users\Juan                                                           │ │
+│ │ V\AppData\Roaming\uv\tools\harbor\Lib\site-packages\harbor\trial\queue. │ │
+│ │ py:201 in _execute_trial_with_retries                                   │ │
+│ │                                                                         │ │
+│ │   198 │   │   from harbor.trial.trial import Trial                      │ │
+│ │   199 │   │                                                             │ │
+│ │   200 │   │   for attempt in range(self._retry_config.max_retries + 1): │ │
+│ │ > 201 │   │   │   trial = await Trial.create(trial_config)              │ │
+│ │   202 │   │   │   self._setup_hooks(trial)                              │ │
+│ │   203 │   │   │   result = await trial.run()                            │ │
+│ │   204                                                                   │ │
+│ │                                                                         │ │
+│ │ C:\Users\Juan                                                           │ │
+│ │ V\AppData\Roaming\uv\tools\harbor\Lib\site-packages\harbor\trial\trial. │ │
+│ │ py:270 in create                                                        │ │
+│ │                                                                         │ │
+│ │    267 │   │                                                            │ │
+│ │    268 │   │   from harbor.trial.single_step import SingleStepTrial     │ │
+│ │    269 │   │                                                            │ │
+│ │ >  270 │   │   return SingleStepTrial(                                  │ │
+│ │    271 │   │   │   config,                                              │ │
+│ │    272 │   │   │   _task=task,                                          │ │
+│ │    273 │   │   │   _task_download_result=task_download_result,          │ │
+│ │                                                                         │ │
+│ │ C:\Users\Juan                                                           │ │
+│ │ V\AppData\Roaming\uv\tools\harbor\Lib\site-packages\harbor\trial\single │ │
+│ │ _step.py:30 in __init__                                                 │ │
+│ │                                                                         │ │
+│ │    27 │   ):                                                            │ │
+│ │    28 │   │   if _task is not None and _task.has_steps:                 │ │
+│ │    29 │   │   │   raise ValueError("SingleStepTrial requires a task     │ │
+│ │       without [[steps]].")                                              │ │
+│ │ >  30 │   │   super().__init__(                                         │ │
+│ │    31 │   │   │   config,                                               │ │
+│ │    32 │   │   │   _task=_task,                                          │ │
+│ │    33 │   │   │   _task_download_result=_task_download_result,          │ │
+│ │                                                                         │ │
+│ │ C:\Users\Juan                                                           │ │
+│ │ V\AppData\Roaming\uv\tools\harbor\Lib\site-packages\harbor\trial\trial. │ │
+│ │ py:123 in __init__                                                      │ │
+│ │                                                                         │ │
+│ │    120 │   │   │   self._init_logger()                                  │ │
+│ │    121 │   │   │   self._init_timeouts()                                │ │
+│ │    122 │   │   │   self._init_agent()                                   │ │
+│ │ >  123 │   │   │   self._init_agent_environment()                       │ │
+│ │    124 │   │   │   self._init_artifact_handler()                        │ │
+│ │    125 │   │   │   self._validate_network_policy_modes()                │ │
+│ │    126 │   │   except BaseException:                                    │ │
+│ │                                                                         │ │
+│ │ C:\Users\Juan                                                           │ │
+│ │ V\AppData\Roaming\uv\tools\harbor\Lib\site-packages\harbor\trial\trial. │ │
+│ │ py:774 in _init_agent_environment                                       │ │
+│ │                                                                         │ │
+│ │    771 │   │   │   │   else [plan.agent_phase]                          │ │
+│ │    772 │   │   │   )                                                    │ │
+│ │    773 │   │   ]                                                        │ │
+│ │ >  774 │   │   self.agent_environment =                                 │ │
+│ │        EnvironmentFactory.create_environment_from_config(               │ │
+│ │    775 │   │   │   config=self.config.environment,                      │ │
+│ │    776 │   │   │   environment_dir=self.task.paths.environment_dir,     │ │
+│ │    777 │   │   │   environment_name=self.task.short_name,               │ │
+│ │                                                                         │ │
+│ │ C:\Users\Juan                                                           │ │
+│ │ V\AppData\Roaming\uv\tools\harbor\Lib\site-packages\harbor\environments │ │
+│ │ \factory.py:352 in create_environment_from_config                       │ │
+│ │                                                                         │ │
+│ │   349 │   │   │   │   **env_constructor_kwargs,                         │ │
+│ │   350 │   │   │   )                                                     │ │
+│ │   351 │   │   elif config.type is not None:                             │ │
+│ │ > 352 │   │   │   return cls.create_environment(                        │ │
+│ │   353 │   │   │   │   type=config.type,                                 │ │
+│ │   354 │   │   │   │   environment_dir=environment_dir,                  │ │
+│ │   355 │   │   │   │   environment_name=environment_name,                │ │
+│ │                                                                         │ │
+│ │ C:\Users\Juan                                                           │ │
+│ │ V\AppData\Roaming\uv\tools\harbor\Lib\site-packages\harbor\environments │ │
+│ │ \factory.py:184 in create_environment                                   │ │
+│ │                                                                         │ │
+│ │   181 │   ) -> BaseEnvironment:                                         │ │
+│ │   182 │   │   environment_class = _load_environment_class(type)         │ │
+│ │   183 │   │                                                             │ │
+│ │ > 184 │   │   return environment_class(                                 │ │
+│ │   185 │   │   │   environment_dir=environment_dir,                      │ │
+│ │   186 │   │   │   environment_name=environment_name,                    │ │
+│ │   187 │   │   │   session_id=session_id,                                │ │
+│ │                                                                         │ │
+│ │ C:\Users\Juan                                                           │ │
+│ │ V\AppData\Roaming\uv\tools\harbor\Lib\site-packages\harbor\environments │ │
+│ │ \docker\docker.py:194 in __init__                                       │ │
+│ │                                                                         │ │
+│ │    191 │   │   │   )                                                    │ │
+│ │    192 │   │   │   and (sys.platform == "linux" or                      │ │
+│ │        self._egress_control_kernel_support())                           │ │
+│ │    193 │   │   )                                                        │ │
+│ │ >  194 │   │   super().__init__(                                        │ │
+│ │    195 │   │   │   environment_dir=environment_dir,                     │ │
+│ │    196 │   │   │   environment_name=environment_name,                   │ │
+│ │    197 │   │   │   session_id=session_id,                               │ │
+│ │                                                                         │ │
+│ │ C:\Users\Juan                                                           │ │
+│ │ V\AppData\Roaming\uv\tools\harbor\Lib\site-packages\harbor\environments │ │
+│ │ \base.py:219 in __init__                                                │ │
+│ │                                                                         │ │
+│ │    216 │   │   self._validate_resource_mode_support()                   │ │
+│ │    217 │   │   self._validate_gpu_support()                             │ │
+│ │    218 │   │   self._validate_tpu_support()                             │ │
+│ │ >  219 │   │   self._validate_network_policy_support()                  │ │
+│ │    220 │   │   self._validate_windows_support()                         │ │
+│ │    221 │                                                                │ │
+│ │    222 │   @cached_property                                             │ │
+│ │                                                                         │ │
+│ │ C:\Users\Juan                                                           │ │
+│ │ V\AppData\Roaming\uv\tools\harbor\Lib\site-packages\harbor\environments │ │
+│ │ \base.py:827 in _validate_network_policy_support                        │ │
+│ │                                                                         │ │
+│ │    824 │   │   """Validate that this provider can enforce the requested │ │
+│ │        network policy."""                                               │ │
+│ │    825 │   │   self.validate_network_policy_support()                   │ │
+│ │    826 │   │   for network_policy in self._phase_network_policies:      │ │
+│ │ >  827 │   │   │   self.validate_network_policy_support(network_policy) │ │
+│ │    828 │                                                                │ │
+│ │    829 │   async def set_network_policy(self, network_policy:           │ │
+│ │        NetworkPolicy) -> None:                                          │ │
+│ │    830 │   │   """Switch the active runtime network policy for this     │ │
+│ │        environment."""                                                  │ │
+│ │                                                                         │ │
+│ │ C:\Users\Juan                                                           │ │
+│ │ V\AppData\Roaming\uv\tools\harbor\Lib\site-packages\harbor\environments │ │
+│ │ \docker\docker.py:552 in validate_network_policy_support                │ │
+│ │                                                                         │ │
+│ │    549 │   │   │   │   "by docker environment "                         │ │
+│ │    550 │   │   │   │   "for Windows containers."                        │ │
+│ │    551 │   │   │   )                                                    │ │
+│ │ >  552 │   │   super().validate_network_policy_support(network_policy)  │ │
+│ │    553 │                                                                │ │
+│ │    554 │   def _compose_env_vars(self, include_os_env: bool = True) ->  │ │
+│ │        dict[str, str]:                                                  │ │
+│ │    555 │   │   user_env: dict[str, str] = {}                            │ │
+│ │                                                                         │ │
+│ │ C:\Users\Juan                                                           │ │
+│ │ V\AppData\Roaming\uv\tools\harbor\Lib\site-packages\harbor\environments │ │
+│ │ \base.py:768 in validate_network_policy_support                         │ │
+│ │                                                                         │ │
+│ │    765 │   │   │   network_policy.network_mode ==                       │ │
+│ │        NetworkMode.NO_NETWORK                                           │ │
+│ │    766 │   │   │   and not self.capabilities.disable_internet           │ │
+│ │    767 │   │   ):                                                       │ │
+│ │ >  768 │   │   │   raise ValueError(                                    │ │
+│ │    769 │   │   │   │   f"network_mode='no-network' is not supported by  │ │
+│ │        {self.type()} "                                                  │ │
+│ │    770 │   │   │   │   "environment. Environment providers must enforce │ │
+│ │        the requested "                                                  │ │
+│ │    771 │   │   │   │   "network policy or reject the task."             │ │
+│ └─────────────────────────────────────────────────────────────────────────┘ │
+│ ValueError: network_mode='no-network' is not supported by                   │
+│ EnvironmentType.DOCKER environment. Environment providers must enforce the  │
+│ requested network policy or reject the task.                                │
+└─────────────────────────────────────────────────────────────────────────────┘
+harbor exit=1

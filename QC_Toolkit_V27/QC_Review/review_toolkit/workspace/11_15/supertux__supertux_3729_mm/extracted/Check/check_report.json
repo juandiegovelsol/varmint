@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "checks": {
+        "behavior_in_task_description": {
+          "explanation": "This is a multimodal task: the instruction plus the video define the behaviour. The instruction asks that released coins act like a normal burst all the way from spreading out of the block to coming to rest and being collected, that coins drift down slowly from the moment they enter water, and that every wrong behaviour seen in the recording gets fixed. The tests check exactly these things in the real game binary: each burst comes down near its block (the repeat-burst bug), coins scatter to both sides, landed coins stop instead of skating or hopping, Tux can collect them, coins are not deleted when out of view, and coins sink slowly in water, including ones that were already falling fast when they hit it. The numeric thresholds are loose and fit plain-language words like 'slowly' and 'come to rest'.",
+          "outcome": "pass"
+        },
+        "behavior_in_tests": {
+          "explanation": "Each misbehaviour the instruction covers, along with the upstream water feature, has its own test that fails on the buggy build and passes with the fix: water sinking (3 tests plus settling on the floor), full burst and scatter to both sides, coming to rest, collectability, repeated bursts, and keeping or collecting a coin out of view. Two tests that pass both before and after the fix guard the baseline trajectory.",
+          "outcome": "pass"
+        },
+        "informative_test_structure": {
+          "explanation": "evaluate_heavycoin.py opens with a docstring that explains each test level's geometry and log format. Every check has a descriptive test id and a detailed failure message. test.sh is organised into commented steps (restore, apply, run, reward). Some comments in the boilerplate are stale (they mention wx), but the structure is clear.",
+          "outcome": "pass"
+        },
+        "anti_cheating_measures": {
+          "explanation": "The bug patches are applied and deleted in the same RUN step. Upstream git history is dropped, so the fix commit can't be reached, and file timestamps are flattened. Tests and the solution are not in the image, and test files are restored from harbor_base before the hidden tests are applied. The agent runs with no network. Grading is purely behavioural, done by running the game binary on hidden levels.",
+          "outcome": "pass"
+        },
+        "structured_data_schema": {
+          "explanation": "The task does not ask for any structured output. It is a source-code bug fix.",
+          "outcome": "not_applicable"
+        },
+        "pinned_dependencies": {
+          "explanation": "The repository is pinned to an exact commit, which is checked after checkout, and submodules follow that commit. Only apt packages from Ubuntu 24.04 are installed, and there are no unpinned pip dependencies.",
+          "outcome": "pass"
+        },
+        "typos": {
+          "explanation": "Paths, test ids, log markers (COINY_DONE, BURST_DONE, REPEAT_DONE, FAR_DONE) and file names are consistent across test.sh, config.json, task.toml and test.patch. The unset REPORTS array is harmless under bash 5.2 with set -u. The only problems are stale boilerplate comments that mention wx, which are not functional.",
+          "outcome": "pass"
+        },
+        "tests_or_solution_in_image": {
+          "explanation": "The Dockerfile copies only ca-certificates.crt, the bug patches (deleted right away) and recording.mp4. Neither tests/ nor solution/ is copied.",
+          "outcome": "pass"
+        },
+        "test_deps_in_image": {
+          "explanation": "The tests need only the game build toolchain and python3, which the project itself requires. No test-only frameworks are baked into the image, and the test levels and evaluator come in through test.patch at verification time.",
+          "outcome": "pass"
+        },
+        "hardcoded_solution": {
+          "explanation": "solve.sh applies a real source patch that reverts the injected defects and adds water physics to HeavyCoin. The game is then rebuilt and the behaviour comes from that code. Nothing echoes a precomputed answer.",
+          "outcome": "pass"
+        },
+        "file_reference_mentioned": {
+          "explanation": "The agent doesn't need to produce any output files. Grading runs the rebuilt game binary on hidden test levels.",
+          "outcome": "not_applicable"
+        }
+      },
+      "cost_usd": 0.3316472,
+      "task_name": "supertux__supertux_3729_mm",
+      "error": null
+    }
+  ]
+}
