@@ -1,0 +1,148 @@
+diff --git a/irr/src/CBillboardSceneNode.cpp b/irr/src/CBillboardSceneNode.cpp
+index 03cd43477..db75a2af4 100644
+--- a/irr/src/CBillboardSceneNode.cpp
++++ b/irr/src/CBillboardSceneNode.cpp
+@@ -39,16 +39,16 @@ CBillboardSceneNode::CBillboardSceneNode(ISceneNode *parent, ISceneManager *mgr,
+ 	Indices[4] = 3;
+ 	Indices[5] = 2;
+ 
+-	Vertices[0].TCoords.set(0.0f, 1.0f);
++	Vertices[0].TCoords.set(1.0f, 1.0f);
+ 	Vertices[0].Color = colorBottom;
+ 
+-	Vertices[1].TCoords.set(0.0f, 0.0f);
++	Vertices[1].TCoords.set(1.0f, 0.0f);
+ 	Vertices[1].Color = colorTop;
+ 
+-	Vertices[2].TCoords.set(1.0f, 0.0f);
++	Vertices[2].TCoords.set(0.0f, 0.0f);
+ 	Vertices[2].Color = colorTop;
+ 
+-	Vertices[3].TCoords.set(1.0f, 1.0f);
++	Vertices[3].TCoords.set(0.0f, 1.0f);
+ 	Vertices[3].Color = colorBottom;
+ }
+ 
+diff --git a/src/client/content_cao.cpp b/src/client/content_cao.cpp
+index 388c8d7c7..72f24dfca 100644
+--- a/src/client/content_cao.cpp
++++ b/src/client/content_cao.cpp
+@@ -714,17 +714,17 @@ void GenericCAO::addToScene(ITextureSource *tsrc, scene::ISceneManager *smgr)
+ 		{ // Back
+ 			scene::IMeshBuffer *buf = new scene::SMeshBuffer();
+ 			video::S3DVertex vertices[4] = {
+-				video::S3DVertex(-dx,-dy, 0, 0,0,-1, c, 1,1),
+-				video::S3DVertex( dx,-dy, 0, 0,0,-1, c, 0,1),
+-				video::S3DVertex( dx, dy, 0, 0,0,-1, c, 0,0),
+-				video::S3DVertex(-dx, dy, 0, 0,0,-1, c, 1,0),
++				video::S3DVertex( dx,-dy, 0, 0,0,-1, c, 1,1),
++				video::S3DVertex(-dx,-dy, 0, 0,0,-1, c, 0,1),
++				video::S3DVertex(-dx, dy, 0, 0,0,-1, c, 0,0),
++				video::S3DVertex( dx, dy, 0, 0,0,-1, c, 1,0),
+ 			};
+ 			if (m_is_player) {
+ 				// Move minimal Y position to 0 (feet position)
+ 				for (video::S3DVertex &vertex : vertices)
+ 					vertex.Pos.Y += dy;
+ 			}
+-			u16 indices[] = {0,3,2,2,1,0};
++			u16 indices[] = {0,1,2,2,3,0};
+ 			buf->append(vertices, 4, indices, 6);
+ 
+ 			// Set material
+@@ -1202,15 +1202,15 @@ void GenericCAO::step(float dtime, ClientEnvironment *env)
+ 				m_client->sound()->playSoundAt(0, spec, foot_pos, v3f(0.0f));
+ 			}
+ 		}
++	}
+ 
+-		m_anim_timer += dtime;
+-		if(m_anim_timer >= m_anim_framelength)
+-		{
+-			m_anim_timer -= m_anim_framelength;
+-			m_anim_frame++;
+-			if(m_anim_frame >= m_anim_num_frames)
+-				m_anim_frame = 0;
+-		}
++	m_anim_timer += dtime;
++	if(m_anim_timer >= m_anim_framelength)
++	{
++		m_anim_timer -= m_anim_framelength;
++		m_anim_frame++;
++		if(m_anim_frame >= m_anim_num_frames)
++			m_anim_frame = 0;
+ 	}
+ 
+ 	updateTexturePos();
+@@ -1264,6 +1264,16 @@ void GenericCAO::step(float dtime, ClientEnvironment *env)
+ 	}
+ }
+ 
++static void setMeshBufferTextureCoords(scene::IMeshBuffer *buf, const v2f *uv, u32 count)
++{
++	assert(buf->getVertexType() == video::EVT_STANDARD);
++	assert(buf->getVertexCount() == count);
++	auto *vertices = static_cast<video::S3DVertex *>(buf->getVertices());
++	for (u32 i = 0; i < count; i++)
++		vertices[i].TCoords = uv[i];
++	buf->setDirty(scene::EBT_VERTEX);
++}
++
+ void GenericCAO::updateTexturePos()
+ {
+ 	if(m_spritenode)
+@@ -1288,7 +1298,7 @@ void GenericCAO::updateTexturePos()
+ 			else {
+ 				float mob_dir =
+ 						atan2(cam_to_entity.Z, cam_to_entity.X) / M_PI * 180.;
+-				float dir = mob_dir + m_rotation.Y;
++				float dir = mob_dir - m_rotation.Y;
+ 				dir = wrapDegrees_180(dir);
+ 				if (std::fabs(wrapDegrees_180(dir - 0)) <= 45.1f)
+ 					col += 2;
+diff --git a/src/client/mesh.cpp b/src/client/mesh.cpp
+index 711712c33..6196e04d4 100644
+--- a/src/client/mesh.cpp
++++ b/src/client/mesh.cpp
+@@ -18,6 +18,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
+ */
+ 
+ #include "mesh.h"
++#include "S3DVertex.h"
+ #include "debug.h"
+ #include "log.h"
+ #include <cmath>
+@@ -197,15 +198,6 @@ void setMeshColor(scene::IMesh *mesh, const video::SColor &color)
+ 		setMeshBufferColor(mesh->getMeshBuffer(j), color);
+ }
+ 
+-void setMeshBufferTextureCoords(scene::IMeshBuffer *buf, const v2f *uv, u32 count)
+-{
+-	const u32 stride = getVertexPitchFromType(buf->getVertexType());
+-	assert(buf->getVertexCount() >= count);
+-	u8 *vertices = (u8 *) buf->getVertices();
+-	for (u32 i = 0; i < count; i++)
+-		((video::S3DVertex*) (vertices + i * stride))->TCoords = uv[i];
+-}
+-
+ template <typename F>
+ static void applyToMesh(scene::IMesh *mesh, const F &fn)
+ {
+diff --git a/src/client/mesh.h b/src/client/mesh.h
+index 106787af3..35d3886aa 100644
+--- a/src/client/mesh.h
++++ b/src/client/mesh.h
+@@ -59,13 +59,6 @@ void setMeshBufferColor(scene::IMeshBuffer *buf, const video::SColor &color);
+ */
+ void setMeshColor(scene::IMesh *mesh, const video::SColor &color);
+ 
+-
+-/*
+-	Sets texture coords for vertices in the mesh buffer.
+-	`uv[]` must have `count` elements
+-*/
+-void setMeshBufferTextureCoords(scene::IMeshBuffer *buf, const v2f *uv, u32 count);
+-
+ /*
+ 	Set a constant color for an animated mesh
+ */

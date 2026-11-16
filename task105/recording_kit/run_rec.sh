@@ -29,7 +29,7 @@ for t in sys.argv[2:]:
 PYX
 else
   ffmpeg -loglevel error -y -f x11grab -draw_mouse 0 -framerate 30 -video_size 1280x720 -i :99 -t "$DUR" \
-    -c:v libx264 -preset veryslow -crf 26 -pix_fmt yuv420p -movflags +faststart "$OUT/recording.mp4"
+    -c:v libx264 -preset veryslow -crf 28 -pix_fmt yuv420p -movflags +faststart "$OUT/recording.mp4"
 fi
 grep "\[scene\]" "$OUT/client.log" | head -40
 kill $PID; sleep 1; pkill -f Xvfb

@@ -1,5 +1,5 @@
 diff --git a/src/client/content_mapblock.cpp b/src/client/content_mapblock.cpp
-index e69f904ee..0bac5e827 100644
+index 7d73b1926..613fe00a2 100644
 --- a/src/client/content_mapblock.cpp
 +++ b/src/client/content_mapblock.cpp
 @@ -377,10 +377,6 @@ void MapblockMeshGenerator::drawAutoLightedCuboid(aabb3f box, const f32 *txc,
@@ -13,7 +13,7 @@ index e69f904ee..0bac5e827 100644
  	if (scale) {
  		if (!txc) { // generate texture coords before scaling
  			generateCuboidTextureCoords(box, texture_coord_buf);
-@@ -389,11 +385,12 @@ void MapblockMeshGenerator::drawAutoLightedCuboid(aabb3f box, const f32 *txc,
+@@ -389,6 +385,8 @@ void MapblockMeshGenerator::drawAutoLightedCuboid(aabb3f box, const f32 *txc,
  		box.MinEdge *= f->visual_scale;
  		box.MaxEdge *= f->visual_scale;
  	}
@@ -22,36 +22,62 @@ index e69f904ee..0bac5e827 100644
  	if (!txc) {
  		generateCuboidTextureCoords(box, texture_coord_buf);
  		txc = texture_coord_buf;
- 	}
--
- 	if (!tiles) {
- 		tiles = &tile;
- 		tile_count = 1;
-@@ -1392,9 +1389,9 @@ namespace {
- 	static const v3s16 nodebox_connection_dirs[6] = {
- 		v3s16( 0,  1,  0), // top
- 		v3s16( 0, -1,  0), // bottom
--		v3s16( 0,  0,  1), // front
-+		v3s16( 0,  0, -1), // front
- 		v3s16(-1,  0,  0), // left
--		v3s16( 0,  0, -1), // back
-+		v3s16( 0,  0,  1), // back
- 		v3s16( 1,  0,  0), // right
+@@ -538,7 +536,7 @@ f32 MapblockMeshGenerator::getCornerLevel(int i, int k)
+ 	int air_count = 0;
+ 	for (int dk = 0; dk < 2; dk++)
+ 	for (int di = 0; di < 2; di++) {
+-		NeighborData &neighbor_data = liquid_neighbors[i + di][k + dk];
++		NeighborData &neighbor_data = liquid_neighbors[k + dk][i + di];
+ 		content_t content = neighbor_data.content;
+ 
+ 		// If top is liquid, draw starting from top of node
+@@ -827,7 +825,7 @@ void MapblockMeshGenerator::drawGlasslikeFramedNode()
+ 
+ 	static const u8 nb_triplet[FRAMED_EDGE_COUNT][3] = {
+ 		{1, 2,  7}, {1, 5,  6}, {4, 2, 15}, {4, 5, 14},
+-		{2, 0, 11}, {2, 4, 13}, {5, 0, 10}, {5, 3, 12},
++		{2, 0, 11}, {2, 3, 13}, {5, 0, 10}, {5, 3, 12},
+ 		{0, 1,  8}, {0, 4, 16}, {3, 4, 17}, {3, 1,  9},
  	};
- }
+ 
+@@ -1297,8 +1295,8 @@ namespace {
+ 	static const v3s16 rail_direction[4] = {
+ 		v3s16( 0, 0,  1),
+ 		v3s16( 0, 0, -1),
+-		v3s16( 1, 0,  0),
+ 		v3s16(-1, 0,  0),
++		v3s16( 1, 0,  0),
+ 	};
+ 	static const int rail_slope_angle[4] = {0, 180, 90, -90};
+ 
 diff --git a/src/client/mesh.cpp b/src/client/mesh.cpp
-index 6eb333d6f..4bf07effa 100644
+index 0aa6678c5..4bf07effa 100644
 --- a/src/client/mesh.cpp
 +++ b/src/client/mesh.cpp
-@@ -268,7 +268,7 @@ void setMeshColorByNormal(scene::IMesh *mesh, const v3f &normal,
- template <float v3f::*U, float v3f::*V>
- static void rotateMesh(scene::IMesh *mesh, float degrees)
+@@ -299,6 +299,11 @@ void rotateMeshBy6dFacedir(scene::IMesh *mesh, int facedir)
  {
--	degrees = core::radToDeg(degrees);
-+	degrees *= M_PI / 180.0f;
- 	float c = std::cos(degrees);
- 	float s = std::sin(degrees);
- 	auto rotator = [c, s] (video::S3DVertex *vertex) {
+ 	int axisdir = facedir >> 2;
+ 	facedir &= 0x03;
++	switch (facedir) {
++		case 1: rotateMeshXZby(mesh, -90); break;
++		case 2: rotateMeshXZby(mesh, 180); break;
++		case 3: rotateMeshXZby(mesh, 90); break;
++	}
+ 	switch (axisdir) {
+ 		case 1: rotateMeshYZby(mesh, 90); break; // z+
+ 		case 2: rotateMeshYZby(mesh, -90); break; // z-
+@@ -306,11 +311,6 @@ void rotateMeshBy6dFacedir(scene::IMesh *mesh, int facedir)
+ 		case 4: rotateMeshXYby(mesh, 90); break; // x-
+ 		case 5: rotateMeshXYby(mesh, -180); break;
+ 	}
+-	switch (facedir) {
+-		case 1: rotateMeshXZby(mesh, -90); break;
+-		case 2: rotateMeshXZby(mesh, 180); break;
+-		case 3: rotateMeshXZby(mesh, 90); break;
+-	}
+ }
+ 
+ void recalculateBoundingBox(scene::IMesh *src_mesh)
 diff --git a/src/mapnode.cpp b/src/mapnode.cpp
 index 82baaaba6..42f020e71 100644
 --- a/src/mapnode.cpp

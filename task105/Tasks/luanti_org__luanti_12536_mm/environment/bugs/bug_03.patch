@@ -1,12 +1,28 @@
-diff --git a/src/mapnode.cpp b/src/mapnode.cpp
-index 42f020e71..82baaaba6 100644
---- a/src/mapnode.cpp
-+++ b/src/mapnode.cpp
-@@ -162,7 +162,6 @@ u8 MapNode::getWallMounted(const NodeDefManager *nodemgr) const
- 			f.param_type_2 == CPT2_COLORED_WALLMOUNTED) {
- 		return getParam2() & 0x07;
- 	} else if (f.drawtype == NDT_SIGNLIKE || f.drawtype == NDT_TORCHLIKE ||
--			f.drawtype == NDT_PLANTLIKE ||
- 			f.drawtype == NDT_PLANTLIKE_ROOTED) {
- 		return 1;
+diff --git a/src/client/mesh.cpp b/src/client/mesh.cpp
+index 4bf07effa..0aa6678c5 100644
+--- a/src/client/mesh.cpp
++++ b/src/client/mesh.cpp
+@@ -299,11 +299,6 @@ void rotateMeshBy6dFacedir(scene::IMesh *mesh, int facedir)
+ {
+ 	int axisdir = facedir >> 2;
+ 	facedir &= 0x03;
+-	switch (facedir) {
+-		case 1: rotateMeshXZby(mesh, -90); break;
+-		case 2: rotateMeshXZby(mesh, 180); break;
+-		case 3: rotateMeshXZby(mesh, 90); break;
+-	}
+ 	switch (axisdir) {
+ 		case 1: rotateMeshYZby(mesh, 90); break; // z+
+ 		case 2: rotateMeshYZby(mesh, -90); break; // z-
+@@ -311,6 +306,11 @@ void rotateMeshBy6dFacedir(scene::IMesh *mesh, int facedir)
+ 		case 4: rotateMeshXYby(mesh, 90); break; // x-
+ 		case 5: rotateMeshXYby(mesh, -180); break;
  	}
++	switch (facedir) {
++		case 1: rotateMeshXZby(mesh, -90); break;
++		case 2: rotateMeshXZby(mesh, 180); break;
++		case 3: rotateMeshXZby(mesh, 90); break;
++	}
+ }
+ 
+ void recalculateBoundingBox(scene::IMesh *src_mesh)

@@ -20,15 +20,17 @@ cross_file = true
 visual_essentiality = "required"
 difficulty = "hard"
 difficulty_explanation = """
-The text only says that several objects on the terrace in the video are not drawn where or how they were placed, and that every object must render in the position and orientation it was placed in; it names neither the objects nor any defect. The video is the only place the five independent defects can be seen, and each one sits in a different part of the client's map-block mesh pipeline, so none of them can be found by reading the instruction and auditing one function:
+The text only says that several objects on the terrace in the video are not drawn where or how they were placed, that every object must render in the position and orientation it was placed in, and that an object joining up with its neighbours must join them the way they are placed; it names neither the objects nor any defect. The video is the only place the seven independent defects can be seen. They sit in four files of the client's map-block mesh pipeline, none of them leaves a compiler warning or a comment that contradicts it, and most of them only affect some directions, so none can be found by reading the instruction and auditing one function:
 
-1. Canopy off its trunk (the original issue, src/client/content_mapblock.cpp, drawAutoLightedCuboid): leaves in the recording use visual_scale = 1.1, and the cuboid is translated to its node position before it is scaled, so the whole canopy drifts up and away from its trunk by an amount that grows with the node's position inside its map block. In the video the canopy is a coherent, undistorted block sitting up and off to one side, while the apples (which are not scaled) stay where the canopy should be.
-2. Fence never joins the trunk (src/nodedef.cpp, NodeDefManager::nodeboxConnects): the facedir rotation lookup was hoisted out of the "target declares connect_sides" branch, so any facedir-rotated node that declares no sides (tree trunks are facedir) refuses horizontal connections. The last rail stops at the post next to the trunk, with a gap. Plain blocks and gates (which declare connect_sides) are unaffected, which hides it.
-3. Fence rails mirrored along Z (src/client/content_mapblock.cpp, nodebox_connection_dirs): the probe directions for the "front" and "back" connection bits are swapped. Middle posts of a run look normal because both of their neighbours connect; only the ends and corners of a Z-running fence show it: rail stubs sticking out past the last post and a missing half rail towards the real neighbour. The X-running leg is unaffected.
-4. Plants upside down (src/mapnode.cpp, MapNode::getWallMounted): plantlike nodes without a wallmounted param2 no longer report "floor" (DWM_YN), so the generator rotates them as if hanging from the ceiling. Apples hang with their stalk at the bottom and grass tufts hang from the top of their node.
-5. Gate twisted (src/client/mesh.cpp, rotateMesh): the angle is converted with radToDeg instead of degToRad, so every rotated mesh node is turned by a wrong, non-right angle (facedir 2 renders about 53 degrees off). The gate, a mesh node placed with facedir 2, sits diagonally across the fence line, while its collision box (rotated by the separate node-box code) is still correct.
+1. Canopy off its trunk (the original issue, src/client/content_mapblock.cpp, drawAutoLightedCuboid): leaves in the recording use visual_scale = 1.1, and the cuboid is translated to its node position before it is scaled, so the whole canopy drifts up and away from its trunk by an amount that grows with the node's position inside its map block. The apples (not scaled) stay where the canopy should be.
+2. Fence never joins the trunk (src/nodedef.cpp, NodeDefManager::nodeboxConnects): the facedir rotation lookup was hoisted out of the "target declares connect_sides" branch, so any facedir-rotatable node that declares no sides (tree trunks are facedir) refuses horizontal connections. The last rail stops at the post next to the trunk. Plain blocks and gates (which declare connect_sides) are unaffected, which hides it.
+3. Plants upside down (src/mapnode.cpp, MapNode::getWallMounted): plantlike nodes without a wallmounted param2 no longer report "floor", so the generator rotates them as if hanging from the ceiling. Apples hang with their stalk at the bottom and grass tufts hang from the top of their node.
+4. Wall torches twisted (src/client/mesh.cpp, rotateMeshBy6dFacedir): the turn about the node's own vertical axis is applied after the mesh is tilted onto its axis instead of before. The two orders only agree when one of the two rotations is trivial, so 14 of the 24 facedirs of every mesh node come out wrong. The torch on the south side of the post (wallmounted 4, facedir 8) is right; the other three lie along the wall, point into it or float on the far side of their node. The code reads like transformNodeBox (which also tilts first, but then turns in the tilted plane), which hides it.
+5. Water surface tilted (src/client/content_mapblock.cpp, getCornerLevel): the two neighbour indices are swapped, so every corner of a flowing-liquid surface takes the level of its diagonally mirrored corner. In the channel the surface falls sideways across the channel instead of along it, and each node's surface steps against its neighbours'.
+6. Rails joined the wrong way (src/client/content_mapblock.cpp, rail_direction): the -X and +X probe directions are swapped. Straight runs and crossings look right, but every curve and t-junction with one east/west neighbour is mirrored and every ramp along X tilts the wrong way: the ramp next to the west step falls towards it, the curve at the south-east corner bends east instead of west, and the branch of the north leg points away from its rail, while the ramp along Z at the north end is right.
+7. Glass frames on the seams (src/client/content_mapblock.cpp, drawGlasslikeFramedNode): the merge rule of one vertical edge of connected glass looks at the neighbour below instead of the one in front. In the 3 x 2 window the upper row shows frame bars across its front seams and its front right edge has no frame, while the lower row is seamless.
 
-Each defect is enough on its own to keep the scene broken, so a partial fix still fails. The hidden tests drive the real MapblockMeshGenerator::generate() over a 3x3x3-block voxel area with test-defined nodes and only check the generated geometry (where a node's vertices end up, and which way its texture faces). One f2p test per defect, each failing only on its own defect, plus p2p guards that reject shortcut fixes: nodes at the block corner and unscaled leaves, a fence next to nodes it does not list, connect_sides that are honoured (also on a turned node, so dropping the facedir rotation for connect_sides targets fails), a ceiling-mounted plant that must still hang, and an unrotated mesh node that keeps its shape. The mesh-rotation test checks all 23 non-zero facedirs (vertical-axis turns, tilted and upside-down), so repairing only one rotation plane fails.
+Each defect is enough on its own to keep the scene broken, so a partial fix still fails. The hidden tests drive the real MapblockMeshGenerator::generate() over a 3x3x3-block voxel area with test-defined nodes and only check the generated geometry (where a node's vertices end up, and which way its texture faces). Every defect has its own f2p, each failing only on its own defect: mesh nodes are compared with their own, equally rotated node box for all 23 non-zero facedirs and all 6 wallmounted values (with and without smooth lighting), using a mesh that is off-centre and of a different size along each axis so every orientation is distinguishable; flowing liquid is checked in channels running in all four directions (level across, falling along, no steps between nodes); rails for all four curves, all four t-junctions and ramps in all four directions; connected glass on rows, columns, two walls, an L and a solid 2x2x2 block, against the rule that a frame is drawn exactly where the glass surface folds. The p2p guards reject shortcut fixes: nodes at the block corner and unscaled leaves, a fence next to nodes it does not list, connect_sides that are honoured (also on a turned node), fence rails along Z, a ceiling-mounted plant that must still hang, unrotated and floor-mounted mesh nodes, evenly flowing liquid that stays level, straight rails and crossings, and lone glass that keeps its whole frame.
 """
 files_edited = [
   "src/client/content_mapblock.cpp",
@@ -39,18 +41,27 @@ files_edited = [
 f2p = [
   "testScaledAllfacesNodeOffset",
   "testFenceConnectsToTreeTrunk",
-  "testFenceRailsPointAtNeighborsAlongZ",
   "testPlantlikeNodeStandsUpright",
   "testRotatedMeshNodeFollowsFacedir",
+  "testWallMountedMeshNodeFollowsItsWall",
+  "testFlowingLiquidSurfaceFollowsTheFlow",
+  "testRailCurvesAndJunctionsJoinTheirNeighbors",
+  "testSlopedRailRisesTowardsTheRailAbove",
+  "testFramedGlassMergesWithItsNeighbors",
 ]
 p2p = [
   "testScaledAllfacesNodeAtOrigin",
   "testUnscaledAllfacesNodeUnaffected",
+  "testFenceRailsPointAtNeighborsAlongZ",
   "testFenceIgnoresNodesItDoesNotConnectTo",
   "testFenceRespectsConnectSides",
   "testFenceRespectsConnectSidesOfTurnedNode",
   "testWallmountedPlantlikeHangsFromCeiling",
   "testUnrotatedMeshNodeKeepsItsShape",
+  "testFloorMountedMeshNodeKeepsItsShape",
+  "testEvenFlowingLiquidStaysLevel",
+  "testStraightRailsFollowTheirNeighbors",
+  "testLoneFramedGlassKeepsItsWholeFrame",
 ]
 tags = ["multimodal", "3d_video", "visual_bug_fix", "beyond_browser", "luanti (minetest)", "c++", "voxel", "mesh-generation", "3d-rendering", "game-engine"]
 

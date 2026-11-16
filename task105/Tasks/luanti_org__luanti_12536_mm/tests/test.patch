@@ -12,10 +12,10 @@ index 84f769e87..c7a66409e 100644
  	${CMAKE_CURRENT_SOURCE_DIR}/test_keycode.cpp
 diff --git a/src/unittest/test_content_mapblock.cpp b/src/unittest/test_content_mapblock.cpp
 new file mode 100644
-index 000000000..b627a4537
+index 000000000..fdfb4d75b
 --- /dev/null
 +++ b/src/unittest/test_content_mapblock.cpp
-@@ -0,0 +1,646 @@
+@@ -0,0 +1,1293 @@
 +/*
 +Minetest
 +Copyright (C) 2022 Luanti harvest
@@ -48,6 +48,7 @@ index 000000000..b627a4537
 +
 +#include <cmath>
 +#include <limits>
++#include <set>
 +#include <SMesh.h>
 +#include <SMeshBuffer.h>
 +
@@ -74,6 +75,16 @@ index 000000000..b627a4537
 +	TEX_PLANT,
 +	TEX_PLANT_HANGING,
 +	TEX_MESH,
++	TEX_MESH_WALL,
++	TEX_LIQUID_TOP,
++	TEX_LIQUID_SIDE,
++	TEX_RAIL_STRAIGHT,
++	TEX_RAIL_CURVED,
++	TEX_RAIL_JUNCTION,
++	TEX_RAIL_CROSS,
++	TEX_GLASS_FRAME,
++	TEX_GLASS_PANE,
++	TEX_OTHER,
 +};
 +
 +const float EPS = 0.05f; // in world units; one node is BS = 10 units
@@ -162,11 +173,12 @@ index 000000000..b627a4537
 +	}
 +}
 +
-+// The mesh used for the "mesh" drawtype node: an off-centre slab that only
-+// covers the +X half of the node, so that every quarter turn is distinguishable.
-+const aabb3f MESH_BOUNDS = scaled(0.f, -1/2.f, -1/16.f, 1/2.f, 1/2.f, 1/16.f);
++// The mesh used for the "mesh" drawtype nodes: a block that is off-centre and
++// of a different size along each of the three axes, so that every one of the
++// 24 possible orientations puts it somewhere else.
++const aabb3f MESH_BOUNDS = scaled(0.f, -1/2.f, -3/16.f, 1/2.f, 1/4.f, 1/16.f);
 +
-+scene::SMesh *makeSlabMesh()
++scene::SMesh *makeBlockMesh()
 +{
 +	const v3f a = MESH_BOUNDS.MinEdge, b = MESH_BOUNDS.MaxEdge;
 +	const video::SColor white(255, 255, 255, 255);
@@ -201,6 +213,10 @@ index 000000000..b627a4537
 +	v3f half() const { return (max_v - min_v) * 0.5f; }
 +};
 +
++struct Triangle {
++	video::S3DVertex v[3];
++};
++
 +bool approx(float a, float b) { return std::fabs(a - b) < EPS; }
 +
 +bool sameBox(const Extent &e, const aabb3f &box)
@@ -218,8 +234,6 @@ index 000000000..b627a4537
 +		m_ndef(createNodeDefManager()),
 +		m_gamedef(m_ndef)
 +	{
-+		m_slab_mesh = makeSlabMesh();
-+
 +		ContentFeatures f;
 +
 +		f = ContentFeatures();
@@ -285,16 +299,75 @@ index 000000000..b627a4537
 +		setAllTiles(f, TEX_PLANT_HANGING);
 +		m_ndef->set(f.name, f);
 +
++		// A mesh node turned with facedir, and one mounted on walls (like a
++		// torch). Each node box covers exactly the space its mesh models.
++		registerMeshNode("test:mesh_block", CPT2_FACEDIR, TEX_MESH);
++		registerMeshNode("test:mesh_wall", CPT2_WALLMOUNTED, TEX_MESH_WALL);
++
++		// A liquid: its source and its flowing form.
 +		f = ContentFeatures();
-+		f.name = "test:mesh_slab";
-+		f.drawtype = NDT_MESH;
++		f.name = "test:liquid_source";
++		f.drawtype = NDT_LIQUID;
 +		f.param_type = CPT_LIGHT;
-+		f.param_type_2 = CPT2_FACEDIR;
++		f.liquid_type = LIQUID_SOURCE;
++		f.walkable = false;
++		f.solidness = 1;
++		f.liquid_alternative_flowing = "test:liquid_flowing";
++		f.liquid_alternative_source = "test:liquid_source";
++		m_ndef->set(f.name, f);
++
++		f = ContentFeatures();
++		f.name = "test:liquid_flowing";
++		f.drawtype = NDT_FLOWINGLIQUID;
++		f.param_type = CPT_LIGHT;
++		f.param_type_2 = CPT2_FLOWINGLIQUID;
++		f.liquid_type = LIQUID_FLOWING;
++		f.walkable = false;
 +		f.solidness = 0;
-+		f.mesh_ptr[0] = m_slab_mesh;
-+		f.node_box.type = NODEBOX_FIXED;
-+		f.node_box.fixed = {MESH_BOUNDS};
-+		setAllTiles(f, TEX_MESH);
++		f.liquid_range = 8;
++		f.liquid_alternative_flowing = "test:liquid_flowing";
++		f.liquid_alternative_source = "test:liquid_source";
++		f.special_tiles[0].layers[0].texture_id = TEX_LIQUID_TOP;
++		f.special_tiles[1].layers[0].texture_id = TEX_LIQUID_SIDE;
++		m_ndef->set(f.name, f);
++
++		for (const char *name : {"test:liquid_source", "test:liquid_flowing"}) {
++			ContentFeatures lf = m_ndef->get(id(name));
++			lf.liquid_alternative_flowing_id = id("test:liquid_flowing");
++			lf.liquid_alternative_source_id = id("test:liquid_source");
++			m_ndef->set(name, lf);
++		}
++
++		// A rail: tiles are straight, curved, t-junction and crossing.
++		f = ContentFeatures();
++		f.name = "test:rail";
++		f.drawtype = NDT_RAILLIKE;
++		f.param_type = CPT_LIGHT;
++		f.solidness = 0;
++		f.walkable = false;
++		f.tiles[0].layers[0].texture_id = TEX_RAIL_STRAIGHT;
++		f.tiles[1].layers[0].texture_id = TEX_RAIL_CURVED;
++		f.tiles[2].layers[0].texture_id = TEX_RAIL_JUNCTION;
++		f.tiles[3].layers[0].texture_id = TEX_RAIL_CROSS;
++		m_ndef->set(f.name, f);
++
++		// Connected (framed) glass: the first texture is the frame, the second
++		// one the pane.
++		f = ContentFeatures();
++		f.name = "test:glass";
++		f.drawtype = NDT_GLASSLIKE_FRAMED;
++		f.param_type = CPT_LIGHT;
++		f.solidness = 0;
++		setAllTiles(f, TEX_GLASS_PANE);
++		f.tiles[0].layers[0].texture_id = TEX_GLASS_FRAME;
++		m_ndef->set(f.name, f);
++
++		f = ContentFeatures();
++		f.name = "test:other_glass";
++		f.drawtype = NDT_GLASSLIKE_FRAMED;
++		f.param_type = CPT_LIGHT;
++		f.solidness = 0;
++		setAllTiles(f, TEX_OTHER);
 +		m_ndef->set(f.name, f);
 +
 +		// Two kinds of fence that join each other, tree trunks and plain
@@ -309,7 +382,7 @@ index 000000000..b627a4537
 +
 +	~MeshGenScene()
 +	{
-+		// the node definition manager owns (and drops) the slab mesh
++		// the node definition manager owns (and drops) the meshes
 +		delete m_ndef;
 +	}
 +
@@ -327,21 +400,8 @@ index 000000000..b627a4537
 +	Extent generate(u32 texture_id, std::vector<video::S3DVertex> *out = nullptr,
 +			bool smooth_lighting = true)
 +	{
-+		MeshMakeData data(clientFor(&m_gamedef), false);
-+		data.fillBlockDataBegin(v3s16(0, 0, 0));
-+		std::vector<MapNode> air(MAP_BLOCKSIZE * MAP_BLOCKSIZE * MAP_BLOCKSIZE,
-+				MapNode(CONTENT_AIR, LIGHT_SUN, 0));
-+		for (s16 z = -1; z <= 1; z++)
-+		for (s16 y = -1; y <= 1; y++)
-+		for (s16 x = -1; x <= 1; x++)
-+			data.fillBlockData(v3s16(x, y, z), air.data());
-+		for (const auto &node : m_nodes)
-+			data.m_vmanip.setNode(node.first, node.second);
-+		data.setSmoothLighting(smooth_lighting);
-+
 +		MeshCollector collector;
-+		NoopMeshManipulator meshmanip;
-+		MapblockMeshGenerator(&data, &collector, &meshmanip).generate();
++		run(collector, smooth_lighting);
 +
 +		Extent e;
 +		e.min_v = v3f(std::numeric_limits<float>::max());
@@ -365,7 +425,62 @@ index 000000000..b627a4537
 +		return e;
 +	}
 +
++	// Runs the generator and returns every triangle drawn with the texture.
++	std::vector<Triangle> triangles(u32 texture_id, bool smooth_lighting = true)
++	{
++		MeshCollector collector;
++		run(collector, smooth_lighting);
++
++		std::vector<Triangle> result;
++		for (const auto &buffers : collector.prebuffers)
++		for (const PreMeshBuffer &buf : buffers) {
++			if (buf.layer.texture_id != texture_id)
++				continue;
++			for (size_t i = 0; i + 2 < buf.indices.size(); i += 3) {
++				Triangle t;
++				for (int k = 0; k < 3; k++)
++					t.v[k] = buf.vertices.at(buf.indices[i + k]);
++				result.push_back(t);
++			}
++		}
++		return result;
++	}
++
 +private:
++	void run(MeshCollector &collector, bool smooth_lighting)
++	{
++		MeshMakeData data(clientFor(&m_gamedef), false);
++		data.fillBlockDataBegin(v3s16(0, 0, 0));
++		std::vector<MapNode> air(MAP_BLOCKSIZE * MAP_BLOCKSIZE * MAP_BLOCKSIZE,
++				MapNode(CONTENT_AIR, LIGHT_SUN, 0));
++		for (s16 z = -1; z <= 1; z++)
++		for (s16 y = -1; y <= 1; y++)
++		for (s16 x = -1; x <= 1; x++)
++			data.fillBlockData(v3s16(x, y, z), air.data());
++		for (const auto &node : m_nodes)
++			data.m_vmanip.setNode(node.first, node.second);
++		data.setSmoothLighting(smooth_lighting);
++
++		NoopMeshManipulator meshmanip;
++		MapblockMeshGenerator(&data, &collector, &meshmanip).generate();
++	}
++
++	void registerMeshNode(const std::string &name, ContentParamType2 param_type_2,
++			u32 texture_id)
++	{
++		ContentFeatures f;
++		f.name = name;
++		f.drawtype = NDT_MESH;
++		f.param_type = CPT_LIGHT;
++		f.param_type_2 = param_type_2;
++		f.solidness = 0;
++		f.mesh_ptr[0] = makeBlockMesh();
++		f.node_box.type = NODEBOX_FIXED;
++		f.node_box.fixed = {MESH_BOUNDS};
++		setAllTiles(f, texture_id);
++		m_ndef->set(f.name, f);
++	}
++
 +	content_t registerFence(const std::string &name, u32 texture_id,
 +			const std::vector<content_t> &joins)
 +	{
@@ -382,7 +497,6 @@ index 000000000..b627a4537
 +
 +	NodeDefManager *m_ndef;
 +	MeshGenGameDef m_gamedef;
-+	scene::SMesh *m_slab_mesh;
 +	std::vector<std::pair<v3s16, MapNode>> m_nodes;
 +};
 +
@@ -394,11 +508,60 @@ index 000000000..b627a4537
 +	return buf;
 +}
 +
++std::string describe(v3s16 v)
++{
++	char buf[64];
++	snprintf(buf, sizeof(buf), "(%d, %d, %d)", v.X, v.Y, v.Z);
++	return buf;
++}
++
 +// The region a node occupies in the generated (block-relative) mesh.
 +aabb3f cellOf(v3s16 p, const aabb3f &local)
 +{
 +	v3f o = intToFloat(p, BS);
 +	return aabb3f(local.MinEdge + o, local.MaxEdge + o);
++}
++
++// Does a triangle lie (even partly) inside the box?
++bool touches(const Triangle &t, const aabb3f &box)
++{
++	aabb3f tb(t.v[0].Pos);
++	tb.addInternalPoint(t.v[1].Pos);
++	tb.addInternalPoint(t.v[2].Pos);
++	return tb.intersectsWithBox(box);
++}
++
++// The horizontal direction (one of +-X, +-Z) closest to a vector.
++v3s16 horizontalAxis(const v3f &d)
++{
++	if (std::fabs(d.X) >= std::fabs(d.Z))
++		return v3s16(d.X > 0 ? 1 : -1, 0, 0);
++	return v3s16(0, 0, d.Z > 0 ? 1 : -1);
++}
++
++// How a flat (rail-like) texture lies on the ground: the world direction its
++// right edge (u = 1) faces and the one its bottom edge (v = 1) faces.
++struct TextureFrame {
++	bool ok = false;
++	v3s16 right, bottom;
++};
++
++TextureFrame textureFrame(const std::vector<Triangle> &tris)
++{
++	TextureFrame frame;
++	const video::S3DVertex *corner[3] = {nullptr, nullptr, nullptr}; // (0,0) (1,0) (0,1)
++	const v2f want[3] = {v2f(0, 0), v2f(1, 0), v2f(0, 1)};
++	for (const Triangle &t : tris)
++	for (const video::S3DVertex &v : t.v)
++	for (int k = 0; k < 3; k++)
++		if (approx(v.TCoords.X, want[k].X) && approx(v.TCoords.Y, want[k].Y))
++			corner[k] = &v;
++	if (!corner[0] || !corner[1] || !corner[2])
++		return frame;
++	frame.right = horizontalAxis(corner[1]->Pos - corner[0]->Pos);
++	frame.bottom = horizontalAxis(corner[2]->Pos - corner[0]->Pos);
++	frame.ok = true;
++	return frame;
 +}
 +
 +} // namespace
@@ -422,6 +585,15 @@ index 000000000..b627a4537
 +	void testWallmountedPlantlikeHangsFromCeiling();
 +	void testRotatedMeshNodeFollowsFacedir();
 +	void testUnrotatedMeshNodeKeepsItsShape();
++	void testWallMountedMeshNodeFollowsItsWall();
++	void testFloorMountedMeshNodeKeepsItsShape();
++	void testFlowingLiquidSurfaceFollowsTheFlow();
++	void testEvenFlowingLiquidStaysLevel();
++	void testRailCurvesAndJunctionsJoinTheirNeighbors();
++	void testSlopedRailRisesTowardsTheRailAbove();
++	void testStraightRailsFollowTheirNeighbors();
++	void testFramedGlassMergesWithItsNeighbors();
++	void testLoneFramedGlassKeepsItsWholeFrame();
 +};
 +
 +static TestMapblockMeshGenerator g_test_instance;
@@ -440,6 +612,15 @@ index 000000000..b627a4537
 +	TEST(testWallmountedPlantlikeHangsFromCeiling);
 +	TEST(testRotatedMeshNodeFollowsFacedir);
 +	TEST(testUnrotatedMeshNodeKeepsItsShape);
++	TEST(testWallMountedMeshNodeFollowsItsWall);
++	TEST(testFloorMountedMeshNodeKeepsItsShape);
++	TEST(testFlowingLiquidSurfaceFollowsTheFlow);
++	TEST(testEvenFlowingLiquidStaysLevel);
++	TEST(testRailCurvesAndJunctionsJoinTheirNeighbors);
++	TEST(testSlopedRailRisesTowardsTheRailAbove);
++	TEST(testStraightRailsFollowTheirNeighbors);
++	TEST(testFramedGlassMergesWithItsNeighbors);
++	TEST(testLoneFramedGlassKeepsItsWholeFrame);
 +}
 +
 +// An "allfaces" node (the drawtype leaves use) with visual_scale = 2, deep
@@ -639,11 +820,11 @@ index 000000000..b627a4537
 +	const v3s16 p(6, 5, 9);
 +	for (u8 facedir = 1; facedir < 24; facedir++) {
 +		MeshGenScene scene;
-+		scene.place(p, "test:mesh_slab", facedir);
++		scene.place(p, "test:mesh_block", facedir);
 +		Extent e = scene.generate(TEX_MESH);
 +
 +		std::vector<aabb3f> boxes;
-+		MapNode(scene.id("test:mesh_slab"), 0, facedir).getNodeBoxes(scene.ndef(), &boxes);
++		MapNode(scene.id("test:mesh_block"), 0, facedir).getNodeBoxes(scene.ndef(), &boxes);
 +		UASSERT(boxes.size() == 1);
 +		UTEST(sameBox(e, cellOf(p, boxes[0])),
 +				"mesh node turned with facedir %d is drawn turned differently from "
@@ -656,9 +837,475 @@ index 000000000..b627a4537
 +{
 +	const v3s16 p(6, 5, 9);
 +	MeshGenScene scene;
-+	scene.place(p, "test:mesh_slab", 0);
++	scene.place(p, "test:mesh_block", 0);
 +	Extent e = scene.generate(TEX_MESH);
 +
 +	UTEST(sameBox(e, cellOf(p, MESH_BOUNDS)),
 +			"unrotated mesh node: %s", describe(e).c_str());
++}
++
++// A mesh node mounted on a wall, the floor or the ceiling (like a torch) is
++// drawn where its node says it is: on the ceiling, on each of the four walls
++// and on the floor, the mesh covers the same space as its node box.
++void TestMapblockMeshGenerator::testWallMountedMeshNodeFollowsItsWall()
++{
++	const v3s16 p(9, 7, 4);
++	for (u8 wall = 0; wall < 6; wall++) {
++		for (bool smooth : {true, false}) {
++			MeshGenScene scene;
++			scene.place(p, "test:mesh_wall", wall);
++			Extent e = scene.generate(TEX_MESH_WALL, nullptr, smooth);
++
++			std::vector<aabb3f> boxes;
++			MapNode(scene.id("test:mesh_wall"), 0, wall).getNodeBoxes(scene.ndef(), &boxes);
++			UASSERT(boxes.size() == 1);
++			UTEST(sameBox(e, cellOf(p, boxes[0])),
++					"mesh node mounted with wallmounted %d (smooth lighting %d) is not "
++					"drawn where its node is: %s", wall, smooth, describe(e).c_str());
++		}
++	}
++}
++
++// Mounted on the floor (wallmounted 1) a mesh node is drawn as modelled.
++void TestMapblockMeshGenerator::testFloorMountedMeshNodeKeepsItsShape()
++{
++	const v3s16 p(9, 7, 4);
++	MeshGenScene scene;
++	scene.place(p, "test:mesh_wall", 1);
++	Extent e = scene.generate(TEX_MESH_WALL);
++
++	UTEST(sameBox(e, cellOf(p, MESH_BOUNDS)),
++			"floor-mounted mesh node: %s", describe(e).c_str());
++}
++
++namespace {
++
++// A channel of flowing liquid running from a source in direction `flow`
++// (one of +-X, +-Z): the source, then flowing nodes with falling levels,
++// walled in by stone on both sides, below and at both ends.
++struct LiquidChannel {
++	v3s16 source;
++	v3s16 flow;
++	std::vector<v3s16> cells; // the flowing nodes, downstream order
++};
++
++LiquidChannel buildChannel(MeshGenScene &scene, v3s16 start, v3s16 flow,
++		const std::vector<u8> &levels)
++{
++	LiquidChannel ch;
++	ch.source = start;
++	ch.flow = flow;
++	const v3s16 side(flow.Z, 0, flow.X); // horizontal, perpendicular to flow
++	scene.place(start, "test:liquid_source");
++	for (size_t i = 0; i < levels.size(); i++) {
++		v3s16 c = start + flow * (s16)(i + 1);
++		scene.place(c, "test:liquid_flowing", levels[i]);
++		ch.cells.push_back(c);
++	}
++	for (s16 i = -1; i <= (s16)levels.size() + 1; i++) {
++		v3s16 c = start + flow * i;
++		scene.place(c + side, "test:stone");
++		scene.place(c - side, "test:stone");
++		scene.place(c - v3s16(0, 1, 0), "test:stone");
++	}
++	scene.place(start - flow, "test:stone");
++	scene.place(start + flow * (s16)(levels.size() + 1), "test:stone");
++	return ch;
++}
++
++// Heights of the liquid surface at the four upper corners of one cell, keyed
++// by which (horizontal) corner they belong to. Returns false if the surface
++// of that cell is not exactly four corners.
++bool surfaceCorners(const std::vector<Triangle> &tris, v3s16 cell,
++		std::vector<std::pair<v3f, float>> *corners)
++{
++	const v3f o = intToFloat(cell, BS);
++	corners->clear();
++	for (const Triangle &t : tris) {
++		// only the surface drawn by this cell (its triangles lie above it)
++		v3f centre = (t.v[0].Pos + t.v[1].Pos + t.v[2].Pos) / 3.0f - o;
++		if (std::fabs(centre.X) >= BS / 2 || std::fabs(centre.Z) >= BS / 2)
++			continue;
++		for (const video::S3DVertex &v : t.v) {
++		v3f d = v.Pos - o;
++		if (std::fabs(std::fabs(d.X) - BS / 2) > EPS || std::fabs(std::fabs(d.Z) - BS / 2) > EPS)
++			continue;
++		bool known = false;
++		for (auto &c : *corners)
++			if (approx(c.first.X, d.X) && approx(c.first.Z, d.Z))
++				known = true;
++		if (!known)
++			corners->emplace_back(v3f(d.X, 0, d.Z), d.Y);
++		}
++	}
++	return corners->size() == 4;
++}
++
++} // namespace
++
++// Flowing liquid runs downhill: along a channel fed from one end, the surface
++// of every flowing node is lower on its downstream side than on its upstream
++// side, level across the channel, and joins its neighbours' surfaces without
++// steps -- whichever way the channel runs.
++void TestMapblockMeshGenerator::testFlowingLiquidSurfaceFollowsTheFlow()
++{
++	const v3s16 flows[4] = {v3s16(1, 0, 0), v3s16(-1, 0, 0), v3s16(0, 0, 1), v3s16(0, 0, -1)};
++	for (const v3s16 &flow : flows) {
++		MeshGenScene scene;
++		LiquidChannel ch = buildChannel(scene, v3s16(8, 5, 8) - flow * 3, flow,
++				{6, 5, 4, 3, 2});
++		std::vector<Triangle> tris = scene.triangles(TEX_LIQUID_TOP);
++
++		float prev_downstream = 0;
++		for (size_t i = 0; i < ch.cells.size(); i++) {
++			std::vector<std::pair<v3f, float>> corners;
++			bool ok = surfaceCorners(tris, ch.cells[i], &corners);
++			UTEST(ok, "flowing node %s of a channel flowing %s has no proper surface",
++					describe(ch.cells[i]).c_str(), describe(flow).c_str());
++			float up[2], down[2];
++			int nup = 0, ndown = 0;
++			for (auto &c : corners) {
++				float along = c.first.X * flow.X + c.first.Z * flow.Z;
++				if (along < 0 && nup < 2)
++					up[nup++] = c.second;
++				else if (along > 0 && ndown < 2)
++					down[ndown++] = c.second;
++			}
++			UASSERT(nup == 2 && ndown == 2);
++			UTEST(approx(up[0], up[1]) && approx(down[0], down[1]),
++					"surface of flowing node %s (channel flowing %s) is not level across "
++					"the channel: upstream %.2f/%.2f, downstream %.2f/%.2f",
++					describe(ch.cells[i]).c_str(), describe(flow).c_str(),
++					up[0], up[1], down[0], down[1]);
++			UTEST(up[0] > down[0] + EPS,
++					"surface of flowing node %s does not fall in the direction of the "
++					"flow %s: upstream %.2f, downstream %.2f",
++					describe(ch.cells[i]).c_str(), describe(flow).c_str(), up[0], down[0]);
++			if (i > 0)
++				UTEST(approx(up[0], prev_downstream),
++						"surface steps between flowing nodes at %s (flow %s): %.2f vs %.2f",
++						describe(ch.cells[i]).c_str(), describe(flow).c_str(),
++						prev_downstream, up[0]);
++			prev_downstream = down[0];
++		}
++	}
++}
++
++// Flowing liquid with the same level all around has a flat surface.
++void TestMapblockMeshGenerator::testEvenFlowingLiquidStaysLevel()
++{
++	const v3s16 p(8, 5, 8);
++	MeshGenScene scene;
++	for (s16 dx = -1; dx <= 1; dx++)
++	for (s16 dz = -1; dz <= 1; dz++) {
++		scene.place(p + v3s16(dx, 0, dz), "test:liquid_flowing", 4);
++		scene.place(p + v3s16(dx, -1, dz), "test:stone");
++	}
++	std::vector<Triangle> tris = scene.triangles(TEX_LIQUID_TOP);
++	std::vector<std::pair<v3f, float>> corners;
++	UTEST(surfaceCorners(tris, p, &corners),
++			"evenly flowing liquid at %s has no proper surface", describe(p).c_str());
++	for (auto &c : corners)
++		UTEST(approx(c.second, corners[0].second),
++				"evenly flowing liquid is not level: %.2f vs %.2f",
++				c.second, corners[0].second);
++}
++
++namespace {
++
++// Which texture a lone rail cell was drawn with, and how it lies.
++struct RailLook {
++	u32 tile = 0;
++	TextureFrame frame;
++	std::vector<Triangle> tris;
++};
++
++RailLook lookAtRail(MeshGenScene &scene, v3s16 p)
++{
++	RailLook look;
++	const aabb3f cell = cellOf(p, scaled(-0.55f, -0.55f, -0.55f, 0.55f, 0.55f, 0.55f));
++	for (u32 tex : {TEX_RAIL_STRAIGHT, TEX_RAIL_CURVED, TEX_RAIL_JUNCTION, TEX_RAIL_CROSS}) {
++		std::vector<Triangle> mine;
++		for (const Triangle &t : scene.triangles(tex)) {
++			bool inside = true;
++			for (const video::S3DVertex &v : t.v)
++				inside = inside && cell.isPointInside(v.Pos);
++			if (inside)
++				mine.push_back(t);
++		}
++		if (!mine.empty()) {
++			look.tile = tex;
++			look.tris = mine;
++		}
++	}
++	look.frame = textureFrame(look.tris);
++	return look;
++}
++
++std::set<std::pair<int, int>> dirSet(std::initializer_list<v3s16> dirs)
++{
++	std::set<std::pair<int, int>> s;
++	for (const v3s16 &d : dirs)
++		s.insert(std::make_pair(d.X, d.Z));
++	return s;
++}
++
++const v3s16 RAIL_DIRS[4] = {v3s16(1, 0, 0), v3s16(0, 0, 1), v3s16(-1, 0, 0), v3s16(0, 0, -1)};
++
++} // namespace
++
++// The rail textures are drawn the way rail packs paint them: the straight
++// piece runs from the texture's top edge to its bottom edge, the curve joins
++// its right and bottom edges, and the t-junction joins top, bottom and right.
++// A rail with two neighbours at a right angle is a curve whose two ends face
++// those neighbours; one with three neighbours is a junction that reaches all
++// three -- for every way round.
++void TestMapblockMeshGenerator::testRailCurvesAndJunctionsJoinTheirNeighbors()
++{
++	const v3s16 p(8, 4, 8);
++	for (int i = 0; i < 4; i++) {
++		const v3s16 a = RAIL_DIRS[i], b = RAIL_DIRS[(i + 1) % 4];
++		MeshGenScene scene;
++		scene.place(p, "test:rail");
++		scene.place(p + a, "test:rail");
++		scene.place(p + b, "test:rail");
++		RailLook look = lookAtRail(scene, p);
++		UTEST(look.tile == TEX_RAIL_CURVED && look.frame.ok,
++				"rail with neighbours %s and %s is not drawn as a curve",
++				describe(a).c_str(), describe(b).c_str());
++		UTEST(dirSet({look.frame.right, look.frame.bottom}) == dirSet({a, b}),
++				"curve with neighbours %s and %s has its ends towards %s and %s",
++				describe(a).c_str(), describe(b).c_str(),
++				describe(look.frame.right).c_str(), describe(look.frame.bottom).c_str());
++	}
++	for (int i = 0; i < 4; i++) {
++		const v3s16 stem = RAIL_DIRS[i];
++		const v3s16 a = RAIL_DIRS[(i + 1) % 4], b = RAIL_DIRS[(i + 3) % 4];
++		MeshGenScene scene;
++		scene.place(p, "test:rail");
++		scene.place(p + stem, "test:rail");
++		scene.place(p + a, "test:rail");
++		scene.place(p + b, "test:rail");
++		RailLook look = lookAtRail(scene, p);
++		UTEST(look.tile == TEX_RAIL_JUNCTION && look.frame.ok,
++				"rail with three neighbours (branch %s) is not drawn as a junction",
++				describe(stem).c_str());
++		v3s16 top = look.frame.bottom * -1;
++		UTEST(look.frame.right == stem &&
++				dirSet({look.frame.bottom, top}) == dirSet({a, b}),
++				"junction branching towards %s reaches %s, %s and %s instead",
++				describe(stem).c_str(), describe(look.frame.right).c_str(),
++				describe(look.frame.bottom).c_str(), describe(top).c_str());
++	}
++}
++
++// A rail next to a rail one node higher is drawn as a ramp that rises
++// towards that higher rail, in each of the four directions.
++void TestMapblockMeshGenerator::testSlopedRailRisesTowardsTheRailAbove()
++{
++	const v3s16 p(8, 4, 8);
++	for (const v3s16 &d : RAIL_DIRS) {
++		MeshGenScene scene;
++		scene.place(p, "test:rail");
++		scene.place(p + d + v3s16(0, 1, 0), "test:rail");
++		scene.place(p + d, "test:stone");
++		RailLook look = lookAtRail(scene, p);
++		UTEST(!look.tris.empty(), "ramp towards %s is not drawn", describe(d).c_str());
++		const v3f o = intToFloat(p, BS);
++		bool rises = !look.tris.empty();
++		for (const Triangle &t : look.tris)
++		for (const video::S3DVertex &v : t.v) {
++			v3f rel = v.Pos - o;
++			float along = rel.X * d.X + rel.Z * d.Z;
++			if (along > 0 && rel.Y < BS / 4)
++				rises = false; // the end towards the higher rail is low
++			if (along < 0 && rel.Y > -BS / 4)
++				rises = false; // the end away from it is high
++		}
++		UTEST(rises, "rail next to a higher rail at %s does not rise towards it",
++				describe(d).c_str());
++	}
++}
++
++// Straight runs: the straight texture lies along the line of rails.
++void TestMapblockMeshGenerator::testStraightRailsFollowTheirNeighbors()
++{
++	const v3s16 p(8, 4, 8);
++	for (int axis = 0; axis < 2; axis++) {
++		const v3s16 d = RAIL_DIRS[axis];
++		MeshGenScene scene;
++		scene.place(p - d, "test:rail");
++		scene.place(p, "test:rail");
++		scene.place(p + d, "test:rail");
++		RailLook look = lookAtRail(scene, p);
++		UTEST(look.tile == TEX_RAIL_STRAIGHT && look.frame.ok &&
++				dirSet({look.frame.bottom, look.frame.bottom * -1}) == dirSet({d, d * -1}),
++				"straight rail along %s is not drawn along its neighbours",
++				describe(d).c_str());
++	}
++	{
++		MeshGenScene scene;
++		scene.place(p, "test:rail");
++		for (const v3s16 &d : RAIL_DIRS)
++			scene.place(p + d, "test:rail");
++		RailLook look = lookAtRail(scene, p);
++		UTEST(look.tile == TEX_RAIL_CROSS, "rail at %s with four neighbours is not a crossing",
++				describe(p).c_str());
++	}
++}
++
++namespace {
++
++// The 12 edges of a cube, as (axis the edge runs along, the side it is on
++// along each of the two other axes).
++struct CubeEdge {
++	int axis;
++	int other[2];
++	s16 sign[2];
++};
++
++std::vector<CubeEdge> cubeEdges()
++{
++	std::vector<CubeEdge> edges;
++	for (int axis = 0; axis < 3; axis++) {
++		int o1 = (axis + 1) % 3, o2 = (axis + 2) % 3;
++		for (s16 s1 : {-1, 1})
++		for (s16 s2 : {-1, 1}) {
++			CubeEdge e;
++			e.axis = axis;
++			e.other[0] = o1;
++			e.other[1] = o2;
++			e.sign[0] = s1;
++			e.sign[1] = s2;
++			edges.push_back(e);
++		}
++	}
++	return edges;
++}
++
++v3s16 unit(int axis, s16 sign)
++{
++	v3s16 v(0, 0, 0);
++	if (axis == 0) v.X = sign;
++	if (axis == 1) v.Y = sign;
++	if (axis == 2) v.Z = sign;
++	return v;
++}
++
++std::string describe(const CubeEdge &e)
++{
++	static const char names[3] = {'X', 'Y', 'Z'};
++	char buf[64];
++	snprintf(buf, sizeof(buf), "edge along %c at %c%c %c%c", names[e.axis],
++			e.sign[0] > 0 ? '+' : '-', names[e.other[0]],
++			e.sign[1] > 0 ? '+' : '-', names[e.other[1]]);
++	return buf;
++}
++
++// A frame line belongs along a cube edge exactly where the glass surface
++// folds there: look at the four cells around the edge line (this one, its
++// two face neighbours across the edge and the diagonal one). The line is
++// hidden inside a solid block of glass (all four are glass) and across a flat
++// stretch (only this cell and one face neighbour are glass); everywhere else
++// -- outer corners, inner corners, cells touching only along the edge -- it
++// is drawn.
++bool frameExpected(const std::set<std::pair<int, std::pair<int, int>>> &glass,
++		v3s16 p, const CubeEdge &e)
++{
++	auto has = [&glass](v3s16 c) {
++		return glass.count(std::make_pair(c.X, std::make_pair(c.Y, c.Z))) > 0;
++	};
++	v3s16 n1 = p + unit(e.other[0], e.sign[0]);
++	v3s16 n2 = p + unit(e.other[1], e.sign[1]);
++	v3s16 diag = n1 + unit(e.other[1], e.sign[1]);
++	bool a = has(n1), b = has(n2), d = has(diag);
++	int count = 1 + a + b + d;
++	if (count == 4)
++		return false;
++	if (count == 2 && (a || b))
++		return false;
++	return true;
++}
++
++// Is any frame geometry running along the middle of this edge of cell p?
++bool frameDrawn(const std::vector<Triangle> &frame, v3s16 p, const CubeEdge &e)
++{
++	v3f lo(0, 0, 0), hi(0, 0, 0);
++	// stay just inside the cell, so a neighbour's frame never counts
++	const float in = 0.40f * BS, out = 0.5f * BS - 0.01f, mid = 0.1f * BS;
++	for (int k = 0; k < 2; k++) {
++		int ax = e.other[k];
++		float a = e.sign[k] > 0 ? in : -out;
++		float b = e.sign[k] > 0 ? out : -in;
++		if (ax == 0) { lo.X = a; hi.X = b; }
++		if (ax == 1) { lo.Y = a; hi.Y = b; }
++		if (ax == 2) { lo.Z = a; hi.Z = b; }
++	}
++	if (e.axis == 0) { lo.X = -mid; hi.X = mid; }
++	if (e.axis == 1) { lo.Y = -mid; hi.Y = mid; }
++	if (e.axis == 2) { lo.Z = -mid; hi.Z = mid; }
++	const aabb3f box = cellOf(p, aabb3f(lo, hi));
++	for (const Triangle &t : frame)
++		if (touches(t, box))
++			return true;
++	return false;
++}
++
++} // namespace
++
++// Connected glass merges with neighbouring glass of its own kind: the frame
++// outlines the merged shape -- along its outer and inner corners -- and never
++// runs across a flat stretch of glass or inside it. Checked on rows, columns,
++// walls, an L and a solid block of glass.
++void TestMapblockMeshGenerator::testFramedGlassMergesWithItsNeighbors()
++{
++	const v3s16 base(6, 6, 6);
++	const std::vector<std::vector<v3s16>> shapes = {
++		{v3s16(0, 0, 0), v3s16(1, 0, 0)},
++		{v3s16(0, 0, 0), v3s16(0, 1, 0)},
++		{v3s16(0, 0, 0), v3s16(0, 0, 1)},
++		{v3s16(0, 0, 0), v3s16(1, 0, 0), v3s16(2, 0, 0), v3s16(0, 1, 0), v3s16(1, 1, 0),
++			v3s16(2, 1, 0)},
++		{v3s16(0, 0, 0), v3s16(0, 0, 1), v3s16(0, 0, 2), v3s16(0, 1, 0), v3s16(0, 1, 1),
++			v3s16(0, 1, 2)},
++		{v3s16(0, 0, 0), v3s16(1, 0, 0), v3s16(0, 0, 1), v3s16(0, 1, 0)},
++		{v3s16(0, 0, 0), v3s16(1, 0, 0), v3s16(0, 1, 0), v3s16(1, 1, 0), v3s16(0, 0, 1),
++			v3s16(1, 0, 1), v3s16(0, 1, 1), v3s16(1, 1, 1)},
++	};
++	const std::vector<CubeEdge> edges = cubeEdges();
++	for (size_t s = 0; s < shapes.size(); s++) {
++		MeshGenScene scene;
++		std::set<std::pair<int, std::pair<int, int>>> glass;
++		for (const v3s16 &d : shapes[s]) {
++			v3s16 c = base + d;
++			scene.place(c, "test:glass");
++			glass.insert(std::make_pair(c.X, std::make_pair(c.Y, c.Z)));
++		}
++		std::vector<Triangle> frame = scene.triangles(TEX_GLASS_FRAME);
++		for (const v3s16 &d : shapes[s]) {
++			v3s16 c = base + d;
++			for (const CubeEdge &e : edges) {
++				bool want = frameExpected(glass, c, e);
++				bool got = frameDrawn(frame, c, e);
++				UTEST(want == got, "glass shape %zu, cell %s: frame %s %s", s,
++						describe(d).c_str(), want ? "missing on" : "drawn on",
++						describe(e).c_str());
++			}
++		}
++	}
++}
++
++// A lone glass node (or one next to a different kind of glass) has its whole
++// frame: all 12 edges.
++void TestMapblockMeshGenerator::testLoneFramedGlassKeepsItsWholeFrame()
++{
++	const v3s16 p(6, 6, 6);
++	MeshGenScene scene;
++	scene.place(p, "test:glass");
++	scene.place(p + v3s16(1, 0, 0), "test:other_glass");
++	scene.place(p + v3s16(0, 1, 0), "test:other_glass");
++	std::vector<Triangle> frame = scene.triangles(TEX_GLASS_FRAME);
++	for (const CubeEdge &e : cubeEdges())
++		UTEST(frameDrawn(frame, p, e), "lone glass node has no frame on its %s",
++				describe(e).c_str());
 +}

@@ -1,0 +1,818 @@
+diff --git a/tests/harvest_c01/run_test.py b/tests/harvest_c01/run_test.py
+new file mode 100644
+index 0000000..50d995b
+--- /dev/null
++++ b/tests/harvest_c01/run_test.py
+@@ -0,0 +1,517 @@
++#!/usr/bin/env python3
++"""Behavioral tests for sprite / upright_sprite entities.
++
++Runs the real compiled client+singleplayer-server headlessly under Xvfb with
++software OpenGL (Mesa llvmpipe), using the devtest game plus the sprite_probe
++world mod, which places a fixed set of probe entities around a motionless,
++fixed-look player (see worldmods/sprite_probe/init.lua):
++
++  view A (looking +Z): the devtest animated upright_sprite next to an otherwise
++      identical camera-facing sprite; a camera-facing sprite and two upright
++      sprites (one showing its front, one its back) with a texture made of four
++      differently coloured quadrants; an animated camera-facing sprite and an
++      animated upright sprite, each attached to another object; an upright
++      sprite whose frame the mod changes with set_sprite() once per second.
++  views B (looking -Z) and C (looking +X): four camera-facing sprites using
++      select_x_by_camera with a 6-column sheet (one solid colour per column),
++      turned to yaw 0, 90, 180 and 270 degrees.
++
++The client's own rendered framebuffer is captured (ffmpeg x11grab, single
++frame) repeatedly, and the dominant colour of fixed screen regions is
++classified against the probe textures' colours.
++
++Usage:
++    run_test.py --junit-out PATH [TEST_ID ...]
++
++With no TEST_ID arguments, all known tests are run and reported.
++"""
++import argparse
++import os
++import shutil
++import subprocess
++import sys
++import time
++import xml.etree.ElementTree as ET
++from collections import Counter
++from pathlib import Path
++
++from PIL import Image
++
++HERE = Path(__file__).resolve().parent
++MINETEST_BIN = os.environ.get("MINETEST_BIN", "/app/bin/minetest")
++DISPLAY_NUM = os.environ.get("HARVEST_DISPLAY", ":99")
++SCREEN_W, SCREEN_H = 1280, 720
++
++# Screen-space sample boxes (x0, y0, x1, y1), determined empirically for the
++# fixed camera/entity layout in worldmods/sprite_probe/init.lua.
++# View A
++UPRIGHT_BOX = (326, 316, 456, 444)
++REF_BOX = (820, 316, 954, 444)
++UPRIGHT_BACK_BOX = (326, 100, 456, 232)    # upright sprite, back towards the camera
++SPRITE_QUADS_BOX = (820, 100, 954, 232)    # camera-facing sprite
++UPRIGHT_FRONT_BOX = (326, 530, 456, 660)   # upright sprite, front towards the camera
++ATTACHED_BOX = (820, 530, 954, 660)        # animated sprite attached to another object
++ATTACHED_UPRIGHT_BOX = (32, 316, 160, 444)             # animated upright sprite attached to another object
++STEPPED_BOX = (1120, 316, 1248, 444)             # upright sprite stepped by set_sprite() every second
++# Views B and C: one box per probe sprite, yaw 0, 90, 180, 270 degrees
++VIEW_B_BOXES = [(758, 340, 818, 400), (658, 340, 720, 400), (560, 340, 620, 400), (460, 340, 522, 400)]
++VIEW_C_BOXES = VIEW_B_BOXES
++
++SAMPLE_INTERVAL = 0.4
++SAMPLE_WINDOW = 10.0
++VIEW_SAMPLES = 5
++ATTEMPTS = 2           # the scenario is run again if the harness itself fails (client crash, timeout)
++FRAME_LENGTH = 1.0     # seconds per frame of every animated probe
++
++PALETTE = {
++    "yellow": (255, 240, 0),
++    "red": (255, 57, 57),
++    "magenta": (204, 57, 255),
++    "blue": (72, 83, 255),
++}
++# frame order of the animated sheet (testnodes_anim.png, rows top to bottom)
++CYCLE = ["yellow", "red", "magenta", "blue"]
++QUADS = {
++    "top_left": (40, 200, 40),
++    "top_right": (255, 128, 0),
++    "bottom_left": (150, 60, 230),
++    "bottom_right": (0, 200, 220),
++}
++# select_x_by_camera sheet: column -> colour
++COLUMNS = {
++    "front": (255, 57, 57),      # 1st column: subject facing the camera
++    "left": (40, 200, 40),       # 2nd column: subject looking to the left
++    "back": (72, 83, 255),       # 3rd column: subject backing the camera
++    "right": (255, 240, 0),      # 4th column: subject looking to the right
++    "above": (255, 255, 255),    # 5th column: subject viewed from above
++    "below": (20, 20, 20),       # 6th column: subject viewed from below
++}
++# Which side of a subject turned to yaw 0/90/180/270 degrees faces the camera.
++# Entity yaw 0 faces +X, and a positive yaw turns it towards +Z (the same
++# convention automatic_face_movement_dir uses: yaw = atan2(vel.z, vel.x)).
++# View B looks along -Z, view C along +X.
++EXPECTED_B = ["left", "front", "right", "back"]
++EXPECTED_C = ["back", "left", "front", "right"]
++
++ALL_TEST_IDS = [
++    "sprite_probe.upright_sprite_renders_a_palette_color",
++    "sprite_probe.reference_sprite_renders_a_palette_color",
++    "sprite_probe.upright_sprite_animates",
++    "sprite_probe.reference_sprite_animates",
++    "sprite_probe.upright_sprite_follows_set_sprite",
++    "sprite_probe.sprite_texture_is_not_mirrored",
++    "sprite_probe.upright_sprite_back_is_not_mirrored",
++    "sprite_probe.upright_sprite_front_is_not_mirrored",
++    "sprite_probe.attached_sprite_animates",
++    "sprite_probe.attached_upright_sprite_animates",
++    "sprite_probe.camera_facing_sprite_shows_the_side_facing_the_camera",
++]
++
++
++def classify(rgb, palette=PALETTE):
++    best, best_d = None, None
++    for name, ref in palette.items():
++        d = sum((a - b) ** 2 for a, b in zip(rgb, ref))
++        if best_d is None or d < best_d:
++            best, best_d = name, d
++    return best, best_d
++
++
++def classify_shaded(rgb, palette):
++    """Nearest palette colour, allowing each colour to be dimmed or brightened
++    by a constant factor (entity shading depends on which way a quad faces)."""
++    best, best_d = None, None
++    for name, ref in palette.items():
++        rr = sum(c * c for c in ref) or 1.0
++        s = min(1.15, max(0.35, sum(a * b for a, b in zip(rgb, ref)) / rr))
++        d = sum((a - s * b) ** 2 for a, b in zip(rgb, ref))
++        if best_d is None or d < best_d:
++            best, best_d = name, d
++    return best, best_d
++
++
++def dominant_color(img, box):
++    """Most common color in the box, quantized to tolerate dithering/AA noise.
++
++    The sample box covers a textured quad (solid colour fields, possibly with
++    a thin border or a letter glyph). The background is the single largest
++    contiguous color, so its (quantized) mode is a much more robust signal
++    than the mean -- the mean gets pulled toward black by border and glyph
++    pixels.
++    """
++    crop = img.crop(box).convert("RGB")
++    buckets = {}
++    step = 16
++    for p in crop.getdata():
++        key = (p[0] // step, p[1] // step, p[2] // step)
++        bucket = buckets.setdefault(key, [0, 0, 0, 0])
++        bucket[0] += p[0]
++        bucket[1] += p[1]
++        bucket[2] += p[2]
++        bucket[3] += 1
++    best_key = max(buckets, key=lambda k: buckets[k][3])
++    r, g, b, n = buckets[best_key]
++    return (r / n, g / n, b / n)
++
++
++def corners(box):
++    """The four corner ninths of a box (top-left, top-right, bottom-left, bottom-right)."""
++    x0, y0, x1, y1 = box
++    w, h = (x1 - x0) // 3, (y1 - y0) // 3
++    return {
++        "top_left": (x0, y0, x0 + w, y0 + h),
++        "top_right": (x1 - w, y0, x1, y0 + h),
++        "bottom_left": (x0, y1 - h, x0 + w, y1),
++        "bottom_right": (x1 - w, y1 - h, x1, y1),
++    }
++
++
++def majority(names):
++    return Counter(names).most_common(1)[0][0] if names else None
++
++
++def wait_for_x(display, timeout=20):
++    deadline = time.time() + timeout
++    sock_path = f"/tmp/.X11-unix/X{display.lstrip(':')}"
++    while time.time() < deadline:
++        if os.path.exists(sock_path):
++            return True
++        time.sleep(0.1)
++    return False
++
++
++def grab_frame(display, out_path):
++    subprocess.run(
++        [
++            "ffmpeg", "-y", "-loglevel", "error",
++            "-f", "x11grab", "-video_size", f"{SCREEN_W}x{SCREEN_H}",
++            "-i", display,
++            "-frames:v", "1", str(out_path),
++        ],
++        check=True,
++        timeout=20,
++    )
++
++
++def wait_for(path, client, timeout, what):
++    deadline = time.time() + timeout
++    while time.time() < deadline:
++        if path.exists():
++            return
++        if client.poll() is not None:
++            raise RuntimeError(f"client exited early with code {client.returncode}")
++        time.sleep(0.1)
++    raise RuntimeError(f"timed out waiting for {what}")
++
++
++def run_scenario(workdir: Path, shots_dir: Path):
++    """Launches Xvfb + the real client, captures the screenshots of every view.
++    Returns {view: [(path, seconds since the first view-A frame), ...]}."""
++    worldpath = workdir / "world"
++    if worldpath.exists():
++        shutil.rmtree(worldpath)
++    (worldpath / "worldmods").mkdir(parents=True)
++    shutil.copytree(
++        HERE / "worldmods" / "sprite_probe",
++        worldpath / "worldmods" / "sprite_probe",
++    )
++    # The client's "--go"-with-a-fresh-world path resolves the game id purely
++    # from an on-disk world.mt (it does not honor --gameid for a world that
++    # doesn't exist yet), so write one ourselves instead of relying on the
++    # main menu's "create world" flow to do it.
++    (worldpath / "world.mt").write_text(
++        "\n".join([
++            "world_name = harvest_c01",
++            "gameid = devtest",
++            "backend = sqlite3",
++            "player_backend = sqlite3",
++            "auth_backend = sqlite3",
++            "mod_storage_backend = sqlite3",
++            "creative_mode = false",
++            "enable_damage = true",
++            "",
++        ])
++    )
++
++    client_conf = workdir / "client.conf"
++    client_conf.write_text(
++        "\n".join([
++            f"screen_w = {SCREEN_W}",
++            f"screen_h = {SCREEN_H}",
++            "fullscreen = false",
++            "fps_max = 30",
++            "fps_max_unfocused = 30",
++            "vsync = false",
++            "enable_minimap = false",
++            "show_debug = false",
++            "enable_sound = false",
++            "enable_fog = false",
++            "antialiasing = none",
++            "smooth_lighting = false",
++            "performance_tradeoffs = true",
++            "curl_verify_cert = false",
++            "",
++        ])
++    )
++
++    env = dict(os.environ)
++    env.update({
++        "DISPLAY": DISPLAY_NUM,
++        "LIBGL_ALWAYS_SOFTWARE": "1",
++        "SDL_AUDIODRIVER": "dummy",
++        "ALSOFT_DRIVERS": "null",
++    })
++
++    xvfb = subprocess.Popen(
++        ["Xvfb", DISPLAY_NUM, "-screen", "0", f"{SCREEN_W}x{SCREEN_H}x24", "-nolisten", "tcp"],
++    )
++    try:
++        if not wait_for_x(DISPLAY_NUM):
++            raise RuntimeError("Xvfb did not start")
++
++        ready_file = worldpath / "probe_ready"
++        error_file = worldpath / "probe_error"
++        client = subprocess.Popen(
++            [
++                MINETEST_BIN,
++                "--config", str(client_conf),
++                "--go",
++                "--world", str(worldpath),
++                "--gameid", "devtest",
++                "--info",
++            ],
++            env=env,
++            cwd=str(workdir),
++        )
++        try:
++            deadline = time.time() + 90
++            while time.time() < deadline:
++                if error_file.exists():
++                    raise RuntimeError("world mod reported an error setting up the probe scene")
++                if ready_file.exists():
++                    break
++                if client.poll() is not None:
++                    raise RuntimeError(f"client exited early with code {client.returncode}")
++                time.sleep(0.2)
++            else:
++                raise RuntimeError("timed out waiting for probe_ready")
++
++            # view A: a time series
++            t_ready = time.time()
++            shots = {"A": [], "B": [], "C": []}
++            i = 0
++            while time.time() - t_ready < SAMPLE_WINDOW:
++                out = shots_dir / f"A_{i:03d}.png"
++                t_shot = time.time()
++                grab_frame(DISPLAY_NUM, out)
++                shots["A"].append((out, t_shot - t_ready))
++                i += 1
++                next_t = t_ready + i * SAMPLE_INTERVAL
++                delay = next_t - time.time()
++                if delay > 0:
++                    time.sleep(delay)
++
++            # views B and C: a few frames each once the player has turned
++            for view in ("B", "C"):
++                (worldpath / "view_request").write_text(view + "\n")
++                wait_for(worldpath / f"view_{view}_ready", client, 20, f"view {view}")
++                time.sleep(0.8)
++                for k in range(VIEW_SAMPLES):
++                    out = shots_dir / f"{view}_{k:03d}.png"
++                    grab_frame(DISPLAY_NUM, out)
++                    shots[view].append((out, time.time() - t_ready))
++                    time.sleep(0.25)
++            return shots
++        finally:
++            client.terminate()
++            try:
++                client.wait(timeout=10)
++            except subprocess.TimeoutExpired:
++                client.kill()
++                client.wait(timeout=10)
++    finally:
++        xvfb.terminate()
++        try:
++            xvfb.wait(timeout=5)
++        except subprocess.TimeoutExpired:
++            xvfb.kill()
++
++
++def animation_problems(series, ref=None):
++    """Problems with an animated probe's colour series [(t, name), ...] (tail of the window).
++
++    The probe must keep cycling through the sheet's frames in order
++    (yellow -> red -> magenta -> blue -> yellow ...), at about one frame per
++    FRAME_LENGTH, and -- if a reference series sampled from the same frames is
++    given -- show the same frame as the reference most of the time.
++    """
++    names = [n for _, n in series]
++    problems = []
++    if len(set(names)) < 2:
++        return [f"color stopped changing (animation is frozen): {names}"]
++    changes = 0
++    for (t0, a), (t1, b) in zip(series, series[1:]):
++        if a == b:
++            continue
++        changes += 1
++        # samples less than one frame apart can only see the next frame
++        if t1 - t0 < 0.9 * FRAME_LENGTH and b != CYCLE[(CYCLE.index(a) + 1) % len(CYCLE)]:
++            problems.append(f"frame {a} was followed by {b} (expected order {CYCLE})")
++    span = series[-1][0] - series[0][0]
++    expected = span / FRAME_LENGTH
++    if not (expected * 0.5 - 1 <= changes <= expected * 1.5 + 1):
++        problems.append(f"{changes} frame changes in {span:.1f} s, expected about {expected:.0f}")
++    if ref is not None:
++        ref_names = [n for _, n in ref]
++        same = sum(1 for a, b in zip(names, ref_names) if a == b) / len(names)
++        if same < 0.7:
++            problems.append(f"shows a different frame than an identical unattached camera-facing "
++                            f"sprite started at the same time in {100 - 100 * same:.0f}% of the samples")
++    if problems:
++        problems.append(f"sequence = {names}")
++    return problems
++
++
++def evaluate(shots):
++    results = {}
++    if len(shots["A"]) < 4:
++        raise RuntimeError(f"only captured {len(shots['A'])} frames, need at least 4")
++    # Drop the first couple of samples: right after "ready" the world's
++    # lighting is still catching up (freshly generated chunks render
++    # black for a few tenths of a second before their light values
++    # settle), which would otherwise read as a bogus "color".
++    frames = [(Image.open(p), t) for p, t in shots["A"]][2:]
++    imgs = [im for im, _ in frames]
++
++    up_colors = [classify(dominant_color(im, UPRIGHT_BOX)) for im in imgs]
++    ref_colors = [classify(dominant_color(im, REF_BOX)) for im in imgs]
++    up_names = [c for c, d in up_colors]
++    ref_names = [c for c, d in ref_colors]
++    # A "close enough" match (small squared RGB distance) to some palette
++    # color at least once confirms the sample box is actually framing the
++    # textured quad (and not empty sky/background).
++    # Allow for the scene's ambient light dimming the texture's true
++    # colors by a roughly constant factor (observed ~20%); sky/background
++    # colors are an order of magnitude further from every palette entry.
++    PALETTE_MATCH_DIST = 9000
++    up_on_palette = any(d < PALETTE_MATCH_DIST for _, d in up_colors)
++    ref_on_palette = any(d < PALETTE_MATCH_DIST for _, d in ref_colors)
++
++    results["sprite_probe.upright_sprite_renders_a_palette_color"] = (
++        up_on_palette,
++        f"upright_sprite sample box never matched a palette color closely, saw {up_names}",
++    )
++    results["sprite_probe.reference_sprite_renders_a_palette_color"] = (
++        ref_on_palette,
++        f"reference sprite sample box never matched a palette color closely, saw {ref_names}",
++    )
++
++    # Animations: judged on the second half of the window, well after the
++    # scene settled (a frozen animation can show one or two early transitions
++    # before it locks onto a single stale frame).
++    tail = len(frames) // 2
++    times = [t for _, t in frames][tail:]
++
++    def tail_series(box):
++        return list(zip(times, [classify_shaded(dominant_color(im, box), PALETTE)[0] for im in imgs[tail:]]))
++
++    ref_series = tail_series(REF_BOX)
++    for key, box, what, sync in (
++        ("reference_sprite_animates", REF_BOX, "reference camera-facing sprite", False),
++        ("upright_sprite_animates", UPRIGHT_BOX, "upright_sprite", True),
++        ("attached_sprite_animates", ATTACHED_BOX, "camera-facing sprite attached to another object", True),
++        ("attached_upright_sprite_animates", ATTACHED_UPRIGHT_BOX, "upright_sprite attached to another object", True),
++        ("upright_sprite_follows_set_sprite", STEPPED_BOX, "upright_sprite whose frame is set by set_sprite() every second", False),
++    ):
++        problems = animation_problems(tail_series(box), ref_series if sync else None)
++        results[f"sprite_probe.{key}"] = (not problems, f"{what}: " + "; ".join(problems))
++
++    # Orientation of the four-quadrant texture.
++    for key, box, what in (
++        ("sprite_texture_is_not_mirrored", SPRITE_QUADS_BOX, "camera-facing sprite"),
++        ("upright_sprite_back_is_not_mirrored", UPRIGHT_BACK_BOX, "upright_sprite seen from its back"),
++        ("upright_sprite_front_is_not_mirrored", UPRIGHT_FRONT_BOX, "upright_sprite seen from its front"),
++    ):
++        seen = {corner: majority([classify_shaded(dominant_color(im, cbox), QUADS)[0] for im in imgs])
++                for corner, cbox in corners(box).items()}
++        bad = {k: v for k, v in seen.items() if v != k}
++        results[f"sprite_probe.{key}"] = (
++            not bad,
++            f"{what}: each corner of the quad should show the same corner of its texture, "
++            f"saw (screen corner: texture corner) {seen}",
++        )
++
++    # select_x_by_camera: each probe shows the column for the side facing the camera.
++    seen = {}
++    for view, boxes, expected in (("B", VIEW_B_BOXES, EXPECTED_B), ("C", VIEW_C_BOXES, EXPECTED_C)):
++        vimgs = [Image.open(p) for p, _ in shots[view]]
++        if not vimgs:
++            raise RuntimeError(f"no frames captured for view {view}")
++        for yaw_i, (box, want) in enumerate(zip(boxes, expected)):
++            got = majority([classify_shaded(dominant_color(im, box), COLUMNS)[0] for im in vimgs])
++            seen[f"view {view} yaw {90 * yaw_i}"] = (got, want)
++    bad = {k: v for k, v in seen.items() if v[0] != v[1]}
++    results["sprite_probe.camera_facing_sprite_shows_the_side_facing_the_camera"] = (
++        not bad,
++        "select_x_by_camera picked the wrong view (got, expected): "
++        + ", ".join(f"{k}: {v}" for k, v in bad.items()),
++    )
++    return results
++
++
++def main():
++    ap = argparse.ArgumentParser()
++    ap.add_argument("--junit-out", required=True)
++    ap.add_argument("--shots-dir", default=None,
++                     help="optional directory to keep the captured screenshots in (for debugging)")
++    ap.add_argument("test_ids", nargs="*")
++    args = ap.parse_args()
++
++    requested = set(args.test_ids) if args.test_ids else set(ALL_TEST_IDS)
++
++    workdir = Path(os.environ.get("HARVEST_WORKDIR", "/tmp/harvest_c01_run"))
++    workdir.mkdir(parents=True, exist_ok=True)
++    shots_dir = Path(args.shots_dir) if args.shots_dir else workdir / "shots"
++
++    results = {}  # test_id -> (passed, message)
++    harness_error = None
++    for attempt in range(1, ATTEMPTS + 1):
++        if shots_dir.exists():
++            shutil.rmtree(shots_dir)
++        shots_dir.mkdir(parents=True, exist_ok=True)
++        try:
++            results = evaluate(run_scenario(workdir, shots_dir))
++            harness_error = None
++            break
++        except Exception as e:  # noqa: BLE001
++            harness_error = f"attempt {attempt}: {e}"
++            print(f"harness error ({harness_error}); " +
++                  ("retrying" if attempt < ATTEMPTS else "giving up"), flush=True)
++
++    testsuite = ET.Element("testsuite", name="sprite_probe", tests=str(len(requested)))
++    failures = 0
++    for test_id in sorted(requested):
++        classname, _, name = test_id.rpartition(".")
++        tc = ET.SubElement(testsuite, "testcase", classname=classname, name=name)
++        if harness_error is not None:
++            failures += 1
++            ET.SubElement(tc, "error", message=harness_error)
++            continue
++        passed, message = results.get(test_id, (False, "unknown test id"))
++        if not passed:
++            failures += 1
++            ET.SubElement(tc, "failure", message=message)
++        print(("PASS " if passed else "FAIL ") + test_id + ("" if passed else f": {message}"))
++    testsuite.set("failures", str(failures))
++
++    out_path = Path(args.junit_out)
++    out_path.parent.mkdir(parents=True, exist_ok=True)
++    ET.ElementTree(testsuite).write(out_path, encoding="utf-8", xml_declaration=True)
++
++    print(f"wrote {out_path}: {len(requested) - failures}/{len(requested)} passed"
++          + (f" (harness error: {harness_error})" if harness_error else ""))
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/tests/harvest_c01/worldmods/sprite_probe/init.lua b/tests/harvest_c01/worldmods/sprite_probe/init.lua
+new file mode 100644
+index 0000000..75972c3
+--- /dev/null
++++ b/tests/harvest_c01/worldmods/sprite_probe/init.lua
+@@ -0,0 +1,263 @@
++-- World mod for the sprite probe tests (luanti sprite / upright_sprite entities).
++--
++-- Places the player at a fixed position high above any terrain, floating
++-- (gravity disabled), and spawns a fixed set of probe entities around it:
++--
++-- View A (looking +Z):
++--  - testentities:upright_animated (an animated "upright_sprite") and
++--    sprite_probe:ref_sprite (a camera-facing "sprite" with the same animated
++--    texture and timing), side by side
++--  - a camera-facing sprite and two upright sprites whose texture has four
++--    differently coloured quadrants; the upright ones are turned so that one
++--    shows its front and the other its back to the camera
++--  - an animated camera-facing sprite and an animated upright sprite, each
++--    attached to another object
++--  - an upright sprite whose frame is changed by this mod with set_sprite()
++--    once per second
++-- View B (looking -Z) and view C (looking +X):
++--  - four camera-facing sprites using select_x_by_camera with a 6-column sheet
++--    (one solid colour per column), each turned to a different yaw
++--
++-- Everything about the scene (position, look direction, lighting, timing) is
++-- fixed, so the external test driver can sample fixed screen regions. The
++-- driver asks for a view by writing its letter to <world>/view_request; the
++-- mod turns the player and then creates <world>/view_<letter>_ready.
++
++local worldpath = core.get_worldpath()
++
++local function touch(path)
++	local f = io.open(path, "w")
++	if f then
++		f:write("ok\n")
++		f:close()
++	end
++end
++
++-- Full daylight, time frozen, no weather/clouds to keep lighting constant.
++core.set_timeofday(0.5)
++
++local PLAYER_POS = {x = 0, y = 200, z = 0}
++local EYE_HEIGHT = 1.5
++local ENTITY_DISTANCE = 3
++local ROW = 1.3
++local FAR = 6
++
++local function animated(self)
++	self.object:set_sprite({x = 0, y = 0}, 4, 1.0, false)
++end
++
++core.register_entity("sprite_probe:ref_sprite", {
++	initial_properties = {
++		visual = "sprite",
++		textures = {"testnodes_anim.png"},
++		visual_size = {x = 1, y = 1},
++		spritediv = {x = 1, y = 4},
++	},
++	on_activate = animated,
++})
++
++core.register_entity("sprite_probe:attached_sprite", {
++	initial_properties = {
++		visual = "sprite",
++		textures = {"testnodes_anim.png"},
++		visual_size = {x = 1, y = 1},
++		spritediv = {x = 1, y = 4},
++		pointable = false,
++	},
++	on_activate = animated,
++})
++
++-- A small carrier that spawns its own animated child and attaches it. The child is created and
++-- attached from the carrier's on_activate, i.e. while the carrier is a live object, instead of from
++-- references returned by core.add_entity() during setup: those can go stale before set_attach()
++-- takes effect, which leaves the child unattached and animating like any free sprite.
++local function carrier_of(child_name, offset)
++	return {
++		initial_properties = {
++			visual = "sprite",
++			textures = {"sprite_probe_quads.png"},
++			visual_size = {x = 0.4, y = 0.4},
++		},
++		on_activate = function(self)
++			local child = core.add_entity(self.object:get_pos(), child_name)
++			if child then
++				child:set_attach(self.object, "", offset, {x = 0, y = 0, z = 0})
++			end
++		end,
++	}
++end
++core.register_entity("sprite_probe:carrier_sprite",
++	carrier_of("sprite_probe:attached_sprite", {x = -21, y = 0, z = 0}))
++core.register_entity("sprite_probe:carrier_upright",
++	carrier_of("sprite_probe:attached_upright", {x = 0, y = 13, z = 0}))
++
++core.register_entity("sprite_probe:quads_sprite", {
++	initial_properties = {
++		visual = "sprite",
++		textures = {"sprite_probe_quads.png"},
++		visual_size = {x = 1, y = 1},
++	},
++})
++
++core.register_entity("sprite_probe:quads_upright", {
++	initial_properties = {
++		visual = "upright_sprite",
++		textures = {"sprite_probe_quads.png"},
++		visual_size = {x = 1, y = 1},
++	},
++})
++
++core.register_entity("sprite_probe:attached_upright", {
++	initial_properties = {
++		visual = "upright_sprite",
++		textures = {"testnodes_anim.png"},
++		visual_size = {x = 1, y = 1},
++		spritediv = {x = 1, y = 4},
++		pointable = false,
++	},
++	on_activate = animated,
++})
++
++-- The live object of the stepped sprite. It is (re)assigned in on_activate rather than from the
++-- return value of add_entity(): that reference can go stale (get_pos() == nil) when the entity is
++-- activated again, and a stale reference silently stops the set_sprite() calls below.
++local stepped
++
++-- one frame at a time; the mod moves it to the next row of the sheet every second
++core.register_entity("sprite_probe:stepped_upright", {
++	initial_properties = {
++		visual = "upright_sprite",
++		textures = {"testnodes_anim.png"},
++		visual_size = {x = 1, y = 1},
++		spritediv = {x = 1, y = 4},
++	},
++	on_activate = function(self)
++		stepped = self.object
++		self.object:set_sprite({x = 0, y = 0}, 1, 1.0, false)
++	end,
++})
++
++core.register_entity("sprite_probe:views", {
++	initial_properties = {
++		visual = "sprite",
++		textures = {"sprite_probe_views.png"},
++		visual_size = {x = 1, y = 1},
++		spritediv = {x = 6, y = 1},
++	},
++	on_activate = function(self)
++		self.object:set_sprite({x = 0, y = 0}, 1, 1.0, true)
++	end,
++})
++
++local VIEW_YAW = {A = 0, B = math.pi, C = -math.pi / 2}
++
++local probe_done = false
++local spawned = {}
++
++local function add(pos, name, yaw)
++	local obj = core.add_entity(pos, name)
++	if obj and yaw then
++		obj:set_yaw(yaw)
++	end
++	spawned[#spawned + 1] = obj or false
++	return obj
++end
++
++local function setup(player)
++	if probe_done then
++		return
++	end
++	probe_done = true
++
++	player:set_physics_override({speed = 0, jump = 0, gravity = 0})
++	player:set_pos(PLAYER_POS)
++	player:set_look_horizontal(VIEW_YAW.A)   -- yaw 0 -> facing +Z (core.yaw_to_dir(0) == (0,0,1))
++	player:set_look_vertical(0)     -- level
++	-- nothing of the HUD (hotbar, hearts, wielded item) in front of the probes
++	player:hud_set_flags({hotbar = false, healthbar = false, crosshair = false,
++		wielditem = false, breathbar = false, minimap = false, minimap_radar = false})
++
++	local eye_y = PLAYER_POS.y + EYE_HEIGHT
++	local base_z = PLAYER_POS.z + ENTITY_DISTANCE
++	local x0 = PLAYER_POS.x
++
++	-- view A, middle row
++	local upright = add({x = x0 - 1.5, y = eye_y, z = base_z}, "testentities:upright_animated")
++	local ref = add({x = x0 + 1.5, y = eye_y, z = base_z}, "sprite_probe:ref_sprite")
++	-- view A, top row: upright sprite showing its back (yaw 0 faces +Z, away from the
++	-- player), camera-facing sprite
++	add({x = x0 - 1.5, y = eye_y + ROW, z = base_z}, "sprite_probe:quads_upright", 0)
++	add({x = x0 + 1.5, y = eye_y + ROW, z = base_z}, "sprite_probe:quads_sprite")
++	-- view A, bottom row: upright sprite showing its front, sprite attached to a carrier
++	add({x = x0 - 1.5, y = eye_y - ROW, z = base_z}, "sprite_probe:quads_upright", math.pi)
++	add({x = x0 + 3.6, y = eye_y - ROW, z = base_z}, "sprite_probe:carrier_sprite")
++	-- view A, left edge: upright sprite attached to a carrier below it
++	add({x = x0 - 3.3, y = eye_y - ROW, z = base_z}, "sprite_probe:carrier_upright")
++	-- view A, right edge: upright sprite stepped through its frames by set_sprite()
++	add({x = x0 + 3.3, y = eye_y, z = base_z}, "sprite_probe:stepped_upright")
++
++	-- views B and C: one direction-selecting sprite per yaw (0, 90, 180, 270 degrees)
++	for i = 0, 3 do
++		local off = -1.8 + 1.2 * i
++		add({x = x0 + off, y = eye_y, z = PLAYER_POS.z - FAR}, "sprite_probe:views", i * math.pi / 2)
++		add({x = x0 + FAR, y = eye_y, z = PLAYER_POS.z + off}, "sprite_probe:views", i * math.pi / 2)
++	end
++
++	core.log("action", "[sprite_probe] upright=" .. tostring(upright))
++	core.log("action", "[sprite_probe] ref=" .. tostring(ref))
++	core.log("action", "[sprite_probe] player yaw=" .. tostring(player:get_look_horizontal()))
++
++	for _, obj in ipairs(spawned) do
++		if not obj then
++			touch(worldpath .. "/probe_error")
++			return
++		end
++	end
++
++	-- Give the client a moment to receive the AddActiveObject messages and
++	-- render the first frame before the driver starts sampling.
++	core.after(0.3, function()
++		touch(worldpath .. "/probe_ready")
++	end)
++end
++
++core.register_on_joinplayer(function(player)
++	setup(player)
++end)
++
++local current_view = "A"
++local poll = 0
++local step_timer, step_row = 0, 0
++core.register_globalstep(function(dtime)
++	if stepped and stepped:get_pos() then
++		step_timer = step_timer + dtime
++		if step_timer >= 1.0 then
++			step_timer = step_timer - 1.0
++			step_row = (step_row + 1) % 4
++			stepped:set_sprite({x = 0, y = step_row}, 1, 1.0, false)
++		end
++	end
++	poll = poll + dtime
++	if poll < 0.1 or not probe_done then
++		return
++	end
++	poll = 0
++	local f = io.open(worldpath .. "/view_request", "r")
++	if not f then
++		return
++	end
++	local want = (f:read("*l") or ""):match("^%s*(%a)")
++	f:close()
++	if not want or want == current_view or not VIEW_YAW[want] then
++		return
++	end
++	current_view = want
++	for _, player in ipairs(core.get_connected_players()) do
++		player:set_pos(PLAYER_POS)
++		player:set_look_horizontal(VIEW_YAW[want])
++		player:set_look_vertical(0)
++	end
++	core.after(0.5, function()
++		touch(worldpath .. "/view_" .. want .. "_ready")
++	end)
++end)
+diff --git a/tests/harvest_c01/worldmods/sprite_probe/mod.conf b/tests/harvest_c01/worldmods/sprite_probe/mod.conf
+new file mode 100644
+index 0000000..e1595b4
+--- /dev/null
++++ b/tests/harvest_c01/worldmods/sprite_probe/mod.conf
+@@ -0,0 +1,2 @@
++name = sprite_probe
++depends = testentities
+diff --git a/tests/harvest_c01/worldmods/sprite_probe/textures/sprite_probe_quads.png b/tests/harvest_c01/worldmods/sprite_probe/textures/sprite_probe_quads.png
+new file mode 100644
+index 0000000000000000000000000000000000000000..d66dcccfec8f77dd3330a8e2f328610e2f8e1ca8
+zcmeAS@N?(olHy`uVBq!ia0vp^0wB!61|;P_|4#%`rk*a2Ar*6yuUIVnIG>S!$G*pG
+zcA0EyY+Q_&S1|H0%d_cJs{a0<mGI`LTeP@Auhap94?t~^yVwsqo@$B%8o=P`>gTe~
+HDWM4f0{|d8
+
+HcmV?d00001
+
+diff --git a/tests/harvest_c01/worldmods/sprite_probe/textures/sprite_probe_views.png b/tests/harvest_c01/worldmods/sprite_probe/textures/sprite_probe_views.png
+new file mode 100644
+index 0000000000000000000000000000000000000000..e085c2971a55ad65e51f665872e070cf8fc749f0
+zcmeAS@N?(olHy`uVBq!ia0vp^2|z5s!3HE>?yC9;q*6Rx978JRyuD~B+F&5Sa*>;D
+z#ih$iic*>Z4SY)!m^nK;beGM%pT9BxmP~TkgFXLK;*NiH{rx@j;=XS$>b~Av{8wzP
+ms4>GC1_R~;JPg<wN25eLIHKeAk8B0n$KdJe=d#Wzp$Pz$7d6oU
+
+HcmV?d00001
+

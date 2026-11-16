@@ -1,0 +1,25 @@
+# dev image for task106 hardening (not shipped): task deps + xdotool, luanti at base, .git kept
+FROM buildpack-deps:jammy
+ENV DEBIAN_FRONTEND=noninteractive
+RUN sed -i 's#http://#https://#g' /etc/apt/sources.list.d/*.sources /etc/apt/sources.list 2>/dev/null; true
+RUN apt-get update && apt-get install -y --no-install-recommends \
+		g++ make cmake git ca-certificates pkg-config \
+		libpng-dev libjpeg-dev libgl1-mesa-dev libsqlite3-dev \
+		libogg-dev libvorbis-dev libopenal-dev libcurl4-openssl-dev \
+		libfreetype6-dev zlib1g-dev libgmp-dev libjsoncpp-dev libzstd-dev \
+		gettext libsdl2-dev \
+		xvfb mesa-utils libgl1-mesa-dri \
+		ffmpeg \
+		fonts-dejavu-core fonts-noto-cjk fonts-noto-core fonts-noto-color-emoji \
+		python3 python3-pil xdotool unzip \
+	&& rm -rf /var/lib/apt/lists/*
+RUN mkdir -p /app
+ADD luanti_base.tar /app/
+RUN cd /app && git init -q && git config user.email h@l && git config user.name h && git config core.autocrlf false \
+	&& git add -A && git commit -qm base && git tag base
+WORKDIR /app
+RUN cmake -B build -DCMAKE_BUILD_TYPE=Release -DRUN_IN_PLACE=TRUE -DENABLE_GETTEXT=FALSE \
+		-DBUILD_CLIENT=TRUE -DBUILD_SERVER=TRUE -DBUILD_UNITTESTS=TRUE -DBUILD_BENCHMARKS=FALSE \
+	&& cmake --build build --parallel 16
+ENV SDL_AUDIODRIVER=dummy ALSOFT_DRIVERS=null LIBGL_ALWAYS_SOFTWARE=1 MINETEST_BIN=/app/bin/minetest
+CMD ["bash"]

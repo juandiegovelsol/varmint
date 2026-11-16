@@ -1,13 +1,13 @@
-diff --git a/src/client/mesh.cpp b/src/client/mesh.cpp
-index 4bf07effa..6eb333d6f 100644
---- a/src/client/mesh.cpp
-+++ b/src/client/mesh.cpp
-@@ -268,7 +268,7 @@ void setMeshColorByNormal(scene::IMesh *mesh, const v3f &normal,
- template <float v3f::*U, float v3f::*V>
- static void rotateMesh(scene::IMesh *mesh, float degrees)
- {
--	degrees *= M_PI / 180.0f;
-+	degrees = core::radToDeg(degrees);
- 	float c = std::cos(degrees);
- 	float s = std::sin(degrees);
- 	auto rotator = [c, s] (video::S3DVertex *vertex) {
+diff --git a/src/client/content_mapblock.cpp b/src/client/content_mapblock.cpp
+index 8675275aa..31a418554 100644
+--- a/src/client/content_mapblock.cpp
++++ b/src/client/content_mapblock.cpp
+@@ -538,7 +538,7 @@ f32 MapblockMeshGenerator::getCornerLevel(int i, int k)
+ 	int air_count = 0;
+ 	for (int dk = 0; dk < 2; dk++)
+ 	for (int di = 0; di < 2; di++) {
+-		NeighborData &neighbor_data = liquid_neighbors[k + dk][i + di];
++		NeighborData &neighbor_data = liquid_neighbors[i + di][k + dk];
+ 		content_t content = neighbor_data.content;
+ 
+ 		// If top is liquid, draw starting from top of node

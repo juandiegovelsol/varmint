@@ -8,9 +8,10 @@ terrain and the tree's trunk are drawn exactly where they were placed, so use th
 for the rest.
 
 ### Expected
-Every object renders in the position and orientation it was placed in. This must hold for any
-such node anywhere in the world and however it was placed or turned, not only at the spots shown
-in the video.
+Every object renders in the position and orientation it was placed in, and an object that joins
+up with its neighbours joins them the way they are actually placed. This must hold for any such
+node anywhere in the world and however it was placed, turned or connected, not only at the spots
+shown in the video.
 
 ### Environment
 All.
