@@ -1,0 +1,66 @@
+diff --git a/src/Player.cpp b/src/Player.cpp
+index 216f2b7..e065c19 100644
+--- a/src/Player.cpp
++++ b/src/Player.cpp
+@@ -16,6 +16,9 @@
+ #include "StringF.h"
+ #include "SystemView.h" // for the transfer planner
+ #include "WorldView.h"
++#include "collider/Geom.h"
++#include "collider/CollisionContact.h"
++#include "scenegraph/CollisionGeometry.h"
+ #include "lua/LuaObject.h"
+ #include "lua/LuaTable.h"
+ #include "ship/PlayerShipController.h"
+@@ -344,8 +347,10 @@ void Player::DoFixspeedTakeoff(SpaceStation *from)
+ 	double wantSpeed = 2; // m/s
+ 	con->ChangeCruiseSpeed(wantSpeed - curSpeed);
+ 
++	if (!from) return;
++
+ 	// special preparations for launch in a rotating orbital
+-	if (from && !from->IsGroundStation()) {
++	if (!from->IsGroundStation()) {
+ 		SetFollowTarget(from);
+ 		con->SetFollowMode(PlayerShipController::FOLLOW_ORI);
+ 		auto pPos = GetPosition();
+@@ -356,5 +361,39 @@ void Player::DoFixspeedTakeoff(SpaceStation *from)
+ 		auto tangent = from->GetAngVelocity().Cross(pPos);
+ 		auto radial = GetOrient().VectorY() * 0.05;
+ 		SetVelocity(tangent + radial);
++		return;
++	}
++
++	// Launch from a ground station pad.
++	// The ship rests on the pad, and depending on the ship and station
++	// models its collision mesh may touch or even slightly penetrate the
++	// station's collision mesh. Any such contact at the start of the take-off
++	// (gravity pulls the ship into the pad) would count as a collision and
++	// damage the ship, so lift the ship along its up axis until its collision
++	// mesh is clear of the station's, then add a margin and a small upward
++	// velocity so it moves away from the pad right from the start.
++	const vector3d up = GetOrient().VectorY();
++	Geom *shipGeom = GetGeom();
++	Geom *stationGeom = from->GetGeom();
++	if (shipGeom && stationGeom) {
++		auto touchesStation = [&]() {
++			for (const CollisionContact &c : shipGeom->Collide(stationGeom)) {
++				// entrance surfaces are not solid and are ignored in manual flight
++				if (!(c.geomFlag & SceneGraph::CollisionGeometry::ENTRANCE))
++					return true;
++			}
++			return false;
++		};
++		const double step = 0.02; // m
++		const double maxLift = std::max(10.0, GetAabb().radius);
++		const vector3d startPos = GetPosition();
++		double lift = 0.0;
++		while (lift < maxLift && touchesStation()) {
++			lift += step;
++			SetPosition(startPos + up * lift);
++		}
+ 	}
++	SetPosition(GetPosition() + up * 0.05);
++	SetAngVelocity(vector3d(0.0));
++	SetVelocity(up * 0.1);
+ }

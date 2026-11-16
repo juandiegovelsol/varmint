@@ -1,0 +1,98 @@
+diff --git a/src/client/content_mapblock.cpp b/src/client/content_mapblock.cpp
+index e69f904ee..0bac5e827 100644
+--- a/src/client/content_mapblock.cpp
++++ b/src/client/content_mapblock.cpp
+@@ -389,11 +385,12 @@ void MapblockMeshGenerator::drawAutoLightedCuboid(aabb3f box, const f32 *txc,
+ 		box.MinEdge *= f->visual_scale;
+ 		box.MaxEdge *= f->visual_scale;
+ 	}
++	box.MinEdge += origin;
++	box.MaxEdge += origin;
+ 	if (!txc) {
+ 		generateCuboidTextureCoords(box, texture_coord_buf);
+ 		txc = texture_coord_buf;
+ 	}
+-
+ 	if (!tiles) {
+ 		tiles = &tile;
+ 		tile_count = 1;
+diff --git a/src/client/mesh.cpp b/src/client/mesh.cpp
+index 6eb333d6f..4bf07effa 100644
+--- a/src/client/mesh.cpp
++++ b/src/client/mesh.cpp
+@@ -268,7 +268,7 @@ void setMeshColorByNormal(scene::IMesh *mesh, const v3f &normal,
+ template <float v3f::*U, float v3f::*V>
+ static void rotateMesh(scene::IMesh *mesh, float degrees)
+ {
+-	degrees = core::radToDeg(degrees);
++	degrees *= M_PI / 180.0f;
+ 	float c = std::cos(degrees);
+ 	float s = std::sin(degrees);
+ 	auto rotator = [c, s] (video::S3DVertex *vertex) {
+diff --git a/src/mapnode.cpp b/src/mapnode.cpp
+index 82baaaba6..42f020e71 100644
+--- a/src/mapnode.cpp
++++ b/src/mapnode.cpp
+@@ -162,6 +162,7 @@ u8 MapNode::getWallMounted(const NodeDefManager *nodemgr) const
+ 			f.param_type_2 == CPT2_COLORED_WALLMOUNTED) {
+ 		return getParam2() & 0x07;
+ 	} else if (f.drawtype == NDT_SIGNLIKE || f.drawtype == NDT_TORCHLIKE ||
++			f.drawtype == NDT_PLANTLIKE ||
+ 			f.drawtype == NDT_PLANTLIKE_ROOTED) {
+ 		return 1;
+ 	}
+diff --git a/src/nodedef.cpp b/src/nodedef.cpp
+index ff75c73c3..4022ac835 100644
+--- a/src/nodedef.cpp
++++ b/src/nodedef.cpp
+@@ -1694,30 +1694,28 @@ bool NodeDefManager::nodeboxConnects(MapNode from, MapNode to,
+ 		// ignores actually looking if back connection exists
+ 		return CONTAINS(f2.connects_to_ids, from.param0);
+ 
+-	// a rotated target: bring the face into the target's own frame first
+-	if ((f2.param_type_2 == CPT2_FACEDIR ||
+-			f2.param_type_2 == CPT2_COLORED_FACEDIR)
+-			&& (connect_face >= 4)) {
+-		static const u8 rot[33 * 4] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+-			0, 0, 0, 0, 4, 32, 16, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+-			0, // 4 - back
+-			8, 4, 32, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+-			0, // 8 - right
+-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16, 8, 4, 32, 0,
+-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+-			0, // 16 - front
+-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+-			0, 0, 0, 0, 0, 0, 32, 16, 8, 4 // 32 - left
+-			};
+-		return (f2.connect_sides
+-			& rot[(connect_face * 4) + (to.param2 & 0x1F)]);
+-	}
+-
+ 	// does to node declare usable faces?
+-	if (f2.connect_sides > 0)
++	if (f2.connect_sides > 0) {
++		if ((f2.param_type_2 == CPT2_FACEDIR ||
++				f2.param_type_2 == CPT2_COLORED_FACEDIR)
++				&& (connect_face >= 4)) {
++			static const u8 rot[33 * 4] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++				0, 0, 0, 0, 4, 32, 16, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++				0, // 4 - back
++				8, 4, 32, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++				0, // 8 - right
++				0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16, 8, 4, 32, 0,
++				0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++				0, // 16 - front
++				0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++				0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++				0, 0, 0, 0, 0, 0, 32, 16, 8, 4 // 32 - left
++				};
++			return (f2.connect_sides
++				& rot[(connect_face * 4) + (to.param2 & 0x1F)]);
++		}
+ 		return (f2.connect_sides & connect_face);
+-
++	}
+ 	// the target is just a regular node, so connect no matter back connection
+ 	return true;
+ }

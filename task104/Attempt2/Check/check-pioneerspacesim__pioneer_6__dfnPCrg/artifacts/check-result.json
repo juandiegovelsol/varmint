@@ -1,0 +1,46 @@
+{
+  "behavior_in_task_description": {
+    "outcome": "pass",
+    "explanation": "The instruction deliberately leaves the ship and station unnamed because the video has to identify them. It still states every behavior the tests check. Ship and pad collision outlines must not overlap at rest or during the action, and this must hold at the pad in the video and at every equivalent spot of the same station (tests check all 6 bays, at rest and climbing to 10 m). A ship that really sinks into a pad must still be caught by it (the p2p docking-surface contact at -1 m). The ship's overall shape must stay as it is (the p2p AABB, radius and triangle-count guards). The agent only edits existing repo data, so no hidden interface or filename is needed."
+  },
+  "behavior_in_tests": {
+    "outcome": "pass",
+    "explanation": "The f2p tests check no damage at the shown spot and at every equivalent spot by colliding the engine's own collision geometry in the engine's docked pose, both at rest and while climbing. The p2p tests check that pads still catch a sinking ship and that the hull keeps its shape. The 100% hull-integrity requirement is covered through its cause: no ship/pad contacts during liftoff."
+  },
+  "informative_test_structure": {
+    "outcome": "pass",
+    "explanation": "TestCollisionMesh.cpp has a header comment explaining the scenario and which engine code each step reuses. Helpers are well named (InitHeadlessEngine, ShipOnBay, LiftoffScene), the four test-case names describe what they check, and INFO messages report the bay and contact details. test.sh and verifier.py are commented, apart from some stale template comments (e.g. mentions of wx)."
+  },
+  "anti_cheating_measures": {
+    "outcome": "pass",
+    "explanation": "The bug patches are applied and deleted in the same RUN step. Upstream git history is removed and re-initialised, so the fix commit is unreachable. File timestamps are normalised so they don't point at the edited files. Only recording.mp4 is copied in (not the manifest, tests or solution), and the agent has no network. At grading, test files and src/test are restored from harbor_base before the hidden tests are applied. The tests replay real engine geometry across all bays, so shallow code-level hacks do not pass."
+  },
+  "structured_data_schema": {
+    "outcome": "not_applicable",
+    "explanation": "The task asks for no structured output. The fix is edits to existing model data files."
+  },
+  "pinned_dependencies": {
+    "outcome": "pass",
+    "explanation": "Only apt packages are installed, which need not be pinned. The repository is checked out at a pinned commit, and there are no unpinned pip or npm dependencies."
+  },
+  "typos": {
+    "outcome": "pass",
+    "explanation": "Paths, test names, config ids and commands are consistent: the test ids in config.json match the TEST_CASE names, and /app/.harbor_assets/recording.mp4 matches the Dockerfile. test.sh passes the undefined \"${REPORTS[@]}\", but this expands to nothing under set -u in modern bash (verified on bash 5.2), so it does no harm. The only other slips are stale comments, which cannot cause failures."
+  },
+  "tests_or_solution_in_image": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile copies only the bug patches (deleted right after use) and recording.mp4. Neither tests/ nor solution/ is copied."
+  },
+  "test_deps_in_image": {
+    "outcome": "pass",
+    "explanation": "The image holds only the toolchain and libraries needed to build the project, plus a pre-built cache of the repo's own unittest target, which speeds up incremental builds. doctest ships with the repo. No test-only packages are installed in the image."
+  },
+  "hardcoded_solution": {
+    "outcome": "pass",
+    "explanation": "solve.sh applies fix.patch, which is the real upstream fix to the three .dae files (raising the collision hull vertices, restoring the low-detail landing tag, realigning pad 1's collision slab). This is the standard oracle form for a repo bug-fix task, not an echoed answer."
+  },
+  "file_reference_mentioned": {
+    "outcome": "not_applicable",
+    "explanation": "The agent creates no output files. It fixes existing repository data, and the hidden tests exercise the engine directly."
+  }
+}

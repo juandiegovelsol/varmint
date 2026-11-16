@@ -1,0 +1,163 @@
+diff --git a/src/client/content_mapblock.cpp b/src/client/content_mapblock.cpp
+index e69f904..709bd0a 100644
+--- a/src/client/content_mapblock.cpp
++++ b/src/client/content_mapblock.cpp
+@@ -378,9 +378,6 @@ void MapblockMeshGenerator::drawAutoLightedCuboid(aabb3f box, const f32 *txc,
+ 	f32 dy2 = box.MaxEdge.Y;
+ 	f32 dz2 = box.MaxEdge.Z;
+ 
+-	box.MinEdge += origin;
+-	box.MaxEdge += origin;
+-
+ 	if (scale) {
+ 		if (!txc) { // generate texture coords before scaling
+ 			generateCuboidTextureCoords(box, texture_coord_buf);
+@@ -389,6 +386,8 @@ void MapblockMeshGenerator::drawAutoLightedCuboid(aabb3f box, const f32 *txc,
+ 		box.MinEdge *= f->visual_scale;
+ 		box.MaxEdge *= f->visual_scale;
+ 	}
++	box.MinEdge += origin;
++	box.MaxEdge += origin;
+ 	if (!txc) {
+ 		generateCuboidTextureCoords(box, texture_coord_buf);
+ 		txc = texture_coord_buf;
+@@ -1392,9 +1391,9 @@ namespace {
+ 	static const v3s16 nodebox_connection_dirs[6] = {
+ 		v3s16( 0,  1,  0), // top
+ 		v3s16( 0, -1,  0), // bottom
+-		v3s16( 0,  0,  1), // front
++		v3s16( 0,  0, -1), // front
+ 		v3s16(-1,  0,  0), // left
+-		v3s16( 0,  0, -1), // back
++		v3s16( 0,  0,  1), // back
+ 		v3s16( 1,  0,  0), // right
+ 	};
+ }
+diff --git a/src/client/mesh.cpp b/src/client/mesh.cpp
+index 6eb333d..4bf07ef 100644
+--- a/src/client/mesh.cpp
++++ b/src/client/mesh.cpp
+@@ -268,7 +268,7 @@ void setMeshColorByNormal(scene::IMesh *mesh, const v3f &normal,
+ template <float v3f::*U, float v3f::*V>
+ static void rotateMesh(scene::IMesh *mesh, float degrees)
+ {
+-	degrees = core::radToDeg(degrees);
++	degrees *= M_PI / 180.0f;
+ 	float c = std::cos(degrees);
+ 	float s = std::sin(degrees);
+ 	auto rotator = [c, s] (video::S3DVertex *vertex) {
+diff --git a/src/nodedef.cpp b/src/nodedef.cpp
+index ff75c73..fd9c11a 100644
+--- a/src/nodedef.cpp
++++ b/src/nodedef.cpp
+@@ -1676,6 +1676,71 @@ void NodeDefManager::resolveCrossrefs()
+ 	}
+ }
+ 
++namespace {
++	// Connect face bits and the directions they denote
++	const struct { u8 bit; v3s16 dir; } connect_face_dirs[6] = {
++		{ 1, v3s16( 0,  1,  0)}, // top
++		{ 2, v3s16( 0, -1,  0)}, // bottom
++		{ 4, v3s16( 0,  0, -1)}, // front
++		{ 8, v3s16(-1,  0,  0)}, // left
++		{16, v3s16( 0,  0,  1)}, // back
++		{32, v3s16( 1,  0,  0)}, // right
++	};
++
++	// Exact 90 degree steps of v3f::rotate??By, for integer vectors
++	// (rotate the (u, v) plane by quarter turns)
++	inline void rotateQuarter(s16 &u, s16 &v, int quarters)
++	{
++		for (quarters &= 3; quarters > 0; quarters--) {
++			s16 t = u;
++			u = -v;
++			v = t;
++		}
++	}
++
++	// Rotates a direction the same way a node with the given facedir is
++	// rotated (see rotateMeshBy6dFacedir and transformNodeBox).
++	v3s16 rotateDirByFacedir(v3s16 d, u8 facedir)
++	{
++		u8 axisdir = facedir >> 2;
++		switch (facedir & 3) {
++			case 1: rotateQuarter(d.X, d.Z, -1); break;
++			case 2: rotateQuarter(d.X, d.Z,  2); break;
++			case 3: rotateQuarter(d.X, d.Z,  1); break;
++		}
++		switch (axisdir) {
++			case 1: rotateQuarter(d.Y, d.Z,  1); break; // z+
++			case 2: rotateQuarter(d.Y, d.Z, -1); break; // z-
++			case 3: rotateQuarter(d.X, d.Y, -1); break; // x+
++			case 4: rotateQuarter(d.X, d.Y,  1); break; // x-
++			case 5: rotateQuarter(d.X, d.Y,  2); break; // y-
++		}
++		return d;
++	}
++
++	// Converts a connect face (in world space) to the corresponding face in
++	// the frame of a node rotated by facedir.
++	u8 facedirConnectFaceToLocal(u8 connect_face, u8 facedir)
++	{
++		v3s16 world_dir;
++		bool found = false;
++		for (const auto &cfd : connect_face_dirs) {
++			if (cfd.bit == connect_face) {
++				world_dir = cfd.dir;
++				found = true;
++				break;
++			}
++		}
++		if (!found)
++			return 0;
++		for (const auto &cfd : connect_face_dirs) {
++			if (rotateDirByFacedir(cfd.dir, facedir) == world_dir)
++				return cfd.bit;
++		}
++		return 0;
++	}
++}
++
+ bool NodeDefManager::nodeboxConnects(MapNode from, MapNode to,
+ 	u8 connect_face) const
+ {
+@@ -1694,29 +1759,17 @@ bool NodeDefManager::nodeboxConnects(MapNode from, MapNode to,
+ 		// ignores actually looking if back connection exists
+ 		return CONTAINS(f2.connects_to_ids, from.param0);
+ 
+-	// a rotated target: bring the face into the target's own frame first
+-	if ((f2.param_type_2 == CPT2_FACEDIR ||
+-			f2.param_type_2 == CPT2_COLORED_FACEDIR)
+-			&& (connect_face >= 4)) {
+-		static const u8 rot[33 * 4] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+-			0, 0, 0, 0, 4, 32, 16, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+-			0, // 4 - back
+-			8, 4, 32, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+-			0, // 8 - right
+-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16, 8, 4, 32, 0,
+-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+-			0, // 16 - front
+-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+-			0, 0, 0, 0, 0, 0, 32, 16, 8, 4 // 32 - left
+-			};
+-		return (f2.connect_sides
+-			& rot[(connect_face * 4) + (to.param2 & 0x1F)]);
+-	}
+-
+ 	// does to node declare usable faces?
+-	if (f2.connect_sides > 0)
++	if (f2.connect_sides > 0) {
++		if (f2.param_type_2 == CPT2_FACEDIR ||
++				f2.param_type_2 == CPT2_COLORED_FACEDIR) {
++			// a rotated target: bring the face into the target's own frame
++			u8 facedir = (to.param2 & 0x1F) % 24;
++			if (facedir != 0)
++				connect_face = facedirConnectFaceToLocal(connect_face, facedir);
++		}
+ 		return (f2.connect_sides & connect_face);
++	}
+ 
+ 	// the target is just a regular node, so connect no matter back connection
+ 	return true;

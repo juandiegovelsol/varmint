@@ -1,0 +1,79 @@
+diff --git a/src/client/content_mapblock.cpp b/src/client/content_mapblock.cpp
+index e69f904..4eaccac 100644
+--- a/src/client/content_mapblock.cpp
++++ b/src/client/content_mapblock.cpp
+@@ -378,9 +378,6 @@ void MapblockMeshGenerator::drawAutoLightedCuboid(aabb3f box, const f32 *txc,
+ 	f32 dy2 = box.MaxEdge.Y;
+ 	f32 dz2 = box.MaxEdge.Z;
+ 
+-	box.MinEdge += origin;
+-	box.MaxEdge += origin;
+-
+ 	if (scale) {
+ 		if (!txc) { // generate texture coords before scaling
+ 			generateCuboidTextureCoords(box, texture_coord_buf);
+@@ -393,6 +390,8 @@ void MapblockMeshGenerator::drawAutoLightedCuboid(aabb3f box, const f32 *txc,
+ 		generateCuboidTextureCoords(box, texture_coord_buf);
+ 		txc = texture_coord_buf;
+ 	}
++	box.MinEdge += origin;
++	box.MaxEdge += origin;
+ 
+ 	if (!tiles) {
+ 		tiles = &tile;
+@@ -1392,9 +1391,9 @@ namespace {
+ 	static const v3s16 nodebox_connection_dirs[6] = {
+ 		v3s16( 0,  1,  0), // top
+ 		v3s16( 0, -1,  0), // bottom
+-		v3s16( 0,  0,  1), // front
++		v3s16( 0,  0, -1), // front
+ 		v3s16(-1,  0,  0), // left
+-		v3s16( 0,  0, -1), // back
++		v3s16( 0,  0,  1), // back
+ 		v3s16( 1,  0,  0), // right
+ 	};
+ }
+@@ -1531,6 +1530,14 @@ void MapblockMeshGenerator::drawMeshNode()
+ 		// use cached meshes
+ 		private_mesh = false;
+ 		mesh = f->mesh_ptr[facedir];
++	} else if (f->mesh_ptr[facedir] && !degrotate) {
++		// private copy of an already correctly rotated mesh
++		// (with mesh cache enabled, wallmounted indices refer to
++		// pre-rotated clones and must not be treated as facedir)
++		private_mesh = true;
++		mesh = cloneMesh(f->mesh_ptr[facedir]);
++		recalculateBoundingBox(mesh);
++		meshmanip->recalculateNormals(mesh, true, false);
+ 	} else if (f->mesh_ptr[0]) {
+ 		// no cache, clone and rotate mesh
+ 		private_mesh = true;
+diff --git a/src/client/mesh.cpp b/src/client/mesh.cpp
+index 6eb333d..60e1584 100644
+--- a/src/client/mesh.cpp
++++ b/src/client/mesh.cpp
+@@ -268,7 +268,7 @@ void setMeshColorByNormal(scene::IMesh *mesh, const v3f &normal,
+ template <float v3f::*U, float v3f::*V>
+ static void rotateMesh(scene::IMesh *mesh, float degrees)
+ {
+-	degrees = core::radToDeg(degrees);
++	degrees = core::degToRad(degrees);
+ 	float c = std::cos(degrees);
+ 	float s = std::sin(degrees);
+ 	auto rotator = [c, s] (video::S3DVertex *vertex) {
+diff --git a/src/nodedef.cpp b/src/nodedef.cpp
+index ff75c73..b74cf82 100644
+--- a/src/nodedef.cpp
++++ b/src/nodedef.cpp
+@@ -1694,8 +1694,9 @@ bool NodeDefManager::nodeboxConnects(MapNode from, MapNode to,
+ 		// ignores actually looking if back connection exists
+ 		return CONTAINS(f2.connects_to_ids, from.param0);
+ 
+-	// a rotated target: bring the face into the target's own frame first
+-	if ((f2.param_type_2 == CPT2_FACEDIR ||
++	// a rotated target that declares usable faces: bring the face into the
++	// target's own frame first
++	if (f2.connect_sides > 0 && (f2.param_type_2 == CPT2_FACEDIR ||
+ 			f2.param_type_2 == CPT2_COLORED_FACEDIR)
+ 			&& (connect_face >= 4)) {
+ 		static const u8 rot[33 * 4] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,

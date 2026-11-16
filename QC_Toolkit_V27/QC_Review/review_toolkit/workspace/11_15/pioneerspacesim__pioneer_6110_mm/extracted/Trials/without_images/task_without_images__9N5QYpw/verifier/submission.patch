@@ -1,0 +1,36 @@
+diff --git a/src/Player.cpp b/src/Player.cpp
+index 216f2b7..b0e8bfe 100644
+--- a/src/Player.cpp
++++ b/src/Player.cpp
+@@ -348,13 +348,25 @@ void Player::DoFixspeedTakeoff(SpaceStation *from)
+ 	if (from && !from->IsGroundStation()) {
+ 		SetFollowTarget(from);
+ 		con->SetFollowMode(PlayerShipController::FOLLOW_ORI);
+-		auto pPos = GetPosition();
+ 		SetAngVelocity(from->GetAngVelocity());
+ 
+-		// some actions to avoid collision with the pad at start with a margin
+-		SetPosition(GetPosition() + GetOrient().VectorY() * 0.01);
+-		auto tangent = from->GetAngVelocity().Cross(pPos);
+-		auto radial = GetOrient().VectorY() * 0.05;
+-		SetVelocity(tangent + radial);
++		// Avoid any contact with the pad at the start of the launch.
++		// When docked, the ship rests on the pad with its landing point
++		// (tag_landing) on the pad plane, and the actual pad surface of the
++		// station model may lie slightly above that plane. The ship's
++		// collision mesh may also reach below its landing point. So lift the
++		// ship clear of its own collision geometry plus a safety margin.
++		const vector3d up = GetOrient().VectorY();
++		const double PAD_CLEARANCE_MARGIN = 1.0; // m
++		const double meshBelowLanding = std::max(0.0, GetLandingPosOffset() - GetAabb().min.y);
++		SetPosition(GetPosition() + up * (meshBelowLanding + PAD_CLEARANCE_MARGIN));
++
++		// co-rotate with the station at the new position (relative to the
++		// station's centre, as the fixspeed follow logic does), and move
++		// away from the pad at the desired takeoff speed right away
++		const vector3d pPos = GetPositionRelTo(from);
++		const vector3d tangent = from->GetAngVelocity().Cross(pPos);
++		const vector3d radial = up * wantSpeed;
++		SetVelocity(from->GetVelocityRelTo(GetFrame()) + tangent + radial);
+ 	}
+ }

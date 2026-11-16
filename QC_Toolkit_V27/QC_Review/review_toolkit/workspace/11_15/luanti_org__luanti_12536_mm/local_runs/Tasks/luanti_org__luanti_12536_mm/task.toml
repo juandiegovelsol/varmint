@@ -1,0 +1,70 @@
+version = "1.0"
+reward_type = "binary"
+
+[task]
+name = "scale-ai/luanti_org__luanti_12536_mm"
+
+[metadata]
+task_id = "luanti_org__luanti_12536_mm"
+title = "Objects on a terrace are not drawn where or how they were placed"
+repository_name = "luanti-org/luanti"
+repo_url = "https://github.com/luanti-org/luanti"
+issue_number = 12536
+pr_number = 12558
+base_commit = "d400a98ef0408ccbd2cc4c72f8b48c3813dfce41"
+fix_commit = "b270a46e533eaec289a65440f63eb227f0872286"
+task_type = "visual_bug_fix"
+language = "C++"
+framework = "Luanti (Minetest)"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = """
+The text only says that several objects on the terrace in the video are not drawn where or how they were placed, and that every object must render in the position and orientation it was placed in; it names neither the objects nor any defect. The video is the only place the five independent defects can be seen, and each one sits in a different part of the client's map-block mesh pipeline, so none of them can be found by reading the instruction and auditing one function:
+
+1. Canopy off its trunk (the original issue, src/client/content_mapblock.cpp, drawAutoLightedCuboid): leaves in the recording use visual_scale = 1.1, and the cuboid is translated to its node position before it is scaled, so the whole canopy drifts up and away from its trunk by an amount that grows with the node's position inside its map block. In the video the canopy is a coherent, undistorted block sitting up and off to one side, while the apples (which are not scaled) stay where the canopy should be.
+2. Fence never joins the trunk (src/nodedef.cpp, NodeDefManager::nodeboxConnects): the facedir rotation lookup was hoisted out of the "target declares connect_sides" branch, so any facedir-rotated node that declares no sides (tree trunks are facedir) refuses horizontal connections. The last rail stops at the post next to the trunk, with a gap. Plain blocks and gates (which declare connect_sides) are unaffected, which hides it.
+3. Fence rails mirrored along Z (src/client/content_mapblock.cpp, nodebox_connection_dirs): the probe directions for the "front" and "back" connection bits are swapped. Middle posts of a run look normal because both of their neighbours connect; only the ends and corners of a Z-running fence show it: rail stubs sticking out past the last post and a missing half rail towards the real neighbour. The X-running leg is unaffected.
+4. Plants upside down (src/mapnode.cpp, MapNode::getWallMounted): plantlike nodes without a wallmounted param2 no longer report "floor" (DWM_YN), so the generator rotates them as if hanging from the ceiling. Apples hang with their stalk at the bottom and grass tufts hang from the top of their node.
+5. Gate twisted (src/client/mesh.cpp, rotateMesh): the angle is converted with radToDeg instead of degToRad, so every rotated mesh node is turned by a wrong, non-right angle (facedir 2 renders about 53 degrees off). The gate, a mesh node placed with facedir 2, sits diagonally across the fence line, while its collision box (rotated by the separate node-box code) is still correct.
+
+Each defect is enough on its own to keep the scene broken, so a partial fix still fails. The hidden tests drive the real MapblockMeshGenerator::generate() over a 3x3x3-block voxel area with test-defined nodes and only check the generated geometry (where a node's vertices end up, and which way its texture faces). One f2p test per defect, each failing only on its own defect, plus p2p guards that reject shortcut fixes: nodes at the block corner and unscaled leaves, a fence next to nodes it does not list, connect_sides that are honoured (also on a turned node, so dropping the facedir rotation for connect_sides targets fails), a ceiling-mounted plant that must still hang, and an unrotated mesh node that keeps its shape. The mesh-rotation test checks all 23 non-zero facedirs (vertical-axis turns, tilted and upside-down), so repairing only one rotation plane fails.
+"""
+files_edited = [
+  "src/client/content_mapblock.cpp",
+  "src/client/mesh.cpp",
+  "src/mapnode.cpp",
+  "src/nodedef.cpp",
+]
+f2p = [
+  "testScaledAllfacesNodeOffset",
+  "testFenceConnectsToTreeTrunk",
+  "testFenceRailsPointAtNeighborsAlongZ",
+  "testPlantlikeNodeStandsUpright",
+  "testRotatedMeshNodeFollowsFacedir",
+]
+p2p = [
+  "testScaledAllfacesNodeAtOrigin",
+  "testUnscaledAllfacesNodeUnaffected",
+  "testFenceIgnoresNodesItDoesNotConnectTo",
+  "testFenceRespectsConnectSides",
+  "testFenceRespectsConnectSidesOfTurnedNode",
+  "testWallmountedPlantlikeHangsFromCeiling",
+  "testUnrotatedMeshNodeKeepsItsShape",
+]
+tags = ["multimodal", "3d_video", "visual_bug_fix", "beyond_browser", "luanti (minetest)", "c++", "voxel", "mesh-generation", "3d-rendering", "game-engine"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

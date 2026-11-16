@@ -1,0 +1,66 @@
+diff --git a/src/client/content_mapblock.cpp b/src/client/content_mapblock.cpp
+index e69f904..0bac5e8 100644
+--- a/src/client/content_mapblock.cpp
++++ b/src/client/content_mapblock.cpp
+@@ -377,10 +377,6 @@ void MapblockMeshGenerator::drawAutoLightedCuboid(aabb3f box, const f32 *txc,
+ 	f32 dx2 = box.MaxEdge.X;
+ 	f32 dy2 = box.MaxEdge.Y;
+ 	f32 dz2 = box.MaxEdge.Z;
+-
+-	box.MinEdge += origin;
+-	box.MaxEdge += origin;
+-
+ 	if (scale) {
+ 		if (!txc) { // generate texture coords before scaling
+ 			generateCuboidTextureCoords(box, texture_coord_buf);
+@@ -389,11 +385,12 @@ void MapblockMeshGenerator::drawAutoLightedCuboid(aabb3f box, const f32 *txc,
+ 		box.MinEdge *= f->visual_scale;
+ 		box.MaxEdge *= f->visual_scale;
+ 	}
++	box.MinEdge += origin;
++	box.MaxEdge += origin;
+ 	if (!txc) {
+ 		generateCuboidTextureCoords(box, texture_coord_buf);
+ 		txc = texture_coord_buf;
+ 	}
+-
+ 	if (!tiles) {
+ 		tiles = &tile;
+ 		tile_count = 1;
+@@ -1392,9 +1389,9 @@ namespace {
+ 	static const v3s16 nodebox_connection_dirs[6] = {
+ 		v3s16( 0,  1,  0), // top
+ 		v3s16( 0, -1,  0), // bottom
+-		v3s16( 0,  0,  1), // front
++		v3s16( 0,  0, -1), // front
+ 		v3s16(-1,  0,  0), // left
+-		v3s16( 0,  0, -1), // back
++		v3s16( 0,  0,  1), // back
+ 		v3s16( 1,  0,  0), // right
+ 	};
+ }
+diff --git a/src/client/mesh.cpp b/src/client/mesh.cpp
+index 6eb333d..4bf07ef 100644
+--- a/src/client/mesh.cpp
++++ b/src/client/mesh.cpp
+@@ -268,7 +268,7 @@ void setMeshColorByNormal(scene::IMesh *mesh, const v3f &normal,
+ template <float v3f::*U, float v3f::*V>
+ static void rotateMesh(scene::IMesh *mesh, float degrees)
+ {
+-	degrees = core::radToDeg(degrees);
++	degrees *= M_PI / 180.0f;
+ 	float c = std::cos(degrees);
+ 	float s = std::sin(degrees);
+ 	auto rotator = [c, s] (video::S3DVertex *vertex) {
+diff --git a/src/mapnode.cpp b/src/mapnode.cpp
+index 82baaab..42f020e 100644
+--- a/src/mapnode.cpp
++++ b/src/mapnode.cpp
+@@ -162,6 +162,7 @@ u8 MapNode::getWallMounted(const NodeDefManager *nodemgr) const
+ 			f.param_type_2 == CPT2_COLORED_WALLMOUNTED) {
+ 		return getParam2() & 0x07;
+ 	} else if (f.drawtype == NDT_SIGNLIKE || f.drawtype == NDT_TORCHLIKE ||
++			f.drawtype == NDT_PLANTLIKE ||
+ 			f.drawtype == NDT_PLANTLIKE_ROOTED) {
+ 		return 1;
+ 	}

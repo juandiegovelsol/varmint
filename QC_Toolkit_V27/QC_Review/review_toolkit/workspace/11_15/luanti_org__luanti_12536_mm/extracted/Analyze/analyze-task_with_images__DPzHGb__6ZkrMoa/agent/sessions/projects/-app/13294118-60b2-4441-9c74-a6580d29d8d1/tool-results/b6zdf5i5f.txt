@@ -1,0 +1,1095 @@
+total 56
+drwxrwxr-x 2 1002 1002  4096 Nov 16 02:55 .
+drwxrwxr-x 5 1002 1002  4096 Nov 16 02:55 ..
+-rw-rw-r-- 1 1002 1002   843 Nov 16 02:55 config.json
+-rw-rw-r-- 1 1002 1002 24108 Nov 16 02:55 test.patch
+-rw-rw-r-- 1 1002 1002 11643 Nov 16 02:55 test.sh
+-rw-rw-r-- 1 1002 1002  6701 Nov 16 02:55 verifier.py
+---
+== /app/task/tests/config.json ==
+{
+  "task_id": "luanti_org__luanti_12536_mm",
+  "verifier_mode": "test_execution",
+  "test_framework": "./bin/minetest --run-unittests (the repo's legacy TestBase/TEST() C++ unit test framework, src/unittest)",
+  "test_files": [
+    "src/unittest/CMakeLists.txt",
+    "src/unittest/test_content_mapblock.cpp"
+  ],
+  "f2p": [
+    "testScaledAllfacesNodeOffset",
+    "testFenceConnectsToTreeTrunk",
+    "testFenceRailsPointAtNeighborsAlongZ",
+    "testPlantlikeNodeStandsUpright",
+    "testRotatedMeshNodeFollowsFacedir"
+  ],
+  "p2p": [
+    "testScaledAllfacesNodeAtOrigin",
+    "testUnscaledAllfacesNodeUnaffected",
+    "testFenceIgnoresNodesItDoesNotConnectTo",
+    "testFenceRespectsConnectSides",
+    "testFenceRespectsConnectSidesOfTurnedNode",
+    "testWallmountedPlantlikeHangsFromCeiling",
+    "testUnrotatedMeshNodeKeepsItsShape"
+  ]
+}
+== /app/task/tests/test.patch ==
+diff --git a/src/unittest/CMakeLists.txt b/src/unittest/CMakeLists.txt
+index 84f769e87..c7a66409e 100644
+--- a/src/unittest/CMakeLists.txt
++++ b/src/unittest/CMakeLists.txt
+@@ -40,6 +40,7 @@ set (UNITTEST_SRCS
+ 
+ set (UNITTEST_CLIENT_SRCS
+ 	${CMAKE_CURRENT_SOURCE_DIR}/test_clientactiveobjectmgr.cpp
++	${CMAKE_CURRENT_SOURCE_DIR}/test_content_mapblock.cpp
+ 	${CMAKE_CURRENT_SOURCE_DIR}/test_eventmanager.cpp
+ 	${CMAKE_CURRENT_SOURCE_DIR}/test_gameui.cpp
+ 	${CMAKE_CURRENT_SOURCE_DIR}/test_keycode.cpp
+diff --git a/src/unittest/test_content_mapblock.cpp b/src/unittest/test_content_mapblock.cpp
+new file mode 100644
+index 000000000..b627a4537
+--- /dev/null
++++ b/src/unittest/test_content_mapblock.cpp
+@@ -0,0 +1,646 @@
++/*
++Minetest
++Copyright (C) 2022 Luanti harvest
++
++This program is free software; you can redistribute it and/or modify
++it under the terms of the GNU Lesser General Public License as published by
++the Free Software Foundation; either version 2.1 of the License, or
++(at your option) any later version.
++
++This program is distributed in the hope that it will be useful,
++but WITHOUT ANY WARRANTY; without even the implied warranty of
++MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++GNU Lesser General Public License for more details.
++
++You should have received a copy of the GNU Lesser General Public License along
++with this program; if not, write to the Free Software Foundation, Inc.,
++51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++*/
++
++// Headless behavioral tests for the map block mesh generator.
++//
++// Every test builds a small piece of world (one map block plus its 26
++// neighbours, all air in full daylight), places a few nodes into it, runs the
++// engine's own MapblockMeshGenerator::generate() over the centre block exactly
++// like MapBlockMesh does, and then only looks at the geometry that comes out:
++// where the vertices of a given node ended up and which way its texture faces.
++// Nothing here depends on how the generator is organised internally.
++
++#include "test.h"
++
++#include <cmath>
++#include <limits>
++#include <SMesh.h>
++#include <SMeshBuffer.h>
++
++#include "client/client.h"
++#include "client/content_mapblock.h"
++#include "client/mapblock_mesh.h"
++#include "client/meshgen/collector.h"
++#include "client/tile.h"
++#include "constants.h"
++#include "content/mods.h"
++#include "gamedef.h"
++#include "mapnode.h"
++#include "nodedef.h"
++#include "util/numeric.h"
++
++namespace {
++
++// Texture ids identify which node a generated vertex belongs to.
++enum : u32 {
++	TEX_LEAVES_SCALED = 11,
++	TEX_LEAVES_PLAIN,
++	TEX_FENCE,
++	TEX_FENCE_OTHER,
++	TEX_PLANT,
++	TEX_PLANT_HANGING,
++	TEX_MESH,
++};
++
++const float EPS = 0.05f; // in world units; one node is BS = 10 units
++
++// The mesh generator only needs the node definitions from the game.
++class MeshGenGameDef : public IGameDef {
++public:
++	explicit MeshGenGameDef(const NodeDefManager *ndef) : m_ndef(ndef) {}
++
++	IItemDefManager *getItemDefManager() override { return nullptr; }
++	const NodeDefManager *getNodeDefManager() override { return m_ndef; }
++	ICraftDefManager *getCraftDefManager() override { return nullptr; }
++	u16 allocateUnknownNodeId(const std::string &name) override { return CONTENT_IGNORE; }
++	const std::vector<ModSpec> &getMods() const override
++	{
++		static std::vector<ModSpec> mods;
++		return mods;
++	}
++	const ModSpec *getModSpec(const std::string &modname) const override { return nullptr; }
++	bool registerModStorage(ModMetadata *storage) override { return true; }
++	void unregisterModStorage(const std::string &name) override {}
++	ModMetadataDatabase *getModStorageDatabase() override { return nullptr; }
++	bool joinModChannel(const std::string &channel) override { return false; }
++	bool leaveModChannel(const std::string &channel) override { return false; }
++	bool sendModChannelMessage(const std::string &channel,
++			const std::string &message) override { return false; }
++	ModChannel *getModChannel(const std::string &channel) override { return nullptr; }
++
++private:
++	const NodeDefManager *m_ndef;
++};
++
++// MeshMakeData reaches the game through a Client pointer, and the mesh
++// generator only ever calls ndef() on it: an inline, non-virtual IGameDef
++// helper that forwards to the virtual getNodeDefManager(). A Client cannot be
++// built headlessly at this point in the codebase's history, so this returns a
++// pointer that resolves -- through the very same Client -> IGameDef base
++// conversion the generator performs -- to the IGameDef above. No other part of
++// Client is ever touched.
++Client *clientFor(IGameDef *gamedef)
++{
++	alignas(Client) static unsigned char probe_storage[sizeof(Client)];
++	Client *probe = reinterpret_cast<Client *>(probe_storage);
++	ptrdiff_t offset = reinterpret_cast<char *>(static_cast<IGameDef *>(probe)) -
++			reinterpret_cast<char *>(probe);
++	return reinterpret_cast<Client *>(reinterpret_cast<char *>(gamedef) - offset);
++}
++
++// Mesh nodes may need their normals recalculated after rotation; normals play
++// no part in these tests, so this manipulator leaves them alone.
++class NoopMeshManipulator : public scene::IMeshManipulator {
++public:
++	void recalculateNormals(scene::IMesh *mesh, bool smooth = false,
++			bool angleWeighted = false) const override {}
++	void recalculateNormals(scene::IMeshBuffer *buffer, bool smooth = false,
++			bool angleWeighted = false) const override {}
++	scene::SMesh *createMeshCopy(scene::IMesh *mesh) const override { return nullptr; }
++	s32 getPolyCount(scene::IMesh *mesh) const override { return 0; }
++	s32 getPolyCount(scene::IAnimatedMesh *mesh) const override { return 0; }
++	scene::IAnimatedMesh *createAnimatedMesh(scene::IMesh *mesh,
++			scene::E_ANIMATED_MESH_TYPE type) const override { return nullptr; }
++};
++
++void setAllTiles(ContentFeatures &f, u32 texture_id)
++{
++	for (TileSpec &tile : f.tiles)
++		tile.layers[0].texture_id = texture_id;
++}
++
++aabb3f scaled(float x1, float y1, float z1, float x2, float y2, float z2)
++{
++	return aabb3f(x1 * BS, y1 * BS, z1 * BS, x2 * BS, y2 * BS, z2 * BS);
++}
++
++// A wooden-fence-like connected node box: a post plus two rails per side.
++void makeFenceBox(NodeBox &box)
++{
++	box.type = NODEBOX_CONNECTED;
++	box.fixed = {scaled(-1/8.f, -1/2.f, -1/8.f, 1/8.f, 1/2.f, 1/8.f)};
++	NodeBoxConnected &c = box.getConnected();
++	for (float y : {3/16.f, -5/16.f}) {
++		c.connect_front.push_back(scaled(-1/16.f, y, -1/2.f, 1/16.f, y + 1/8.f, -1/8.f));
++		c.connect_left.push_back(scaled(-1/2.f, y, -1/16.f, -1/8.f, y + 1/8.f, 1/16.f));
++		c.connect_back.push_back(scaled(-1/16.f, y, 1/8.f, 1/16.f, y + 1/8.f, 1/2.f));
++		c.connect_right.push_back(scaled(1/8.f, y, -1/16.f, 1/2.f, y + 1/8.f, 1/16.f));
++	}
++}
++
++// The mesh used for the "mesh" drawtype node: an off-centre slab that only
++// covers the +X half of the node, so that every quarter turn is distinguishable.
++const aabb3f MESH_BOUNDS = scaled(0.f, -1/2.f, -1/16.f, 1/2.f, 1/2.f, 1/16.f);
++
++scene::SMesh *makeSlabMesh()
++{
++	const v3f a = MESH_BOUNDS.MinEdge, b = MESH_BOUNDS.MaxEdge;
++	const video::SColor white(255, 255, 255, 255);
++	video::S3DVertex v[8] = {
++		video::S3DVertex(a.X, a.Y, a.Z, 0, 0, -1, white, 0, 1),
++		video::S3DVertex(b.X, a.Y, a.Z, 0, 0, -1, white, 1, 1),
++		video::S3DVertex(b.X, b.Y, a.Z, 0, 0, -1, white, 1, 0),
++		video::S3DVertex(a.X, b.Y, a.Z, 0, 0, -1, white, 0, 0),
++		video::S3DVertex(a.X, a.Y, b.Z, 0, 0, 1, white, 1, 1),
++		video::S3DVertex(b.X, a.Y, b.Z, 0, 0, 1, white, 0, 1),
++		video::S3DVertex(b.X, b.Y, b.Z, 0, 0, 1, white, 0, 0),
++		video::S3DVertex(a.X, b.Y, b.Z, 0, 0, 1, white, 1, 0),
++	};
++	const u16 idx[36] = {
++		0, 2, 1, 0, 3, 2,  4, 5, 6, 4, 6, 7,  0, 1, 5, 0, 5, 4,
++		3, 6, 2, 3, 7, 6,  0, 4, 7, 0, 7, 3,  1, 2, 6, 1, 6, 5,
++	};
++	scene::SMeshBuffer *buf = new scene::SMeshBuffer();
++	buf->append(v, 8, idx, 36);
++	scene::SMesh *mesh = new scene::SMesh();
++	mesh->addMeshBuffer(buf);
++	buf->drop();
++	mesh->recalculateBoundingBox();
++	return mesh;
++}
++
++struct Extent {
++	v3f min_v, max_v;
++	size_t count = 0;
++
++	v3f center() const { return (min_v + max_v) * 0.5f; }
++	v3f half() const { return (max_v - min_v) * 0.5f; }
++};
++
++bool approx(float a, float b) { return std::fabs(a - b) < EPS; }
++
++bool sameBox(const Extent &e, const aabb3f &box)
++{
++	return e.count > 0 &&
++		approx(e.min_v.X, box.MinEdge.X) && approx(e.min_v.Y, box.MinEdge.Y) &&
++		approx(e.min_v.Z, box.MinEdge.Z) && approx(e.max_v.X, box.MaxEdge.X) &&
++		approx(e.max_v.Y, box.MaxEdge.Y) && approx(e.max_v.Z, box.MaxEdge.Z);
++}
++
++// A tiny world: one map block (block position 0,0,0) and all its neighbours.
++class MeshGenScene {
++public:
++	MeshGenScene() :
++		m_ndef(createNodeDefManager()),
++		m_gamedef(m_ndef)
++	{
++		m_slab_mesh = makeSlabMesh();
++
++		ContentFeatures f;
++
++		f = ContentFeatures();
++		f.name = "test:leaves_scaled";
++		f.drawtype = NDT_ALLFACES;
++		f.param_type = CPT_LIGHT;
++		f.solidness = 0;
++		f.visual_scale = 2.0f;
++		setAllTiles(f, TEX_LEAVES_SCALED);
++		m_ndef->set(f.name, f);
++
++		f = ContentFeatures();
++		f.name = "test:leaves_plain";
++		f.drawtype = NDT_ALLFACES;
++		f.param_type = CPT_LIGHT;
++		f.solidness = 0;
++		setAllTiles(f, TEX_LEAVES_PLAIN);
++		m_ndef->set(f.name, f);
++
++		// A tree trunk: a plain cube that can be placed turned (facedir).
++		f = ContentFeatures();
++		f.name = "test:trunk";
++		f.drawtype = NDT_NORMAL;
++		f.param_type_2 = CPT2_FACEDIR;
++		m_ndef->set(f.name, f);
++
++		f = ContentFeatures();
++		f.name = "test:stone";
++		f.drawtype = NDT_NORMAL;
++		m_ndef->set(f.name, f);
++
++		// A turnable block that only allows connections on the sides it names.
++		f = ContentFeatures();
++		f.name = "test:panel_vertical_only";
++		f.drawtype = NDT_NORMAL;
++		f.param_type_2 = CPT2_FACEDIR;
++		f.connect_sides = 1 | 2; // top, bottom
++		m_ndef->set(f.name, f);
++
++		f = ContentFeatures();
++		f.name = "test:panel_left_right";
++		f.drawtype = NDT_NORMAL;
++		f.param_type_2 = CPT2_FACEDIR;
++		f.connect_sides = 8 | 32; // left, right
++		m_ndef->set(f.name, f);
++
++		f = ContentFeatures();
++		f.name = "test:plant";
++		f.drawtype = NDT_PLANTLIKE;
++		f.param_type = CPT_LIGHT;
++		f.solidness = 0;
++		f.walkable = false;
++		setAllTiles(f, TEX_PLANT);
++		m_ndef->set(f.name, f);
++
++		f = ContentFeatures();
++		f.name = "test:plant_hanging";
++		f.drawtype = NDT_PLANTLIKE;
++		f.param_type = CPT_LIGHT;
++		f.param_type_2 = CPT2_WALLMOUNTED;
++		f.solidness = 0;
++		f.walkable = false;
++		setAllTiles(f, TEX_PLANT_HANGING);
++		m_ndef->set(f.name, f);
++
++		f = ContentFeatures();
++		f.name = "test:mesh_slab";
++		f.drawtype = NDT_MESH;
++		f.param_type = CPT_LIGHT;
++		f.param_type_2 = CPT2_FACEDIR;
++		f.solidness = 0;
++		f.mesh_ptr[0] = m_slab_mesh;
++		f.node_box.type = NODEBOX_FIXED;
++		f.node_box.fixed = {MESH_BOUNDS};
++		setAllTiles(f, TEX_MESH);
++		m_ndef->set(f.name, f);
++
++		// Two kinds of fence that join each other, tree trunks and plain
++		// panels -- but not stone.
++		content_t c_fence = registerFence("test:fence", TEX_FENCE, {});
++		content_t c_fence_other = registerFence("test:fence_other", TEX_FENCE_OTHER, {});
++		std::vector<content_t> joins = {c_fence, c_fence_other, id("test:trunk"),
++			id("test:panel_vertical_only"), id("test:panel_left_right")};
++		registerFence("test:fence", TEX_FENCE, joins);
++		registerFence("test:fence_other", TEX_FENCE_OTHER, joins);
++	}
++
++	~MeshGenScene()
++	{
++		// the node definition manager owns (and drops) the slab mesh
++		delete m_ndef;
++	}
++
++	content_t id(const std::string &name) const { return m_ndef->getId(name); }
++
++	void place(v3s16 p, const std::string &name, u8 param2 = 0)
++	{
++		m_nodes.emplace_back(p, MapNode(id(name), 0, param2));
++	}
++
++	const NodeDefManager *ndef() const { return m_ndef; }
++
++	// Runs the generator over block (0,0,0) and returns the extent of every
++	// vertex generated with the given texture, plus the vertices themselves.
++	Extent generate(u32 texture_id, std::vector<video::S3DVertex> *out = nullptr,
++			bool smooth_lighting = true)
++	{
++		MeshMakeData data(clientFor(&m_gamedef), false);
++		data.fillBlockDataBegin(v3s16(0, 0, 0));
++		std::vector<MapNode> air(MAP_BLOCKSIZE * MAP_BLOCKSIZE * MAP_BLOCKSIZE,
++				MapNode(CONTENT_AIR, LIGHT_SUN, 0));
++		for (s16 z = -1; z <= 1; z++)
++		for (s16 y = -1; y <= 1; y++)
++		for (s16 x = -1; x <= 1; x++)
++			data.fillBlockData(v3s16(x, y, z), air.data());
++		for (const auto &node : m_nodes)
++			data.m_vmanip.setNode(node.first, node.second);
++		data.setSmoothLighting(smooth_lighting);
++
++		MeshCollector collector;
++		NoopMeshManipulator meshmanip;
++		MapblockMeshGenerator(&data, &collector, &meshmanip).generate();
++
++		Extent e;
++		e.min_v = v3f(std::numeric_limits<float>::max());
++		e.max_v = v3f(-std::numeric_limits<float>::max());
++		for (const auto &buffers : collector.prebuffers)
++		for (const PreMeshBuffer &buf : buffers) {
++			if (buf.layer.texture_id != texture_id)
++				continue;
++			for (const video::S3DVertex &v : buf.vertices) {
++				e.min_v.X = std::min(e.min_v.X, v.Pos.X);
++				e.min_v.Y = std::min(e.min_v.Y, v.Pos.Y);
++				e.min_v.Z = std::min(e.min_v.Z, v.Pos.Z);
++				e.max_v.X = std::max(e.max_v.X, v.Pos.X);
++				e.max_v.Y = std::max(e.max_v.Y, v.Pos.Y);
++				e.max_v.Z = std::max(e.max_v.Z, v.Pos.Z);
++				e.count++;
++				if (out)
++					out->push_back(v);
++			}
++		}
++		return e;
++	}
++
++private:
++	content_t registerFence(const std::string &name, u32 texture_id,
++			const std::vector<content_t> &joins)
++	{
++		ContentFeatures f;
++		f.name = name;
++		f.drawtype = NDT_NODEBOX;
++		f.param_type = CPT_LIGHT;
++		f.solidness = 0;
++		makeFenceBox(f.node_box);
++		f.connects_to_ids = joins;
++		setAllTiles(f, texture_id);
++		return m_ndef->set(f.name, f);
++	}
++
++	NodeDefManager *m_ndef;
++	MeshGenGameDef m_gamedef;
++	scene::SMesh *m_slab_mesh;
++	std::vector<std::pair<v3s16, MapNode>> m_nodes;
++};
++
++std::string describe(const Extent &e)
++{
++	char buf[200];
++	snprintf(buf, sizeof(buf), "%zu vertices, min (%.3f, %.3f, %.3f) max (%.3f, %.3f, %.3f)",
++			e.count, e.min_v.X, e.min_v.Y, e.min_v.Z, e.max_v.X, e.max_v.Y, e.max_v.Z);
++	return buf;
++}
++
++// The region a node occupies in the generated (block-relative) mesh.
++aabb3f cellOf(v3s16 p, const aabb3f &local)
++{
++	v3f o = intToFloat(p, BS);
++	return aabb3f(local.MinEdge + o, local.MaxEdge + o);
++}
++
++} // namespace
++
++class TestMapblockMeshGenerator : public TestBase {
++public:
++	TestMapblockMeshGenerator() { TestManager::registerTestModule(this); }
++	const char *getName() { return "TestMapblockMeshGenerator"; }
++
++	void runTests(IGameDef *gamedef);
++
++	void testScaledAllfacesNodeOffset();
++	void testScaledAllfacesNodeAtOrigin();
++	void testUnscaledAllfacesNodeUnaffected();
++	void testFenceConnectsToTreeTrunk();
++	void testFenceRailsPointAtNeighborsAlongZ();
++	void testFenceIgnoresNodesItDoesNotConnectTo();
++	void testFenceRespectsConnectSides();
++	void testFenceRespectsConnectSidesOfTurnedNode();
++	void testPlantlikeNodeStandsUpright();
++	void testWallmountedPlantlikeHangsFromCeiling();
++	void testRotatedMeshNodeFollowsFacedir();
++	void testUnrotatedMeshNodeKeepsItsShape();
++};
++
++static TestMapblockMeshGenerator g_test_instance;
++
++void TestMapblockMeshGenerator::runTests(IGameDef *gamedef)
++{
++	TEST(testScaledAllfacesNodeOffset);
++	TEST(testScaledAllfacesNodeAtOrigin);
++	TEST(testUnscaledAllfacesNodeUnaffected);
++	TEST(testFenceConnectsToTreeTrunk);
++	TEST(testFenceRailsPointAtNeighborsAlongZ);
++	TEST(testFenceIgnoresNodesItDoesNotConnectTo);
++	TEST(testFenceRespectsConnectSides);
++	TEST(testFenceRespectsConnectSidesOfTurnedNode);
++	TEST(testPlantlikeNodeStandsUpright);
++	TEST(testWallmountedPlantlikeHangsFromCeiling);
++	TEST(testRotatedMeshNodeFollowsFacedir);
++	TEST(testUnrotatedMeshNodeKeepsItsShape);
++}
++
++// An "allfaces" node (the drawtype leaves use) with visual_scale = 2, deep
++// inside its map block: it must stay centred on its own node, twice as big.
++void TestMapblockMeshGenerator::testScaledAllfacesNodeOffset()
++{
++	const v3s16 p(13, 6, 11);
++	MeshGenScene scene;
++	scene.place(p, "test:leaves_scaled");
++	Extent e = scene.generate(TEX_LEAVES_SCALED);
++	const v3f expected = intToFloat(p, BS);
++
++	UTEST(e.count > 0 &&
++			approx(e.center().X, expected.X) && approx(e.center().Y, expected.Y) &&
++			approx(e.center().Z, expected.Z) &&
++			approx(e.half().X, BS) && approx(e.half().Y, BS) && approx(e.half().Z, BS),
++			"scaled allfaces node at (%d, %d, %d) is not centred on itself at "
++			"twice its size: %s", p.X, p.Y, p.Z, describe(e).c_str());
++}
++
++// At the block's own corner scaling about any point coincides, so this passes
++// with or without the defect; it only shows the drift needs distance.
++void TestMapblockMeshGenerator::testScaledAllfacesNodeAtOrigin()
++{
++	MeshGenScene scene;
++	scene.place(v3s16(0, 0, 0), "test:leaves_scaled");
++	Extent e = scene.generate(TEX_LEAVES_SCALED);
++
++	UTEST(sameBox(e, scaled(-1.f, -1.f, -1.f, 1.f, 1.f, 1.f)),
++			"scaled allfaces node at the block corner: %s", describe(e).c_str());
++}
++
++// Without visual_scale an allfaces node is exactly its own cube.
++void TestMapblockMeshGenerator::testUnscaledAllfacesNodeUnaffected()
++{
++	const v3s16 p(13, 6, 11);
++	MeshGenScene scene;
++	scene.place(p, "test:leaves_plain");
++	Extent e = scene.generate(TEX_LEAVES_PLAIN);
++
++	UTEST(sameBox(e, cellOf(p, scaled(-0.5f, -0.5f, -0.5f, 0.5f, 0.5f, 0.5f))),
++			"unscaled allfaces node: %s", describe(e).c_str());
++}
++
++// A fence joins tree trunks (as it joins any full block it lists), whichever
++// way the trunk was turned when placed: the rails reach both trunks.
++void TestMapblockMeshGenerator::testFenceConnectsToTreeTrunk()
++{
++	const v3s16 p(8, 4, 8);
++	MeshGenScene scene;
++	scene.place(p, "test:fence");
++	scene.place(p + v3s16(-1, 0, 0), "test:trunk", 0);
++	scene.place(p + v3s16(1, 0, 0), "test:trunk", 3);
++	Extent e = scene.generate(TEX_FENCE);
++	const aabb3f want = cellOf(p, scaled(-0.5f, -0.5f, -1/8.f, 0.5f, 0.5f, 1/8.f));
++
++	UTEST(sameBox(e, want),
++			"fence between two tree trunks does not reach both of them: %s",
++			describe(e).c_str());
++}
++
++// Rails grow towards the neighbour a fence joins, never away from it.
++void TestMapblockMeshGenerator::testFenceRailsPointAtNeighborsAlongZ()
++{
++	const v3s16 p(8, 4, 8);
++	{
++		MeshGenScene scene;
++		scene.place(p, "test:fence");
++		scene.place(p + v3s16(0, 0, 1), "test:fence_other");
++		Extent e = scene.generate(TEX_FENCE);
++		UTEST(sameBox(e, cellOf(p, scaled(-1/8.f, -0.5f, -1/8.f, 1/8.f, 0.5f, 0.5f))),
++				"fence with its only neighbour on +Z: %s", describe(e).c_str());
++	}
++	{
++		MeshGenScene scene;
++		scene.place(p, "test:fence");
++		scene.place(p + v3s16(0, 0, -1), "test:fence_other");
++		Extent e = scene.generate(TEX_FENCE);
++		UTEST(sameBox(e, cellOf(p, scaled(-1/8.f, -0.5f, -0.5f, 1/8.f, 0.5f, 1/8.f))),
++				"fence with its only neighbour on -Z: %s", describe(e).c_str());
++	}
++}
++
++// Nodes a fence does not list never get rails, on any side.
++void TestMapblockMeshGenerator::testFenceIgnoresNodesItDoesNotConnectTo()
++{
++	const v3s16 p(8, 4, 8);
++	MeshGenScene scene;
++	scene.place(p, "test:fence");
++	for (v3s16 d : {v3s16(1, 0, 0), v3s16(-1, 0, 0), v3s16(0, 0, 1), v3s16(0, 0, -1)})
++		scene.place(p + d, "test:stone");
++	Extent e = scene.generate(TEX_FENCE);
++
++	UTEST(sameBox(e, cellOf(p, scaled(-1/8.f, -0.5f, -1/8.f, 1/8.f, 0.5f, 1/8.f))),
++			"fence surrounded by nodes it does not join: %s", describe(e).c_str());
++}
++
++// A node that declares which of its sides accept connections is only joined
++// on those sides.
++void TestMapblockMeshGenerator::testFenceRespectsConnectSides()
++{
++	const v3s16 p(8, 4, 8);
++	{
++		MeshGenScene scene;
++		scene.place(p, "test:fence");
++		scene.place(p + v3s16(-1, 0, 0), "test:panel_vertical_only", 0);
++		Extent e = scene.generate(TEX_FENCE);
++		UTEST(sameBox(e, cellOf(p, scaled(-1/8.f, -0.5f, -1/8.f, 1/8.f, 0.5f, 1/8.f))),
++				"fence must not join a side that is not declared: %s", describe(e).c_str());
++	}
++	{
++		MeshGenScene scene;
++		scene.place(p, "test:fence");
++		scene.place(p + v3s16(1, 0, 0), "test:panel_left_right", 0);
++		Extent e = scene.generate(TEX_FENCE);
++		UTEST(sameBox(e, cellOf(p, scaled(-1/8.f, -0.5f, -1/8.f, 0.5f, 0.5f, 1/8.f))),
++				"fence must join a declared side: %s", describe(e).c_str());
++	}
++}
++
++// The sides a node declares turn with the node: a block that accepts
++// connections only on its left and right, turned a quarter turn (facedir 1),
++// accepts them on its (world) front and back instead.
++void TestMapblockMeshGenerator::testFenceRespectsConnectSidesOfTurnedNode()
++{
++	const v3s16 p(8, 4, 8);
++	{
++		MeshGenScene scene;
++		scene.place(p, "test:fence");
++		scene.place(p + v3s16(-1, 0, 0), "test:panel_left_right", 1);
++		scene.place(p + v3s16(1, 0, 0), "test:panel_left_right", 1);
++		Extent e = scene.generate(TEX_FENCE);
++		UTEST(sameBox(e, cellOf(p, scaled(-1/8.f, -0.5f, -1/8.f, 1/8.f, 0.5f, 1/8.f))),
++				"fence must not join a turned node on sides it no longer declares: %s",
++				describe(e).c_str());
++	}
++	{
++		MeshGenScene scene;
++		scene.place(p, "test:fence");
++		scene.place(p + v3s16(0, 0, -1), "test:panel_left_right", 1);
++		scene.place(p + v3s16(0, 0, 1), "test:panel_left_right", 1);
++		Extent e = scene.generate(TEX_FENCE);
++		UTEST(sameBox(e, cellOf(p, scaled(-1/8.f, -0.5f, -0.5f, 1/8.f, 0.5f, 0.5f))),
++				"fence must join a turned node on the sides it now declares: %s",
++				describe(e).c_str());
++	}
++}
++
++// A plain plantlike node stands on the floor of its node, the top of its
++// texture at the top.
++void TestMapblockMeshGenerator::testPlantlikeNodeStandsUpright()
++{
++	const v3s16 p(5, 3, 5);
++	MeshGenScene scene;
++	scene.place(p, "test:plant");
++	std::vector<video::S3DVertex> verts;
++	Extent e = scene.generate(TEX_PLANT, &verts);
++	const float mid = p.Y * BS;
++
++	bool upright = !verts.empty();
++	for (const video::S3DVertex &v : verts) {
++		if (v.TCoords.Y < 0.5f && v.Pos.Y <= mid)
++			upright = false; // top of the picture drawn in the lower half
++		if (v.TCoords.Y > 0.5f && v.Pos.Y >= mid)
++			upright = false; // bottom of the picture drawn in the upper half
++	}
++	UTEST(upright && approx(e.min_v.Y, mid - BS / 2) && approx(e.max_v.Y, mid + BS / 2),
++			"plantlike node is not drawn upright on its node: %s", describe(e).c_str());
++}
++
++// A plantlike node that is explicitly mounted on the ceiling hangs down.
++void TestMapblockMeshGenerator::testWallmountedPlantlikeHangsFromCeiling()
++{
++	const v3s16 p(5, 3, 5);
++	MeshGenScene scene;
++	scene.place(p, "test:plant_hanging", 0); // wallmounted 0: ceiling
++	std::vector<video::S3DVertex> verts;
++	Extent e = scene.generate(TEX_PLANT_HANGING, &verts);
++	const float mid = p.Y * BS;
++
++	bool hanging = !verts.empty();
++	for (const video::S3DVertex &v : verts) {
++		if (v.TCoords.Y < 0.5f && v.Pos.Y >= mid)
++			hanging = false;
++		if (v.TCoords.Y > 0.5f && v.Pos.Y <= mid)
++			hanging = false;
++	}
++	UTEST(hanging, "ceiling-mounted plantlike node is not hanging: %s",
++			describe(e).c_str());
++}
++
++// A turned mesh node is drawn turned exactly like the node itself is turned,
++// i.e. it covers the same space as its own (equally turned) node box -- for
++// turns about the vertical axis as well as tilted and upside-down placements.
++void TestMapblockMeshGenerator::testRotatedMeshNodeFollowsFacedir()
++{
++	const v3s16 p(6, 5, 9);
++	for (u8 facedir = 1; facedir < 24; facedir++) {
++		MeshGenScene scene;
++		scene.place(p, "test:mesh_slab", facedir);
++		Extent e = scene.generate(TEX_MESH);
++
++		std::vector<aabb3f> boxes;
++		MapNode(scene.id("test:mesh_slab"), 0, facedir).getNodeBoxes(scene.ndef(), &boxes);
++		UASSERT(boxes.size() == 1);
++		UTEST(sameBox(e, cellOf(p, boxes[0])),
++				"mesh node turned with facedir %d is drawn turned differently from "
++				"the node: %s", facedir, describe(e).c_str());
++	}
++}
++
++// Without any rotation a mesh node is drawn exactly as modelled.
++void TestMapblockMeshGenerator::testUnrotatedMeshNodeKeepsItsShape()
++{
++	const v3s16 p(6, 5, 9);
++	MeshGenScene scene;
++	scene.place(p, "test:mesh_slab", 0);
++	Extent e = scene.generate(TEX_MESH);
++
++	UTEST(sameBox(e, cellOf(p, MESH_BOUNDS)),
++			"unrotated mesh node: %s", describe(e).c_str());
++}
+== /app/task/tests/test.sh ==
+#!/usr/bin/env bash
+# Behavioral verifier. Resets every path test.patch touches to the immutable harbor_base tag, applies
+# the hidden tests, runs the repository's own unit-test binary (the whole suite: the legacy runner cannot
+# filter by name) into a JUnit report, and lets verifier.py score ONLY the configured f2p + p2p tests.
+# Nothing here reads the candidate's source to decide anything.
+set -uo pipefail
+
+# ---- task-specific values, filled by the task builder ----------------------------------------
+# run_tests runs the configured tests with the repository's own runner and writes JUnit XML to
+# $JUNIT_OUT. The test ids (f2p + p2p from /tests/config.json) are in $TEST_IDS_FILE, one per line.
+# Write plain shell commands here; no quoting of the whole block is needed.
+run_tests() {
+  # The image already has every base-commit object file compiled; this only
+  # needs to pick up the new test_content_mapblock.cpp (added by test.patch)
+  # and relink. CMake's Ninja generator reruns cmake's own configure step
+  # automatically when it notices src/unittest/CMakeLists.txt changed.
+  cmake --build /app/build --parallel 2 >&2
+
+  LOG="$(mktemp)"
+  set +e
+  /app/bin/minetest --run-unittests > "$LOG" 2>&1
+  RC=$?
+  set -e
+  echo "---- test binary output (exit $RC) ----" >&2
+  cat "$LOG" >&2
+
+  # Luanti's legacy TestBase/TEST() framework only prints to stdout
+  # ("======== Testing module X" / "[PASS|FAIL] name - Nms"); convert that
+  # log into a JUnit report.
+  python3 - "$LOG" "$JUNIT_OUT" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+MODULE_RE = re.compile(r"^======== Testing module (\S+)")
+TEST_RE = re.compile(r"^\[(PASS|FAIL)\] (\S+) - (\d+)ms$")
+
+log_path, out_path = sys.argv[1], sys.argv[2]
+with open(log_path, "r", errors="replace") as fh:
+    lines = fh.read().splitlines()
+
+cur_module = "Unknown"
+pending = []
+cases = []  # (classname, name, status, message)
+for line in lines:
+    m = MODULE_RE.match(line)
+    if m:
+        cur_module = m.group(1)
+        pending = []
+        continue
+    m = TEST_RE.match(line)
+    if m:
+        status, name, _ms = m.groups()
+        msg = "\n".join(pending).strip()
+        cases.append((cur_module, name, status, msg))
+        pending = []
+        continue
+    pending.append(line)
+
+n_fail = sum(1 for c in cases if c[2] == "FAIL")
+root = ET.Element("testsuite", name="luanti-unittests", tests=str(len(cases)),
+                   failures=str(n_fail), errors="0")
+for classname, name, status, msg in cases:
+    tc = ET.SubElement(root, "testcase", classname=classname, name=name)
+    if status == "FAIL":
+        failure = ET.SubElement(tc, "failure",
+                                 message=(msg.splitlines() or ["assertion failed"])[0][:200])
+        failure.text = msg or "assertion failed"
+ET.ElementTree(root).write(out_path, encoding="unicode", xml_declaration=True)
+print(f"wrote {len(cases)} testcase(s), {n_fail} failing, to {out_path}", file=sys.stderr)
+PY
+}
+# Directories holding the repo's test plumbing (configs, helpers) that must also be restored so a
+# candidate cannot replace the harness. Space-separated, relative to /app; '' if none.
+PROTECTED_DIRS='src/unittest'
+# -----------------------------------------------------------------------------------------------
+
+mkdir -p /logs/verifier
+STDOUT_LOG=/logs/verifier/test-stdout.txt
+STDERR_LOG=/logs/verifier/test-stderr.txt
+export JUNIT_OUT=/logs/verifier/junit.xml
+export TEST_IDS_FILE=/logs/verifier/test_ids.txt
+: > "$STDOUT_LOG"; : > "$STDERR_LOG"
+rm -f "$JUNIT_OUT" /logs/verifier/reward.txt /logs/verifier/reward.json
+
+ensure_reward() { [ -f /logs/verifier/reward.txt ] || echo 0 > /logs/verifier/reward.txt; }
+trap ensure_reward EXIT
+
+cd /app || { echo "no /app" | tee -a "$STDERR_LOG"; exit 1; }
+
+# Capture the agent's submission BEFORE anything below mutates /app -- this is the last
+# moment the tree is base + agent work; the restore loop and test.patch come next.
+#
+# A THROWAWAY INDEX, never /app/.git/index: `git add` against the real one would leave paths
+# staged and change how the `git checkout harbor_base --` and `git clean` below behave.
+#
+# TRACKED EDITS + A SOURCE WHITELIST, not `add -A` with a blacklist. This image builds wx
+# in-tree AFTER the harbor_base commit (environment/Dockerfile), so everything the build
+# emits is untracked and NOT in wx's .gitignore. A bare `add -A` captured 380MB of .o/.d/.so;
+# excluding those by extension still left ~120 configure-generated files (samples/*/Makefile,
+# bk-deps, version-script, lib/wx/config/*, the utils/wxrc/wxrc binary) because most have no
+# extension to blacklist. Inverting it -- stage tracked modifications, then add only untracked
+# files that LOOK like source -- keeps the agent's work and drops generated output by default.
+_SUB=/logs/verifier/submission.patch
+_SUBIDX=/tmp/.submission_index
+_SUBSRC=('*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hh' '*.hpp' '*.hxx' '*.inl' '*.m' '*.mm'
+         '*.py' '*.rb' '*.go' '*.rs' '*.java' '*.js' '*.ts' '*.tsx' '*.cs' '*.kt' '*.swift')
+rm -f "$_SUBIDX"
+GIT_INDEX_FILE="$_SUBIDX" git -C /app read-tree harbor_base 2>>"$STDERR_LOG" || true
+GIT_INDEX_FILE="$_SUBIDX" git -C /app add -u 2>>"$STDERR_LOG" || true
+# Enumerate before adding: `git add` aborts and stages NOTHING if any one pathspec matches
+# no file, which silently drops the agent's new files on most tasks.
+# Generated-output dirs are dropped from the UNTRACKED scan only. A project that keeps real
+# source under lib/ is unaffected: those files are tracked at harbor_base, so `add -u` above
+# already has them. This drops only files CREATED under a build dir during the run -- which,
+# left in, break replay: they are recorded as new-file hunks and a fresh container from the
+# same image already has them, so `git apply` fails with "already exists in working directory".
+mapfile -t _SUBNEW < <(git -C /app ls-files --others --exclude-standard \
+  -- "${_SUBSRC[@]}" ':(exclude)lib/' ':(exclude)build/' ':(exclude).deps/' 2>/dev/null)
+if [ "${#_SUBNEW[@]}" -gt 0 ]; then
+  GIT_INDEX_FILE="$_SUBIDX" git -C /app add -- "${_SUBNEW[@]}" 2>>"$STDERR_LOG" || true
+fi
+GIT_INDEX_FILE="$_SUBIDX" git -C /app diff --binary --cached harbor_base \
+  > "$_SUB" 2>>"$STDERR_LOG" || true
+rm -f "$_SUBIDX"
+
+# WHAT THE WHITELIST DROPPED, listed rather than silently discarded. The split above captures
+# every change to a TRACKED file (any extension, deletions included) but only NEW files that
+# look like source -- so an agent adding config.yml, a .cmake module or an extensionless script
+# loses it, and the patch still looks clean. That is the failure this manifest exists to expose.
+#
+# NEWEST FIRST, which is the useful ordering and not a cosmetic one: build output and image
+# assets are created before the agent phase starts, so anything the agent made sorts to the top.
+# Build artifacts are excluded by the same rules as the capture, to keep the list readable.
+#
+# If something here belongs in the submission, widen _SUBSRC. Do not reach for `add -A`.
+_SUBSKIP=/logs/verifier/submission-skipped.txt
+_SUBCAP=/tmp/.submission_captured
+if [ "${#_SUBNEW[@]}" -gt 0 ]; then printf '%s\n' "${_SUBNEW[@]}" > "$_SUBCAP"; else : > "$_SUBCAP"; fi
+_SUBSKIPN=$(git -C /app ls-files --others --exclude-standard -- . \
+    ':(exclude)lib/' ':(exclude)build/' ':(exclude).deps/' \
+    ':(exclude)*.o' ':(exclude)*.d' ':(exclude)*.a' ':(exclude)*.lo' ':(exclude)*.la' \
+    ':(exclude)*.so' ':(exclude)*.so.*' ':(exclude)*.gch' ':(exclude)*.pyc' 2>/dev/null \
+  | grep -vxF -f "$_SUBCAP" 2>/dev/null | wc -l)
+{ echo "# Untracked files NOT captured into submission.patch, newest first."
+  echo "# Anything the agent created sorts above build output, which predates the agent phase."
+  echo "# total: ${_SUBSKIPN}  (showing at most 40)"
+  git -C /app ls-files --others --exclude-standard -- . \
+      ':(exclude)lib/' ':(exclude)build/' ':(exclude).deps/' \
+      ':(exclude)*.o' ':(exclude)*.d' ':(exclude)*.a' ':(exclude)*.lo' ':(exclude)*.la' \
+      ':(exclude)*.so' ':(exclude)*.so.*' ':(exclude)*.gch' ':(exclude)*.pyc' 2>/dev/null \
+    | grep -vxF -f "$_SUBCAP" 2>/dev/null | head -200 \
+    | while IFS= read -r _f; do
+        printf '%s\t%s\t%s\n' "$(stat -c %Y "/app/$_f" 2>/dev/null || echo 0)" \
+                              "$(stat -c %s "/app/$_f" 2>/dev/null || echo 0)" "$_f"
+      done \
+    | sort -rn | head -40 | awk -F'\t' '{printf "%s\t%s\t%s\n",$1,$2,$3}'
+} > "$_SUBSKIP" 2>/dev/null || true
+rm -f "$_SUBCAP"
+
+# Size guard. The whitelist is a heuristic, so a task laying out source unusually could still
+# produce something enormous. Cap it and leave a diagnosable stub: a truncated capture is
+# recoverable, a full disk is not.
+_SUBSZ=$(wc -c < "$_SUB" 2>/dev/null || echo 0)
+if [ "$_SUBSZ" -gt 5242880 ]; then
+  { echo "SUBMISSION CAPTURE SUPPRESSED: ${_SUBSZ} bytes exceeds the 5MB cap."
+    echo "Directories contributing to the discarded patch:"
+    grep -a "^diff --git" "$_SUB" | sed 's#^diff --git a/##; s# b/.*##; s#/[^/]*$##' \
+      | sort | uniq -c | sort -rn | head -20
+  } > "$_SUB.suppressed" 2>/dev/null
+  : > "$_SUB"
+  echo "== submission.patch SUPPRESSED (${_SUBSZ} bytes > 5MB cap) ==" | tee -a "$STDOUT_LOG"
+else
+  echo "== captured submission.patch (${_SUBSZ} bytes, $(grep -ac '^diff --git' "$_SUB" 2>/dev/null || echo 0) files) ==" \
+    | tee -a "$STDOUT_LOG"
+fi
+
+
+# 1. Restore every path test.patch touches. Both diff headers are read, so new files, binary
+#    baselines (image-comparison PNGs, snapshots), renames and deletions are all covered.
+_patch_paths=$( { sed -n 's#^diff --git a/\(.*\) b/.*#\1#p' /tests/test.patch
+                  sed -n 's#^diff --git a/.* b/\(.*\)#\1#p' /tests/test.patch; } | sort -u )
+for _p in $_patch_paths; do
+  git -C /app checkout harbor_base -- "$_p" 2>/dev/null || rm -rf "/app/$_p" 2>/dev/null || true
+done
+for _d in $PROTECTED_DIRS; do
+  git -C /app checkout harbor_base -- "$_d" 2>/dev/null || true
+  git -C /app clean -fdq -- "$_d" 2>/dev/null || true
+done
+
+# 2. Apply the hidden tests.
+echo "== applying test.patch ==" | tee -a "$STDOUT_LOG"
+git apply --binary /tests/test.patch 2>>"$STDERR_LOG" \
+  || git apply /tests/test.patch 2>>"$STDERR_LOG" \
+  || patch -p1 -i /tests/test.patch 2>>"$STDERR_LOG" \
+  || { echo "ERROR: could not apply test.patch" | tee -a "$STDERR_LOG"; exit 1; }
+
+# 3. Run the unit tests (verifier.py scores only the configured f2p + p2p ids).
+python3 - <<'PY' > "$TEST_IDS_FILE"
+import json
+c = json.load(open("/tests/config.json"))
+print("\n".join(c["f2p"] + c["p2p"]))
+PY
+echo "== running f2p + p2p tests ==" | tee -a "$STDOUT_LOG"
+( cd /app && run_tests ) >>"$STDOUT_LOG" 2>>"$STDERR_LOG" \
+  || echo "(tests exited non-zero; parsing the report)" | tee -a "$STDOUT_LOG"
+
+# 4. Reward from the report.
+echo "== computing reward ==" | tee -a "$STDOUT_LOG"
+# Rubric judge — SUB-AGENT backend: no API key, no network. On the first pass there is no
+# verdict yet, so judge.py writes a judge request under /logs/verifier/judge/ and prints
+# nothing; scoring falls back to tests alone. Once a judge sub-agent has written
+# verdict.json there, `mm_run.sh <task> rescore` folds the verdict into the reward.
+# The `|| echo ""` is load-bearing: the judge must never be able to fail the run.
+RUBRIC=""
+if [ -f /tests/rubrics.json ]; then
+  RUBRIC=$(python3 /tests/judge.py --rubrics /tests/rubrics.json --repo /app \
+             2>/logs/verifier/judge.log || echo "")
+  echo "Rubric verdict: ${RUBRIC:-pending (judge request written; rescore after grading)}"
+fi
+
+python3 /tests/verifier.py "${REPORTS[@]}" --rubric "${RUBRIC:-}"
+
+echo "reward=$(cat /logs/verifier/reward.txt 2>/dev/null)" | tee -a "$STDOUT_LOG"
+== /app/task/tests/verifier.py ==
+#!/usr/bin/env python3
+"""Turn the JUnit report into the task reward.
+
+The reward is binary: 1.0 only when every configured f2p and p2p test is found exactly once in the
+report and passed; otherwise 0.0. f2p_passed / f2p_total and p2p_passed / p2p_total record how close
+a run came. The verifier reads test outcomes only, never the candidate's source.
+"""
+import html
+import json
+import os
+import sys
+import xml.etree.ElementTree as ET
+
+CONF = json.load(open("/tests/config.json"))
+F2P, P2P = CONF["f2p"], CONF["p2p"]
+REPORT = os.environ.get("JUNIT_OUT", "/logs/verifier/junit.xml")
+OUT_DIR = "/logs/verifier"
+
+import atexit, json as _cj, os as _co, sys as _cs
+
+_CANON_JSON = "/logs/verifier/reward.json"
+_CANON_TXT = "/logs/verifier/reward.txt"
+_canon = {}
+
+
+def canon_reward(f2p_passed, f2p_total, p2p_passed, p2p_total, rubric):
+    """THE reward policy for the whole corpus. BINARY -- there is no partial credit.
+
+    tests_passed is 1.0 only when every f2p test passes AND every p2p test still passes. A
+    strict subset of f2p passing is not partial progress worth scoring: the task is unsolved,
+    so it is 0.0.
+
+    reward is the same value, zeroed when the rubric judge failed a criterion. A "pass" or a
+    "not graded" verdict never lowers the score -- the judge must never be able to penalise a
+    run it could not grade.
+    """
+    f, t = int(f2p_passed), int(f2p_total)
+    p, q = int(p2p_passed), int(p2p_total)
+    solved = bool(t) and f == t and p == q
+    tests_passed = 1.0 if solved else 0.0
+    _canon.clear()
+    _canon.update({
+        "reward": 0.0 if rubric == "fail" else tests_passed,
+        "tests_passed": tests_passed,
+        "f2p_passed": f, "f2p_total": t,
+        "p2p_passed": p, "p2p_total": q,
+        "rubric_passed": {"pass": 1, "fail": 0}.get(rubric, -1),
+    })
+    return _canon["reward"]
+
+
+@atexit.register
+def _canon_flush():
+    if not _canon:
+        return
+    try:
+        _co.makedirs(_co.path.dirname(_CANON_JSON), exist_ok=True)
+        with open(_CANON_JSON, "w") as _h:
+            _cj.dump(_canon, _h, indent=2)
+        # reward.txt too: harbor prefers reward.json, but the sandbox teardown script and the
+        # lighthouse UI read reward.txt. Writing both from one dict means they cannot disagree.
+        with open(_CANON_TXT, "w") as _h:
+            _h.write(str(_canon["reward"]))
+    except Exception as _exc:
+        print("WARNING: could not write %s: %s" % (_CANON_JSON, _exc), file=_cs.stderr)
+
+
+def rubric_verdict(argv):
+    """The verdict test.sh hands in as `--rubric pass|fail|""`.
+
+    Anything that is not an explicit pass/fail -- including the empty string test.sh passes
+    when judge.py wrote no verdict -- means "not graded", which must never penalise the run.
+    """
+    if "--rubric" not in argv:
+        return None
+    i = argv.index("--rubric")
+    value = argv[i + 1].strip().lower() if i + 1 < len(argv) else ""
+    return value if value in ("pass", "fail") else None
+
+
+def load_junit(path):
+    """Every reported test, keyed by "classname name" and by name; a key seen twice with different
+    outcomes counts as failed."""
+    results = {}
+    if not os.path.exists(path):
+        return results
+    try:
+        root = ET.parse(path).getroot()
+    except ET.ParseError:
+        return results
+    for tc in root.iter("testcase"):
+        tags = {c.tag for c in tc}
+        outcome = "skip" if "skipped" in tags else ("fail" if tags & {"failure", "error"} else "pass")
+        full = f"{tc.get('classname', '')} {tc.get('name', '')}".strip()
+        for key in {full, tc.get("name", "")}:
+            if key in results and results[key] != outcome:
+                results[key] = "fail"
+            else:
+                results[key] = outcome
+    return results
+
+
+def junit_key(test_id):
+    """A pytest node id (tests/test_x.py::TestA::test_b[png]) as the JUnit report names it
+    ("tests.test_x.TestA test_b[png]"); other ids unchanged."""
+    if "::" not in test_id:
+        return test_id
+    parts = test_id.split("::")
+    mod = parts[0][:-3] if parts[0].endswith(".py") else parts[0]
+    return f"{'.'.join([mod.replace('/', '.')] + parts[1:-1])} {parts[-1]}"
+
+
+def resolve(test_id, results):
+    """The outcome of one configured test: an exact key match first (the id as written, or a
+    pytest node id in JUnit form), else the single reported test whose key ends with it. Missing
+    or ambiguous counts as not passed."""
+    keys = [test_id, junit_key(test_id)]
+    if " :: " in test_id:  # "file :: describe › test" (playwright list output)
+        keys.append(test_id.replace(" :: ", " ", 1))
+    if " > " in test_id:  # "describe > test": jest-junit joins with a space, playwright with " › "
+        head, rest = test_id.split(" > ", 1)
+        keys += [test_id.replace(" > ", " "), test_id.replace(" > ", " › "), head + " " + rest.replace(" > ", " › ")]
+    keys += [k.replace('"', "") for k in keys]  # jest-junit drops quotation marks from names
+    keys += [html.unescape(k) for k in keys]  # an id copied from a JUnit file may keep &apos; &quot;
+    keys = list(dict.fromkeys(keys))
+    for key in keys:
+        if key in results:
+            return results[key]
+    for key in keys:
+        hits = {k: v for k, v in results.items() if k.endswith(key)}
+        if hits and len(set(hits.values())) == 1:
+            return next(iter(hits.values()))
+        if hits:
+            return "ambiguous"
+    # "file > test" with a describe level left out: a test in that file whose name ends the same
+    parts = test_id.split(" > ")
+    if len(parts) >= 2 and ("." in parts[0] or "/" in parts[0]):
+        hits = {k: v for k, v in results.items() if k.startswith(parts[0] + " ") and k.endswith(parts[-1])}
+        if hits and len(set(hits.values())) == 1:
+            return next(iter(hits.values()))
+        if hits:
+            return "ambiguous"
+    return "missing"
+
+
+def main():
+    results = load_junit(REPORT)
+    detail = {}
+    f2p_ok = 0
+    for t in F2P:
+        r = resolve(t, results)
+        detail[f"f2p::{t}"] = r
+        f2p_ok += r == "pass"
+    p2p_ok = 0
+    for t in P2P:
+        r = resolve(t, results)
+        detail[f"p2p::{t}"] = r
+        p2p_ok += r == "pass"
+    solved = bool(F2P) and f2p_ok == len(F2P) and p2p_ok == len(P2P)
+    canon_reward(f2p_ok, len(F2P), p2p_ok, len(P2P), rubric_verdict(sys.argv[1:]))
+    reward = dict(_canon)
+    os.makedirs(OUT_DIR, exist_ok=True)
+    json.dump(reward, open(f"{OUT_DIR}/reward.json", "w"), indent=2)
+    json.dump(detail, open(f"{OUT_DIR}/reward_detail.json", "w"), indent=2)
+    open(f"{OUT_DIR}/reward.txt", "w").write(str(reward["reward"]))
+    print(json.dumps(reward))
+
+
+if __name__ == "__main__":
+    main()

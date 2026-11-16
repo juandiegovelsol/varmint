@@ -1,0 +1,71 @@
+diff --git a/src/client/content_mapblock.cpp b/src/client/content_mapblock.cpp
+index e69f904..8675275 100644
+--- a/src/client/content_mapblock.cpp
++++ b/src/client/content_mapblock.cpp
+@@ -1392,9 +1392,9 @@ namespace {
+ 	static const v3s16 nodebox_connection_dirs[6] = {
+ 		v3s16( 0,  1,  0), // top
+ 		v3s16( 0, -1,  0), // bottom
+-		v3s16( 0,  0,  1), // front
++		v3s16( 0,  0, -1), // front
+ 		v3s16(-1,  0,  0), // left
+-		v3s16( 0,  0, -1), // back
++		v3s16( 0,  0,  1), // back
+ 		v3s16( 1,  0,  0), // right
+ 	};
+ }
+diff --git a/src/client/mesh.cpp b/src/client/mesh.cpp
+index 6eb333d..60e1584 100644
+--- a/src/client/mesh.cpp
++++ b/src/client/mesh.cpp
+@@ -268,7 +268,7 @@ void setMeshColorByNormal(scene::IMesh *mesh, const v3f &normal,
+ template <float v3f::*U, float v3f::*V>
+ static void rotateMesh(scene::IMesh *mesh, float degrees)
+ {
+-	degrees = core::radToDeg(degrees);
++	degrees = core::degToRad(degrees);
+ 	float c = std::cos(degrees);
+ 	float s = std::sin(degrees);
+ 	auto rotator = [c, s] (video::S3DVertex *vertex) {
+diff --git a/src/mapnode.cpp b/src/mapnode.cpp
+index 82baaab..42f020e 100644
+--- a/src/mapnode.cpp
++++ b/src/mapnode.cpp
+@@ -162,6 +162,7 @@ u8 MapNode::getWallMounted(const NodeDefManager *nodemgr) const
+ 			f.param_type_2 == CPT2_COLORED_WALLMOUNTED) {
+ 		return getParam2() & 0x07;
+ 	} else if (f.drawtype == NDT_SIGNLIKE || f.drawtype == NDT_TORCHLIKE ||
++			f.drawtype == NDT_PLANTLIKE ||
+ 			f.drawtype == NDT_PLANTLIKE_ROOTED) {
+ 		return 1;
+ 	}
+diff --git a/src/nodedef.cpp b/src/nodedef.cpp
+index ff75c73..48015fe 100644
+--- a/src/nodedef.cpp
++++ b/src/nodedef.cpp
+@@ -1694,6 +1694,10 @@ bool NodeDefManager::nodeboxConnects(MapNode from, MapNode to,
+ 		// ignores actually looking if back connection exists
+ 		return CONTAINS(f2.connects_to_ids, from.param0);
+ 
++	// the target is just a regular node, so connect no matter back connection
++	if (f2.connect_sides == 0)
++		return true;
++
+ 	// a rotated target: bring the face into the target's own frame first
+ 	if ((f2.param_type_2 == CPT2_FACEDIR ||
+ 			f2.param_type_2 == CPT2_COLORED_FACEDIR)
+@@ -1714,12 +1718,8 @@ bool NodeDefManager::nodeboxConnects(MapNode from, MapNode to,
+ 			& rot[(connect_face * 4) + (to.param2 & 0x1F)]);
+ 	}
+ 
+-	// does to node declare usable faces?
+-	if (f2.connect_sides > 0)
+-		return (f2.connect_sides & connect_face);
+-
+-	// the target is just a regular node, so connect no matter back connection
+-	return true;
++	// the target declares usable faces
++	return (f2.connect_sides & connect_face);
+ }
+ 
+ ////

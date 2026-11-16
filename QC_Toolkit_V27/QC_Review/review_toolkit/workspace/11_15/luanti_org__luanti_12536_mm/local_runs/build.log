@@ -1,0 +1,75 @@
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 3.96kB 0.0s done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/ubuntu:20.04
+#2 DONE 1.1s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B done
+#3 DONE 0.0s
+
+#4 [internal] load build context
+#4 ...
+
+#5 [ 1/14] FROM docker.io/library/ubuntu:20.04@sha256:8feb4d8ca5354def3d8fce243717141ce31e2c428701f6682bd2fafe15388214
+#5 resolve docker.io/library/ubuntu:20.04@sha256:8feb4d8ca5354def3d8fce243717141ce31e2c428701f6682bd2fafe15388214 0.1s done
+#5 DONE 0.1s
+
+#4 [internal] load build context
+#4 transferring context: 6.86MB 0.8s done
+#4 DONE 0.8s
+
+#6 [11/14] RUN cmake -B /app/build -GNinja         -DCMAKE_BUILD_TYPE=Release         -DRUN_IN_PLACE=TRUE         -DBUILD_CLIENT=TRUE         -DBUILD_SERVER=FALSE         -DBUILD_UNITTESTS=TRUE         -DBUILD_BENCHMARKS=FALSE         -DENABLE_CURL=FALSE         -DENABLE_GETTEXT=FALSE         -DENABLE_SOUND=FALSE         -DENABLE_CURSES=FALSE         -DENABLE_LEVELDB=FALSE         -DENABLE_REDIS=FALSE         -DENABLE_POSTGRESQL=FALSE         -DENABLE_SPATIAL=FALSE         -DENABLE_PROMETHEUS=FALSE     && cmake --build /app/build --parallel "$(nproc)"
+#6 CACHED
+
+#7 [ 3/14] RUN printf 'Acquire::https::Verify-Peer "false";\nAcquire::https::Verify-Host "false";\n'         > /etc/apt/apt.conf.d/99insecure-bootstrap     && apt-get update     && apt-get install -y --no-install-recommends ca-certificates     && rm -f /etc/apt/apt.conf.d/99insecure-bootstrap     && update-ca-certificates     && apt-get update
+#7 CACHED
+
+#8 [ 4/14] RUN apt-get install -y --no-install-recommends         ca-certificates wget git cmake ninja-build pkg-config build-essential         libpng-dev libjpeg-dev libxxf86vm-dev libgl1-mesa-dev libx11-dev libxi-dev         libsqlite3-dev libgmp-dev zlib1g-dev libzstd-dev libfreetype6-dev         python3         xvfb libgl1-mesa-dri mesa-utils mesa-vulkan-drivers ffmpeg fonts-dejavu-core     && rm -rf /var/lib/apt/lists/*
+#8 CACHED
+
+#9 [10/14] RUN keep=$(find /app \( -name .ninja_log -o -name CMakeCache.txt -o -name CACHEDIR.TAG -o -name meson-private \) -not -path '*/.git/*' -printf '%h\n' 2>/dev/null | sort -u | grep -vx /app || true); prune=''; for d in $keep; do prune="$prune -path $d -prune -o"; done; eval "find /app -mindepth 1 $prune -exec touch -h -t 202301010000 {} +"
+#9 CACHED
+
+#10 [ 5/14] WORKDIR /app
+#10 CACHED
+
+#11 [ 7/14] RUN git clone --quiet https://github.com/minetest/irrlicht.git /app/lib/irrlichtmt &&     git -C /app/lib/irrlichtmt checkout --detach abebac8bd4c60c8a25a8e4fa76c1e260f741daeb &&     rm -rf /app/lib/irrlichtmt/.git
+#11 CACHED
+
+#12 [12/14] RUN rm -rf /app/.git  && git -C /app init -q  && git -C /app -c user.email=h@l -c user.name=h add -A  && git -C /app -c user.email=h@l -c user.name=h commit -q -m base  && git -C /app tag harbor_base
+#12 CACHED
+
+#13 [ 6/14] RUN git clone --quiet https://github.com/luanti-org/luanti.git /app &&     git -C /app -c advice.detachedHead=false checkout d400a98ef0408ccbd2cc4c72f8b48c3813dfce41
+#13 CACHED
+
+#14 [ 8/14] COPY bugs/ /tmp/bugs/
+#14 CACHED
+
+#15 [ 9/14] RUN set -e; for p in /tmp/bugs/*.patch; do git -C /app apply "$p" || patch -p1 -d /app < "$p"; done;     rm -rf /tmp/bugs
+#15 CACHED
+
+#16 [ 2/14] RUN sed -i 's#http://#https://#g' /etc/apt/sources.list.d/*.sources /etc/apt/sources.list 2>/dev/null; true
+#16 CACHED
+
+#17 [13/14] RUN mkdir -p /logs /app/.harbor_assets
+#17 CACHED
+
+#18 [14/14] COPY assets/recording.mp4 /app/.harbor_assets/
+#18 DONE 0.1s
+
+#19 exporting to image
+#19 exporting layers
+#19 exporting layers 0.4s done
+#19 exporting manifest sha256:16658ac84372f1aa06b27cd9438214913df79b4d3f825cb93405c67e23ac3d85 0.0s done
+#19 exporting config sha256:ef467f8e2afbef1b47e92bbbf6ff0c5b80c577befe2b2b8fd2e1fe12525f9eca 0.0s done
+#19 exporting attestation manifest sha256:fac88826dce593f4666606370e50ec9fda4571ec3c5cf052b4b2dc5330637ad3 0.0s done
+#19 exporting manifest list sha256:90e58f28d105569bed5682c7c94705c005ee31d1b3ea4fae546c4739121b9393
+#19 exporting manifest list sha256:90e58f28d105569bed5682c7c94705c005ee31d1b3ea4fae546c4739121b9393 0.0s done
+#19 naming to docker.io/library/qc_luanti_12536:latest done
+#19 unpacking to docker.io/library/qc_luanti_12536:latest 0.1s done
+#19 DONE 0.8s
+BUILD_RC=0

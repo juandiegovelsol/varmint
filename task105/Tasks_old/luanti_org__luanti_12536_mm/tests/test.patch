@@ -1,0 +1,192 @@
+diff --git a/src/unittest/CMakeLists.txt b/src/unittest/CMakeLists.txt
+index 84f769e87..c7a66409e 100644
+--- a/src/unittest/CMakeLists.txt
++++ b/src/unittest/CMakeLists.txt
+@@ -40,6 +40,7 @@ set (UNITTEST_SRCS
+ 
+ set (UNITTEST_CLIENT_SRCS
+ 	${CMAKE_CURRENT_SOURCE_DIR}/test_clientactiveobjectmgr.cpp
++	${CMAKE_CURRENT_SOURCE_DIR}/test_content_mapblock.cpp
+ 	${CMAKE_CURRENT_SOURCE_DIR}/test_eventmanager.cpp
+ 	${CMAKE_CURRENT_SOURCE_DIR}/test_gameui.cpp
+ 	${CMAKE_CURRENT_SOURCE_DIR}/test_keycode.cpp
+diff --git a/src/unittest/test_content_mapblock.cpp b/src/unittest/test_content_mapblock.cpp
+new file mode 100644
+index 000000000..455cc3f82
+--- /dev/null
++++ b/src/unittest/test_content_mapblock.cpp
+@@ -0,0 +1,174 @@
++/*
++Minetest
++Copyright (C) 2022 Luanti harvest
++
++This program is free software; you can redistribute it and/or modify
++it under the terms of the GNU Lesser General Public License as published by
++the Free Software Foundation; either version 2.1 of the License, or
++(at your option) any later version.
++
++This program is distributed in the hope that it will be useful,
++but WITHOUT ANY WARRANTY; without even the implied warranty of
++MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++GNU Lesser General Public License for more details.
++
++You should have received a copy of the GNU Lesser General Public License along
++with this program; if not, write to the Free Software Foundation, Inc.,
++51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++*/
++
++// Headless tests for MapblockMeshGenerator::drawAutoLightedCuboid(): a
++// cuboid-style drawtype node (e.g. the "allfaces" drawtype used by leaves)
++// with a visual_scale other than 1.0 must still render centered on its own
++// node position, however far that node is from the world origin.
++// https://github.com/luanti-org/luanti/issues/12536
++
++#include "test.h"
++
++#include <cmath>
++
++#include "client/content_mapblock.h"
++#include "client/mapblock_mesh.h"
++#include "client/meshgen/collector.h"
++#include "client/tile.h"
++#include "constants.h"
++#include "nodedef.h"
++#include "util/numeric.h"
++
++class TestMapblockMeshGenerator : public TestBase {
++public:
++	TestMapblockMeshGenerator() { TestManager::registerTestModule(this); }
++	const char *getName() { return "TestMapblockMeshGenerator"; }
++
++	void runTests(IGameDef *gamedef);
++
++	void testScaledAllfacesNodeOffset();
++	void testScaledAllfacesNodeAtOrigin();
++	void testUnscaledAllfacesNodeUnaffected();
++
++private:
++	// Builds a single "allfaces" cuboid for a node at `node_pos` with the
++	// given visual_scale and returns the centroid of the generated mesh, in
++	// world (float) coordinates.
++	v3f generateAllfacesCentroid(v3s16 node_pos, float visual_scale);
++};
++
++static TestMapblockMeshGenerator g_test_instance;
++
++void TestMapblockMeshGenerator::runTests(IGameDef *gamedef)
++{
++	TEST(testScaledAllfacesNodeOffset);
++	TEST(testScaledAllfacesNodeAtOrigin);
++	TEST(testUnscaledAllfacesNodeUnaffected);
++}
++
++v3f TestMapblockMeshGenerator::generateAllfacesCentroid(v3s16 node_pos, float visual_scale)
++{
++	ContentFeatures f;
++	f.drawtype = NDT_ALLFACES;
++	f.visual_scale = visual_scale;
++	f.alpha = ALPHAMODE_OPAQUE;
++	f.light_source = 0;
++
++	MeshMakeData data(nullptr, false);
++	data.m_smooth_lighting = false;
++
++	MeshCollector collector;
++
++	// MapblockMeshGenerator's only constructor looks up a NodeDefManager via
++	// MeshMakeData::m_client->ndef(), and at this point in the codebase's
++	// history a Client cannot be built headlessly either (its ClientMap
++	// member needs a live Irrlicht scene manager). None of that is read by
++	// the pure-geometry code path under test: drawAutoLightedCuboid() and
++	// drawCuboid() only touch the fields set below (data, f, origin, light,
++	// collector, tile). So this allocates the object's storage directly and
++	// sets exactly those fields, instead of constructing (and discarding) an
++	// entire graphics device just to satisfy an unrelated dependency of a
++	// constructor this test never needs to run.
++	alignas(MapblockMeshGenerator) unsigned char gen_storage[sizeof(MapblockMeshGenerator)];
++	MapblockMeshGenerator &gen = *reinterpret_cast<MapblockMeshGenerator *>(gen_storage);
++	gen.data = &data;
++	gen.collector = &collector;
++	gen.f = &f;
++	gen.light = LightPair(static_cast<u8>(255), static_cast<u8>(255));
++	gen.blockpos_nodes = v3s16(0, 0, 0);
++	gen.p = node_pos;
++	gen.origin = intToFloat(node_pos, BS);
++
++	gen.tile = TileSpec();
++	// A dummy, non-zero texture id: MeshCollector::append() silently drops
++	// any layer whose texture_id is 0, so this is needed for the generated
++	// quads to actually land in the mesh buffers (no real texture or
++	// rendering device is involved anywhere in this path).
++	gen.tile.layers[0].texture_id = 1;
++
++	static const aabb3f box(-BS / 2, -BS / 2, -BS / 2, BS / 2, BS / 2, BS / 2);
++	gen.drawAutoLightedCuboid(box);
++
++	UASSERT(!collector.prebuffers[0].empty());
++	const PreMeshBuffer &buf = collector.prebuffers[0][0];
++	UASSERT(!buf.vertices.empty());
++
++	v3f min_v = buf.vertices[0].Pos;
++	v3f max_v = buf.vertices[0].Pos;
++	for (const auto &vertex : buf.vertices) {
++		min_v.X = std::min(min_v.X, vertex.Pos.X);
++		min_v.Y = std::min(min_v.Y, vertex.Pos.Y);
++		min_v.Z = std::min(min_v.Z, vertex.Pos.Z);
++		max_v.X = std::max(max_v.X, vertex.Pos.X);
++		max_v.Y = std::max(max_v.Y, vertex.Pos.Y);
++		max_v.Z = std::max(max_v.Z, vertex.Pos.Z);
++	}
++	return (min_v + max_v) * 0.5f;
++}
++
++// A node far from the world origin, with visual_scale = 2 (as in the report:
++// "leaves" rendered with visual_scale > 1). The rendered cuboid must be
++// centered on the node's own position, not drift away from it.
++void TestMapblockMeshGenerator::testScaledAllfacesNodeOffset()
++{
++	v3s16 node_pos(0, 0, 60);
++	v3f centroid = generateAllfacesCentroid(node_pos, 2.0f);
++	v3f expected = intToFloat(node_pos, BS);
++
++	UTEST(std::fabs(centroid.X - expected.X) < 0.01f &&
++			std::fabs(centroid.Y - expected.Y) < 0.01f &&
++			std::fabs(centroid.Z - expected.Z) < 0.01f,
++			"scaled allfaces node centroid (%f, %f, %f) does not match its own "
++			"position (%f, %f, %f): it drifted off its grid cell",
++			centroid.X, centroid.Y, centroid.Z, expected.X, expected.Y, expected.Z);
++}
++
++// At the world origin itself, scaling around 0 happens to coincide with
++// scaling around the node position, so this case can't tell the base and the
++// fix apart -- it only shows the bug needs distance from the origin.
++void TestMapblockMeshGenerator::testScaledAllfacesNodeAtOrigin()
++{
++	v3s16 node_pos(0, 0, 0);
++	v3f centroid = generateAllfacesCentroid(node_pos, 2.0f);
++	v3f expected = intToFloat(node_pos, BS);
++
++	UTEST(std::fabs(centroid.X - expected.X) < 0.01f &&
++			std::fabs(centroid.Y - expected.Y) < 0.01f &&
++			std::fabs(centroid.Z - expected.Z) < 0.01f,
++			"scaled allfaces node at the origin centroid (%f, %f, %f) does not "
++			"match its own position (%f, %f, %f)",
++			centroid.X, centroid.Y, centroid.Z, expected.X, expected.Y, expected.Z);
++}
++
++// With visual_scale == 1 the scaling branch never runs, so the order of the
++// translate/scale operations cannot matter: this must pass before and after
++// the fix.
++void TestMapblockMeshGenerator::testUnscaledAllfacesNodeUnaffected()
++{
++	v3s16 node_pos(0, 0, 60);
++	v3f centroid = generateAllfacesCentroid(node_pos, 1.0f);
++	v3f expected = intToFloat(node_pos, BS);
++
++	UTEST(std::fabs(centroid.X - expected.X) < 0.01f &&
++			std::fabs(centroid.Y - expected.Y) < 0.01f &&
++			std::fabs(centroid.Z - expected.Z) < 0.01f,
++			"unscaled allfaces node centroid (%f, %f, %f) does not match its own "
++			"position (%f, %f, %f)",
++			centroid.X, centroid.Y, centroid.Z, expected.X, expected.Y, expected.Z);
++}

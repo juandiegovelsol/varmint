@@ -1,0 +1,42 @@
+diff --git a/src/Player.cpp b/src/Player.cpp
+index 216f2b7..020c67f 100644
+--- a/src/Player.cpp
++++ b/src/Player.cpp
+@@ -2,6 +2,8 @@
+ // Licensed under the terms of the GPL v3. See licenses/GPL-3.txt
+ 
+ #include "Player.h"
++#include "collider/Geom.h"
++#include "collider/CollisionContact.h"
+ 
+ #include "Frame.h"
+ #include "Game.h"
+@@ -352,9 +354,26 @@ void Player::DoFixspeedTakeoff(SpaceStation *from)
+ 		SetAngVelocity(from->GetAngVelocity());
+ 
+ 		// some actions to avoid collision with the pad at start with a margin
+-		SetPosition(GetPosition() + GetOrient().VectorY() * 0.01);
++		// The ship was placed using its landing tag, but its collision mesh
++		// (and the pad's collision mesh) may extend past the tag, so lift the
++		// ship until the two collision meshes are clear of each other.
++		const vector3d up = GetOrient().VectorY();
++		const double LIFT_MARGIN = 0.5; // m
++		SetPosition(GetPosition() + up * LIFT_MARGIN);
++		if (GetGeom() && from->GetGeom()) {
++			const double step = 0.25; // m
++			const double maxLift = std::max(10.0, GetAabb().max.y - GetAabb().min.y);
++			double lifted = 0.0;
++			while (lifted < maxLift && !GetGeom()->Collide(from->GetGeom()).empty()) {
++				SetPosition(GetPosition() + up * step);
++				lifted += step;
++			}
++			if (lifted > 0.0)
++				SetPosition(GetPosition() + up * LIFT_MARGIN);
++		}
+ 		auto tangent = from->GetAngVelocity().Cross(pPos);
+-		auto radial = GetOrient().VectorY() * 0.05;
++		// move away from the pad fast enough to outrun the centrifugal drift
++		auto radial = up * wantSpeed;
+ 		SetVelocity(tangent + radial);
+ 	}
+ }

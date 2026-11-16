@@ -34,7 +34,8 @@ def inline(text):
     """Escape, then render `code` and **bold**."""
     t = html.escape(text)
     t = re.sub(r"`([^`]+)`", r"<code>\1</code>", t)
-    return re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", t)
+    t = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", t)
+    return t.replace("\n", "<br>")
 
 
 def esc(t):

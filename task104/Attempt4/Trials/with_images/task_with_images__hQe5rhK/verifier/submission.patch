@@ -1,0 +1,37 @@
+diff --git a/src/Player.cpp b/src/Player.cpp
+index 216f2b7..90a7c58 100644
+--- a/src/Player.cpp
++++ b/src/Player.cpp
+@@ -344,17 +344,23 @@ void Player::DoFixspeedTakeoff(SpaceStation *from)
+ 	double wantSpeed = 2; // m/s
+ 	con->ChangeCruiseSpeed(wantSpeed - curSpeed);
+ 
+-	// special preparations for launch in a rotating orbital
+-	if (from && !from->IsGroundStation()) {
+-		SetFollowTarget(from);
+-		con->SetFollowMode(PlayerShipController::FOLLOW_ORI);
+-		auto pPos = GetPosition();
+-		SetAngVelocity(from->GetAngVelocity());
+-
++	if (from) {
+ 		// some actions to avoid collision with the pad at start with a margin
++		// (needed for both ground and orbital stations: the bay is released
++		// immediately, so touching the pad would count as a collision)
++		auto pPos = GetPosition();
+ 		SetPosition(GetPosition() + GetOrient().VectorY() * 0.01);
+-		auto tangent = from->GetAngVelocity().Cross(pPos);
+ 		auto radial = GetOrient().VectorY() * 0.05;
+-		SetVelocity(tangent + radial);
++
++		if (!from->IsGroundStation()) {
++			// special preparations for launch in a rotating orbital
++			SetFollowTarget(from);
++			con->SetFollowMode(PlayerShipController::FOLLOW_ORI);
++			SetAngVelocity(from->GetAngVelocity());
++			auto tangent = from->GetAngVelocity().Cross(pPos);
++			SetVelocity(tangent + radial);
++		} else {
++			SetVelocity(radial);
++		}
+ 	}
+ }

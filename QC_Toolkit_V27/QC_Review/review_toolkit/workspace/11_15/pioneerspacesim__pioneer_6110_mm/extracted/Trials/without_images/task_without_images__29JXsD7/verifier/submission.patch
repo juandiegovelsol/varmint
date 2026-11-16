@@ -1,0 +1,97 @@
+diff --git a/src/SpaceStation.cpp b/src/SpaceStation.cpp
+index 636ba1f..6e2ac43 100644
+--- a/src/SpaceStation.cpp
++++ b/src/SpaceStation.cpp
+@@ -32,6 +32,8 @@
+ #include "scenegraph/ModelSkin.h"
+ #include "utils.h"
+ 
++#include <algorithm>
++
+ SpaceStation::SpaceStation(const SystemBody *sbody) :
+ 	ModelBody(),
+ 	m_type(nullptr)
+@@ -250,6 +252,32 @@ void SpaceStation::NotifyRemoved(const Body *const removedBody)
+ 			m_shipDocking[i].ship = 0;
+ 		}
+ 	}
++	m_departingShips.erase(std::remove_if(m_departingShips.begin(), m_departingShips.end(),
++		[removedBody](const departingShip_t &d) { return d.ship == removedBody; }), m_departingShips.end());
++}
++
++bool SpaceStation::IsDepartingShip(const Ship *s) const
++{
++	for (const auto &d : m_departingShips)
++		if (d.ship == s) return true;
++	return false;
++}
++
++void SpaceStation::UpdateDepartingShips()
++{
++	m_departingShips.erase(std::remove_if(m_departingShips.begin(), m_departingShips.end(),
++		[this](const departingShip_t &d) {
++			// docking again, landed, jumped away etc.
++			if (d.ship->GetFlightState() != Ship::FLYING) return true;
++			if (d.ship->GetFrame() != GetFrame()) return true;
++			// the ship is considered clear of its pad once it is further from
++			// the pad than the ship's own size plus the pad size
++			const SpaceStationType::SPort *port = m_type->FindPortByBay(d.bay);
++			const double padSize = port ? double(port->maxShipSize) : 0.0;
++			const double clearDist = d.ship->GetPhysRadius() + padSize;
++			const vector3d padPos = GetBayTransform(d.bay).GetTranslate();
++			return (d.ship->GetPosition() - padPos).LengthSqr() > clearDist * clearDist;
++		}), m_departingShips.end());
+ }
+ 
+ int SpaceStation::GetMyDockingPort(const Ship *s) const
+@@ -426,6 +454,11 @@ bool SpaceStation::OnCollision(Body *b, Uint32 flags, double relVel)
+ 	}
+ 
+ 	bool bayUnavailable = bay == -1 || IsPortLocked(bay) || m_shipDocking[bay].stage == DockStage::NONE;
++	if (bayUnavailable && (flags & SceneGraph::CollisionGeometry::DOCKING) && IsDepartingShip(s)) {
++		// the ship is taking off from the pad it was docked at: the pad
++		// supports it, but this contact must not cause any damage
++		return true;
++	}
+ 	if (bayUnavailable) {
+ 		return DoShipDamage(s, flags, relVel);
+ 	}
+@@ -536,6 +569,8 @@ void SpaceStation::SwitchToStage(Uint32 bay, DockStage stage)
+ 
+ 	case DockStage::LEAVE:
+ 		LuaEvent::Queue("onShipUndocked", dt.ship, this);
++		if (!IsDepartingShip(dt.ship))
++			m_departingShips.push_back({ dt.ship, bay });
+ 		dt.ship = nullptr;
+ 		dt.stagePos = 0;
+ 		dt.maxOffset = 0;
+@@ -557,6 +592,8 @@ void SpaceStation::SwitchToStage(Uint32 bay, DockStage stage)
+ 
+ void SpaceStation::DockingUpdate(const double timeStep)
+ {
++	UpdateDepartingShips();
++
+ 	for (Uint32 i = 0; i < m_shipDocking.size(); i++) {
+ 		shipDocking_t &dt = m_shipDocking[i];
+ 		if (!dt.ship) continue;
+diff --git a/src/SpaceStation.h b/src/SpaceStation.h
+index ba928be..fdcc5fa 100644
+--- a/src/SpaceStation.h
++++ b/src/SpaceStation.h
+@@ -124,6 +124,16 @@ private:
+ 	typedef std::vector<shipDocking_t>::iterator shipDockingIter;
+ 	std::vector<shipDocking_t> m_shipDocking;
+ 
++	// Ships that have just left a bay and may still be touching its pad.
++	// Contact with the pad they launched from must not damage them.
++	struct departingShip_t {
++		Ship *ship;
++		Uint32 bay;
++	};
++	std::vector<departingShip_t> m_departingShips;
++	bool IsDepartingShip(const Ship *s) const;
++	void UpdateDepartingShips();
++
+ 	SpaceStationType::TPorts m_ports;
+ 
+ 	double m_oldAngDisplacement;

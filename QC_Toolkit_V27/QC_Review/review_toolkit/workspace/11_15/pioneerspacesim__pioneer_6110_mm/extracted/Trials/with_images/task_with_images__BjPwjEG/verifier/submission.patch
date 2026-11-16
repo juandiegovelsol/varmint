@@ -1,0 +1,44 @@
+diff --git a/src/Player.cpp b/src/Player.cpp
+index 216f2b7..336dac8 100644
+--- a/src/Player.cpp
++++ b/src/Player.cpp
+@@ -344,17 +344,21 @@ void Player::DoFixspeedTakeoff(SpaceStation *from)
+ 	double wantSpeed = 2; // m/s
+ 	con->ChangeCruiseSpeed(wantSpeed - curSpeed);
+ 
++	const vector3d pPos = GetPosition();
++
++	// some actions to avoid collision with the pad at start with a margin
++	// (applies to both ground and orbital stations)
++	SetPosition(pPos + GetOrient().VectorY() * 0.01);
++	const vector3d radial = GetOrient().VectorY() * 0.05;
++	SetVelocity(radial);
++
+ 	// special preparations for launch in a rotating orbital
+ 	if (from && !from->IsGroundStation()) {
+ 		SetFollowTarget(from);
+ 		con->SetFollowMode(PlayerShipController::FOLLOW_ORI);
+-		auto pPos = GetPosition();
+ 		SetAngVelocity(from->GetAngVelocity());
+ 
+-		// some actions to avoid collision with the pad at start with a margin
+-		SetPosition(GetPosition() + GetOrient().VectorY() * 0.01);
+-		auto tangent = from->GetAngVelocity().Cross(pPos);
+-		auto radial = GetOrient().VectorY() * 0.05;
++		const vector3d tangent = from->GetAngVelocity().Cross(pPos);
+ 		SetVelocity(tangent + radial);
+ 	}
+ }
+diff --git a/src/SpaceStation.cpp b/src/SpaceStation.cpp
+index 636ba1f..67d6a5f 100644
+--- a/src/SpaceStation.cpp
++++ b/src/SpaceStation.cpp
+@@ -526,6 +526,8 @@ void SpaceStation::SwitchToStage(Uint32 bay, DockStage stage)
+ 	case DockStage::UNDOCK_END:
+ 		dt.ship->SetAngVelocity(GetAngVelocity());
+ 		if (m_type->IsSurfaceStation()) {
++			// lift the ship slightly so it does not start flying in contact with the pad
++			dt.ship->SetPosition(dt.ship->GetPosition() + dt.ship->GetOrient().VectorY() * 0.01);
+ 			dt.ship->SetThrusterState(1, 1.0); // up
+ 		} else {
+ 			dt.ship->SetThrusterState(2, -1.0); // forward

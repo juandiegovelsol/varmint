@@ -1,0 +1,18 @@
+diff --git a/src/Player.cpp b/src/Player.cpp
+index 216f2b7..2173a97 100644
+--- a/src/Player.cpp
++++ b/src/Player.cpp
+@@ -356,5 +356,13 @@ void Player::DoFixspeedTakeoff(SpaceStation *from)
+ 		auto tangent = from->GetAngVelocity().Cross(pPos);
+ 		auto radial = GetOrient().VectorY() * 0.05;
+ 		SetVelocity(tangent + radial);
++	} else if (from) {
++		// launching from a ground station pad: lift off the pad with a margin
++		// and start moving up right away, so that the ship (which is no
++		// longer handled by the station) does not collide with the pad
++		const vector3d up = GetOrient().VectorY();
++		SetPosition(GetPosition() + up * 0.05);
++		SetVelocity(up * wantSpeed);
++		SetAngVelocity(vector3d(0.0));
+ 	}
+ }

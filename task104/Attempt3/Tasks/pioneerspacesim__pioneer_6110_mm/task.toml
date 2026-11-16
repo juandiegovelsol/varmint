@@ -1,0 +1,60 @@
+version = "1.0"
+reward_type = "binary"
+
+[task]
+name = "scale-ai/pioneerspacesim__pioneer_6110_mm"
+
+[metadata]
+task_id = "pioneerspacesim__pioneer_6110_mm"
+title = "Ship takes hull damage the instant it lifts off the landing pad"
+repository_name = "pioneerspacesim/pioneer"
+repo_url = "https://github.com/pioneerspacesim/pioneer"
+issue_number = 6110
+pr_number = 6111
+base_commit = "baf8112d806a6288f2025401eff033a5b8adb1c3"
+fix_commit = "24332224d04c721f245feaba13258764c6a03e10"
+task_type = "temporal_interaction"
+language = ""
+framework = "Pioneer (open-source space sim game engine)"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = """
+The video is needed to localize the bug: the text names neither the ship nor the station, and roughly fifteen of the game's ships rest with their collision hull exactly on their landing marker, so a repository-wide scan does not single anything out. The footage shows which ship it is (a Skipjack, recognizable from the rear: twin engine pods, two main thrusters, gear down), where it is (a ground starport on Mars at night: Cydonia, the game's default start), and what goes wrong and when: hull integrity drops to 99% the moment the ship leaves the pad, and the climb readout stays at 0 m/s for about three seconds before the set 2 m/s launch speed takes over.
+
+The defect is a chain of three independent clearance errors between the ship's collision hull and the pad. Each one is enough on its own to keep the hull in contact with the pad at liftoff, so fixing any one or two of them still reproduces the damage and the stall in-engine:
+1. data/models/ships/skipjack/skipjack_collision.dae: the hull's lowest vertex (four coincident duplicates in a mixed quad/triangle polylist) sits exactly at the landing marker. It has to be raised clear (upstream: merged and raised from local Y -4.310857 to -3.816332).
+2. data/models/ships/skipjack/skipjack_low.dae: the Skipjack is the only ship that carries tag_landing in all three LOD meshes. The model parser sorts LODs from least to most detailed and Model::AddTag keeps the first tag of a given name, so the engine reads the landing offset from the low-detail mesh, whose tag has drifted 0.45 m up. The station then seats the ship 0.45 m lower than skipjack_hi.dae suggests, which cancels most of the hull fix. Reading only the high-detail file gives the wrong answer here.
+3. data/models/stations/new_ground/new_ground_landing.dae: the collision slab of Cydonia's first pad (the pad in the video) sits 0.47 m higher than the other five, while its visible pad and bay locator have not moved. Even in upstream data every new_ground pad's collision top is 0.255 m above its locator, so the real clearance budget is smaller than the ship-only numbers suggest.
+
+Solving it means following the whole chain from the station's pad locator through the ship's effective landing offset to both collision meshes, ideally by reproducing the docked pose with the engine's own model cache, SpaceStationType bays and Geom::Collide (as the hidden tests do) or by running the launch in-engine. A shallow fix (thruster force, launch timing, ignoring pad contacts for a departing ship) leaves the geometry intersecting, and the tests replay that geometry directly.
+"""
+files_edited = [
+  "data/models/ships/skipjack/skipjack_collision.dae",
+  "data/models/ships/skipjack/skipjack_low.dae",
+  "data/models/stations/new_ground/new_ground_landing.dae",
+]
+f2p = [
+  "Skipjack resting on a Cydonia landing pad does not touch the pad",
+  "Skipjack climbing off a Cydonia landing pad never touches the pad",
+]
+p2p = [
+  "Skipjack collision mesh keeps its shape outside the lowest point",
+  "Cydonia landing pads still catch a Skipjack that sinks into them",
+]
+tags = ["multimodal", "3d_video", "temporal_interaction", "beyond_browser", "recording", "pioneer (open-source space sim game engine)", "3d-rendering", "collision-detection", "game-physics", "colladamesh"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"
