@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="pytest" errors="0" failures="5" skipped="0" tests="12" time="279.851" timestamp="2026-11-17T03:27:35.107287" hostname="vm-chat-591c69754b"><testcase classname="scripts.test_harvest_c01_hookline" name="test_hook_coll_line_drawn_with_subunit_fire_speed" time="30.533"><failure message="AssertionError: failed on both attempts; first: AssertionError('expected a guide line along the aim with hook_fire_speed 0.9, got 0 units\nassert 0.0 &gt;= 150')">tmp_path = PosixPath('/tmp/pytest-of-root/pytest-0/test_hook_coll_line_drawn_with0/attempt2')
+home_isolated = PosixPath('/tmp/pytest-of-root/pytest-0/test_hook_coll_line_drawn_with0/home')
+
+    @_twice
+    def test_hook_coll_line_drawn_with_subunit_fire_speed(tmp_path, home_isolated):
+        """A server tuned to a hook_fire_speed below 1 (0.9) still gets a guide line along the aim."""
+        with Session(tmp_path, "open", tunes=["hook_fire_speed 0.9"]) as s:
+            line = s.line_off_on()
+        reach = line.reach_units(*RIGHT)
+&gt;       assert reach &gt;= 150, f"expected a guide line along the aim with hook_fire_speed 0.9, got {reach:.0f} units"
+E       AssertionError: expected a guide line along the aim with hook_fire_speed 0.9, got 0 units
+E       assert 0.0 &gt;= 150
+
+scripts/test_harvest_c01_hookline.py:476: AssertionError
+
+The above exception was the direct cause of the following exception:
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-0/test_hook_coll_line_drawn_with0')
+home_isolated = PosixPath('/tmp/pytest-of-root/pytest-0/test_hook_coll_line_drawn_with0/home')
+
+    @functools.wraps(test)
+    def run(tmp_path, home_isolated):
+        errors = []
+        for attempt in (1, 2):
+            work = tmp_path / f"attempt{attempt}"
+            work.mkdir()
+            try:
+                return test(work, home_isolated)
+            except Exception as e:  # noqa: BLE001 - reported below
+                errors.append(e)
+&gt;       raise AssertionError(f"failed on both attempts; first: {errors[0]!r}") from errors[1]
+E       AssertionError: failed on both attempts; first: AssertionError('expected a guide line along the aim with hook_fire_speed 0.9, got 0 units\nassert 0.0 &gt;= 150')
+
+scripts/test_harvest_c01_hookline.py:463: AssertionError</failure></testcase><testcase classname="scripts.test_harvest_c01_hookline" name="test_hook_coll_line_wall_past_hook_reach_is_not_hookable" time="30.764"><failure message="AssertionError: failed on both attempts; first: AssertionError(&quot;line previews a hookable hit on a wall the hook cannot reach: {'nothing': 0.0, 'hookable': 1.0, 'tee': 0.0}\nassert (1.0 &lt; 0.2)&quot;)">tmp_path = PosixPath('/tmp/pytest-of-root/pytest-0/test_hook_coll_line_wall_past_0/attempt2')
+home_isolated = PosixPath('/tmp/pytest-of-root/pytest-0/test_hook_coll_line_wall_past_0/home')
+
+    @_twice
+    def test_hook_coll_line_wall_past_hook_reach_is_not_hookable(tmp_path, home_isolated):
+        """A hookable wall 368 units away is closer than hook_length (380), but the hook gives up on
+        the step that would reach it and never attaches: the line must not promise a hookable hit."""
+        with Session(tmp_path, "wall_past_reach") as s:
+            line = s.line_off_on()
+        best, share, total = _dominant(line, RIGHT)
+        assert total &gt;= 100, f"no guide line drawn ({total} legend-coloured pixels)"
+&gt;       assert share["hookable"] &lt; 0.2 and best == "nothing", (
+            f"line previews a hookable hit on a wall the hook cannot reach: {share}")
+E       AssertionError: line previews a hookable hit on a wall the hook cannot reach: {'nothing': 0.0, 'hookable': 1.0, 'tee': 0.0}
+E       assert (1.0 &lt; 0.2)
+
+scripts/test_harvest_c01_hookline.py:513: AssertionError
+
+The above exception was the direct cause of the following exception:
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-0/test_hook_coll_line_wall_past_0')
+home_isolated = PosixPath('/tmp/pytest-of-root/pytest-0/test_hook_coll_line_wall_past_0/home')
+
+    @functools.wraps(test)
+    def run(tmp_path, home_isolated):
+        errors = []
+        for attempt in (1, 2):
+            work = tmp_path / f"attempt{attempt}"
+            work.mkdir()
+            try:
+                return test(work, home_isolated)
+            except Exception as e:  # noqa: BLE001 - reported below
+                errors.append(e)
+&gt;       raise AssertionError(f"failed on both attempts; first: {errors[0]!r}") from errors[1]
+E       AssertionError: failed on both attempts; first: AssertionError("line previews a hookable hit on a wall the hook cannot reach: {'nothing': 0.0, 'hookable': 1.0, 'tee': 0.0}\nassert (1.0 &lt; 0.2)")
+
+scripts/test_harvest_c01_hookline.py:463: AssertionError</failure></testcase><testcase classname="scripts.test_harvest_c01_hookline" name="test_hook_coll_line_tee_grazed_by_hook_path" time="36.616"><failure message="AssertionError: failed on both attempts; first: AssertionError(&quot;hook path grazes a tee (it would grab it) but the line says nothing: {'nothing': 1.0, 'hookable': 0.0, 'tee': 0.0}\nassert ('nothing' == 'tee'\n  - tee\n  + nothing)&quot;)">tmp_path = PosixPath('/tmp/pytest-of-root/pytest-0/test_hook_coll_line_tee_grazed0/attempt2')
+home_isolated = PosixPath('/tmp/pytest-of-root/pytest-0/test_hook_coll_line_tee_grazed0/home')
+
+    @_twice
+    def test_hook_coll_line_tee_grazed_by_hook_path(tmp_path, home_isolated):
+        """Aim slightly above a tee 192 units away so the hook path passes ~24 units from its centre:
+        the real hook grabs that tee, so the line must use the 'a tee' colour and end at it."""
+        dx, dy = 199, -25  # mouse pixels; the client turns them into the aim target (399, -50)
+        u = _unit(399, -50)
+        with Session(tmp_path, "tee_ahead", dummy=True) as s:
+            s.aim(dx, dy)
+            line = s.line_off_on()
+        best, share, total = _dominant(line, u)
+        reach = line.reach_units(*u)
+&gt;       assert best == "tee" and share["tee"] &gt;= 0.8, (
+            f"hook path grazes a tee (it would grab it) but the line says {best}: {share}")
+E       AssertionError: hook path grazes a tee (it would grab it) but the line says nothing: {'nothing': 1.0, 'hookable': 0.0, 'tee': 0.0}
+E       assert ('nothing' == 'tee'
+E         - tee
+E         + nothing)
+
+scripts/test_harvest_c01_hookline.py:553: AssertionError
+
+The above exception was the direct cause of the following exception:
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-0/test_hook_coll_line_tee_grazed0')
+home_isolated = PosixPath('/tmp/pytest-of-root/pytest-0/test_hook_coll_line_tee_grazed0/home')
+
+    @functools.wraps(test)
+    def run(tmp_path, home_isolated):
+        errors = []
+        for attempt in (1, 2):
+            work = tmp_path / f"attempt{attempt}"
+            work.mkdir()
+            try:
+                return test(work, home_isolated)
+            except Exception as e:  # noqa: BLE001 - reported below
+                errors.append(e)
+&gt;       raise AssertionError(f"failed on both attempts; first: {errors[0]!r}") from errors[1]
+E       AssertionError: failed on both attempts; first: AssertionError("hook path grazes a tee (it would grab it) but the line says nothing: {'nothing': 1.0, 'hookable': 0.0, 'tee': 0.0}\nassert ('nothing' == 'tee'\n  - tee\n  + nothing)")
+
+scripts/test_harvest_c01_hookline.py:463: AssertionError</failure></testcase><testcase classname="scripts.test_harvest_c01_hookline" name="test_hook_coll_line_stops_at_wall_in_front_of_tee" time="34.978"><failure message="AssertionError: failed on both attempts; first: AssertionError(&quot;('tee', {'hookable': 0.0, 'nothing': 0.0, 'tee': 1.0}, 191)\nassert ('tee' == 'hookable'\n  - hookable\n  + tee)&quot;)">tmp_path = PosixPath('/tmp/pytest-of-root/pytest-0/test_hook_coll_line_stops_at_w0/attempt2')
+home_isolated = PosixPath('/tmp/pytest-of-root/pytest-0/test_hook_coll_line_stops_at_w0/home')
+
+    @_twice
+    def test_hook_coll_line_stops_at_wall_in_front_of_tee(tmp_path, home_isolated):
+        """A tee right behind a thin hookable wall: the hook attaches to the wall, so the line must use
+        the 'something hookable' colour and end at the wall (208 units away), not at the tee."""
+        with Session(tmp_path, "tee_behind_wall", dummy=True) as s:
+            line = s.line_off_on()
+        best, share, total = _dominant(line, RIGHT)
+        reach = line.reach_units(*RIGHT)
+&gt;       assert best == "hookable" and share["tee"] &lt; 0.2, (best, share, total)
+E       AssertionError: ('tee', {'hookable': 0.0, 'nothing': 0.0, 'tee': 1.0}, 191)
+E       assert ('tee' == 'hookable'
+E         - hookable
+E         + tee)
+
+scripts/test_harvest_c01_hookline.py:579: AssertionError
+
+The above exception was the direct cause of the following exception:
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-0/test_hook_coll_line_stops_at_w0')
+home_isolated = PosixPath('/tmp/pytest-of-root/pytest-0/test_hook_coll_line_stops_at_w0/home')
+
+    @functools.wraps(test)
+    def run(tmp_path, home_isolated):
+        errors = []
+        for attempt in (1, 2):
+            work = tmp_path / f"attempt{attempt}"
+            work.mkdir()
+            try:
+                return test(work, home_isolated)
+            except Exception as e:  # noqa: BLE001 - reported below
+                errors.append(e)
+&gt;       raise AssertionError(f"failed on both attempts; first: {errors[0]!r}") from errors[1]
+E       AssertionError: failed on both attempts; first: AssertionError("('tee', {'hookable': 0.0, 'nothing': 0.0, 'tee': 1.0}, 191)\nassert ('tee' == 'hookable'\n  - hookable\n  + tee)")
+
+scripts/test_harvest_c01_hookline.py:463: AssertionError</failure></testcase><testcase classname="scripts.test_harvest_c01_hookline" name="test_hook_coll_line_width_setting_diagonal_aim" time="32.168"><failure message="AssertionError: failed on both attempts; first: AssertionError('wide line drawn 0.0 px wide when aiming diagonally\nassert 7.0 &lt;= 0.0')">tmp_path = PosixPath('/tmp/pytest-of-root/pytest-0/test_hook_coll_line_width_sett0/attempt2')
+home_isolated = PosixPath('/tmp/pytest-of-root/pytest-0/test_hook_coll_line_width_sett0/home')
+
+    @_twice
+    def test_hook_coll_line_width_setting_diagonal_aim(tmp_path, home_isolated):
+        """The same wide line keeps its width when the aim is diagonal (up and to the right)."""
+        u = _unit(283, -282)
+        with Session(tmp_path, "open", client_cfg=["cl_hook_coll_size 20"]) as s:
+            s.aim(141, -141)
+            line = s.line_off_on()
+        width = line.width_px(*u)
+        reach = line.reach_units(*u)
+&gt;       assert 7.0 &lt;= width &lt;= 14.0, f"wide line drawn {width:.1f} px wide when aiming diagonally"
+E       AssertionError: wide line drawn 0.0 px wide when aiming diagonally
+E       assert 7.0 &lt;= 0.0
+
+scripts/test_harvest_c01_hookline.py:617: AssertionError
+
+The above exception was the direct cause of the following exception:
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-0/test_hook_coll_line_width_sett0')
+home_isolated = PosixPath('/tmp/pytest-of-root/pytest-0/test_hook_coll_line_width_sett0/home')
+
+    @functools.wraps(test)
+    def run(tmp_path, home_isolated):
+        errors = []
+        for attempt in (1, 2):
+            work = tmp_path / f"attempt{attempt}"
+            work.mkdir()
+            try:
+                return test(work, home_isolated)
+            except Exception as e:  # noqa: BLE001 - reported below
+                errors.append(e)
+&gt;       raise AssertionError(f"failed on both attempts; first: {errors[0]!r}") from errors[1]
+E       AssertionError: failed on both attempts; first: AssertionError('wide line drawn 0.0 px wide when aiming diagonally\nassert 7.0 &lt;= 0.0')
+
+scripts/test_harvest_c01_hookline.py:463: AssertionError</failure></testcase><testcase classname="scripts.test_harvest_c01_hookline" name="test_hook_coll_line_drawn_with_normal_fire_speed" time="15.257" /><testcase classname="scripts.test_harvest_c01_hookline" name="test_hook_coll_line_hookable_wall_within_reach" time="15.331" /><testcase classname="scripts.test_harvest_c01_hookline" name="test_hook_coll_line_unhookable_wall" time="15.275" /><testcase classname="scripts.test_harvest_c01_hookline" name="test_hook_coll_line_tee_straight_ahead" time="17.743" /><testcase classname="scripts.test_harvest_c01_hookline" name="test_hook_coll_line_tee_clearly_missed" time="18.305" /><testcase classname="scripts.test_harvest_c01_hookline" name="test_hook_coll_line_tee_in_front_of_wall" time="17.468" /><testcase classname="scripts.test_harvest_c01_hookline" name="test_hook_coll_line_width_setting_straight_aim" time="15.263" /></testsuite></testsuites>

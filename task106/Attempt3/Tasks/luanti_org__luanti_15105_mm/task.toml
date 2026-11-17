@@ -1,0 +1,71 @@
+version = "1.0"
+reward_type = "binary"
+
+[task]
+name = "scale-ai/luanti_org__luanti_15105_mm"
+
+[metadata]
+task_id = "luanti_org__luanti_15105_mm"
+title = "Elements in a small yard do not display what they should"
+repository_name = "luanti-org/luanti"
+repo_url = "https://github.com/luanti-org/luanti"
+issue_number = 15105
+pr_number = 15123
+base_commit = "041d67cecad21b8cea26b74d8d0faaf0f58b138b"
+fix_commit = "9e5d6bc16290aadc30e46e21255495cab800cf34"
+task_type = "temporal_interaction"
+language = "C++"
+framework = "Luanti (Minetest)"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = """
+The text only says that the floating elements and the penguin in the yard do not display what they should at several moments (they show the wrong picture, or show a picture the wrong way round), that the three floating elements are set up to display the same thing from the front, and that every such element must display what it was set up to display at every moment, from every side, however it is placed, turned or carried. It does not say what the pictures are, that any of them changes over time, which element is affected, or that they are sprites; it gives only two broad symptom classes (wrong picture, picture the wrong way round) and names no specific defect (frozen, mirrored, wrong side), no object property and no code path. The video is the only place the five independent defects can be seen, all of them in the client's sprite-entity rendering (the "sprite" and "upright_sprite" visuals), spread over three source files plus the bundled Irrlicht engine. None of them logs anything, leaves a compiler warning, or breaks an existing unit test; the entity state the server and Lua see is correct in every case, so only the rendered pixels show them:
+
+1. Left board frozen on "A" (the original issue #15105, src/client/content_cao.cpp + mesh.cpp/.h): the upright_sprite's frame is applied by rewriting the texture coordinates of a mesh whose vertices live in a static GPU buffer, and the buffer is never marked dirty, so the GPU keeps the first frame forever. The camera-facing board next to it (a billboard drawn from client memory) animates.
+2. Camera-facing sprites mirrored (irr/src/CBillboardSceneNode.cpp, constructor): the billboard's corner texture coordinates are assigned with U flipped, so every "sprite" entity is drawn mirrored. In the video the right board's B, C and D read backwards and the penguin's side views point the wrong way, so it moonwalks when it crosses the yard. The defect sits in the engine library, not in Luanti's own sprite code, which looks correct.
+3. Back of upright boards mirrored (src/client/content_cao.cpp, GenericCAO::addToScene): the back quad of an upright_sprite reuses the front quad's corners with the winding reversed, which reads naturally but maps the texture mirrored when seen from behind. From 0:23 the left board's back shows a mirrored "E" (its back sheet is E-F-G-K). The front is unaffected.
+4. Penguin shows the wrong side (src/client/content_cao.cpp, GenericCAO::updateTexturePos): select_x_by_camera adds the entity's yaw to the camera bearing instead of subtracting it. Subjects turned along the view axis are unaffected; turned across it, front and back swap (seen along Z) or left and right swap (seen along X). In the video the penguin shows its back while walking towards the camera and its face while walking away.
+5. Carried board frozen on "A" (src/client/content_cao.cpp, GenericCAO::step): the sprite frame timer was moved into the "not attached" branch of the movement code, so a sprite attached to another object never advances its animation. The board above the penguin's head stays on "A" while the two big boards cycle. It is a billboard, so fixing defect 1 does not touch it.
+
+Several defects interact in the video (the penguin's moonwalk comes from defect 2, its back/face swap from defect 4, and the frozen carried board looks like defect 1 but has a different cause), so a fix guided only by one symptom is easy to get wrong: swapping the left/right or front/back columns of select_x_by_camera makes the penguin look right in this camera direction but fails the probes seen along the other axis, and flipping only the board that looks wrong leaves the other sprite paths broken.
+
+The hidden tests run the real client headlessly (Xvfb, Mesa llvmpipe) on the devtest game with a probe world mod and classify the dominant colour of fixed screen regions over time (the whole scenario is run a second time if the harness itself fails, e.g. a client crash). Animated probes (an upright_sprite, an attached sprite, an attached upright_sprite, and an upright_sprite whose frame the mod changes with set_sprite() every second) must keep cycling through the sheet's frames in order at about one frame per second, and the animated ones must show the same frame as an identical unattached camera-facing sprite started at the same moment most of the time. A camera-facing sprite and the back of an upright_sprite with a four-quadrant texture must show each texture corner in the matching screen corner (catches mirrored and upside-down fixes). Four select_x_by_camera sprites turned to 0/90/180/270 degrees, seen once along -Z and once along +X, must each show the documented column for the side facing the camera. f2p per defect: 1 -> upright_sprite_animates, upright_sprite_follows_set_sprite, attached_upright_sprite_animates; 2 -> sprite_texture_is_not_mirrored; 3 -> upright_sprite_back_is_not_mirrored; 4 -> camera_facing_sprite_shows_the_side_facing_the_camera; 5 -> attached_sprite_animates, attached_upright_sprite_animates. The p2p tests (unattached camera-facing sprite animates in order and at the right rate, both quads render a palette colour, the front of an upright_sprite is not mirrored) reject fixes that flip every quad or double the frame rate. Non-oracle fixes (a non-buffered mesh instead of a dirty flag, a separate UV order for the back quad, a mirrored texture matrix instead of editing the billboard, a vector-based facing angle, a frame timer outside the movement branch) pass all tests; compensating fixes (swapped select_x columns, an upside-down billboard, a second frame timer) fail.
+"""
+files_edited = [
+  "irr/src/CBillboardSceneNode.cpp",
+  "src/client/content_cao.cpp",
+  "src/client/mesh.cpp",
+  "src/client/mesh.h",
+]
+f2p = [
+  "sprite_probe upright_sprite_animates",
+  "sprite_probe upright_sprite_follows_set_sprite",
+  "sprite_probe sprite_texture_is_not_mirrored",
+  "sprite_probe upright_sprite_back_is_not_mirrored",
+  "sprite_probe camera_facing_sprite_shows_the_side_facing_the_camera",
+  "sprite_probe attached_sprite_animates",
+  "sprite_probe attached_upright_sprite_animates",
+]
+p2p = [
+  "sprite_probe reference_sprite_animates",
+  "sprite_probe upright_sprite_renders_a_palette_color",
+  "sprite_probe reference_sprite_renders_a_palette_color",
+  "sprite_probe upright_sprite_front_is_not_mirrored",
+]
+tags = ["multimodal", "3d_video", "temporal_interaction", "beyond_browser", "recording", "luanti (minetest)", "c++", "3d-rendering", "game-engine", "opengl", "animation"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

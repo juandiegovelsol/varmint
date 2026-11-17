@@ -1,0 +1,71 @@
+== captured submission.patch (3117 bytes, 2 files) ==
+== applying test.patch ==
+== running f2p + p2p tests ==
+(tests exited non-zero; parsing the report)
+== computing reward ==
+{"reward": 0.0, "tests_passed": 0.0, "f2p_passed": 4, "f2p_total": 5, "p2p_passed": 7, "p2p_total": 7, "rubric_passed": -1}
+reward=0.0
+/bin/python3
+rootdir: /app
+collecting ... collected 12 items
+
+scripts/test_harvest_c01_hookline.py::test_hook_coll_line_drawn_with_subunit_fire_speed PASSED [  8%]
+scripts/test_harvest_c01_hookline.py::test_hook_coll_line_wall_past_hook_reach_is_not_hookable PASSED [ 16%]
+scripts/test_harvest_c01_hookline.py::test_hook_coll_line_tee_grazed_by_hook_path PASSED [ 25%]
+scripts/test_harvest_c01_hookline.py::test_hook_coll_line_stops_at_wall_in_front_of_tee PASSED [ 33%]
+scripts/test_harvest_c01_hookline.py::test_hook_coll_line_width_setting_diagonal_aim FAILED [ 41%]
+scripts/test_harvest_c01_hookline.py::test_hook_coll_line_drawn_with_normal_fire_speed PASSED [ 50%]
+scripts/test_harvest_c01_hookline.py::test_hook_coll_line_hookable_wall_within_reach PASSED [ 58%]
+scripts/test_harvest_c01_hookline.py::test_hook_coll_line_unhookable_wall PASSED [ 66%]
+scripts/test_harvest_c01_hookline.py::test_hook_coll_line_tee_straight_ahead PASSED [ 75%]
+scripts/test_harvest_c01_hookline.py::test_hook_coll_line_tee_clearly_missed PASSED [ 83%]
+scripts/test_harvest_c01_hookline.py::test_hook_coll_line_tee_in_front_of_wall PASSED [ 91%]
+scripts/test_harvest_c01_hookline.py::test_hook_coll_line_width_setting_straight_aim PASSED [100%]
+
+=================================== FAILURES ===================================
+________________ test_hook_coll_line_width_setting_diagonal_aim ________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-0/test_hook_coll_line_width_sett0/attempt2')
+home_isolated = PosixPath('/tmp/pytest-of-root/pytest-0/test_hook_coll_line_width_sett0/home')
+
+    @_twice
+    def test_hook_coll_line_width_setting_diagonal_aim(tmp_path, home_isolated):
+        """The same wide line keeps its width when the aim is diagonal (up and to the right)."""
+        u = _unit(283, -282)
+        with Session(tmp_path, "open", client_cfg=["cl_hook_coll_size 20"]) as s:
+            s.aim(141, -141)
+            line = s.line_off_on()
+        width = line.width_px(*u)
+        reach = line.reach_units(*u)
+>       assert 7.0 <= width <= 14.0, f"wide line drawn {width:.1f} px wide when aiming diagonally"
+E       AssertionError: wide line drawn 0.0 px wide when aiming diagonally
+E       assert 7.0 <= 0.0
+
+scripts/test_harvest_c01_hookline.py:617: AssertionError
+
+The above exception was the direct cause of the following exception:
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-0/test_hook_coll_line_width_sett0')
+home_isolated = PosixPath('/tmp/pytest-of-root/pytest-0/test_hook_coll_line_width_sett0/home')
+
+    @functools.wraps(test)
+    def run(tmp_path, home_isolated):
+        errors = []
+        for attempt in (1, 2):
+            work = tmp_path / f"attempt{attempt}"
+            work.mkdir()
+            try:
+                return test(work, home_isolated)
+            except Exception as e:  # noqa: BLE001 - reported below
+                errors.append(e)
+>       raise AssertionError(f"failed on both attempts; first: {errors[0]!r}") from errors[1]
+E       AssertionError: failed on both attempts; first: AssertionError('wide line drawn 0.0 px wide when aiming diagonally\nassert 7.0 <= 0.0')
+
+scripts/test_harvest_c01_hookline.py:463: AssertionError
+----------------- generated xml file: /logs/verifier/junit.xml -----------------
+=========================== short test summary info ============================
+FAILED scripts/test_harvest_c01_hookline.py::test_hook_coll_line_width_setting_diagonal_aim
+=================== 1 failed, 11 passed in 220.71s (0:03:40) ===================
+(tests exited non-zero; parsing the report)
+== computing reward ==
+reward=0.0

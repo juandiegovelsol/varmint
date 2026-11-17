@@ -1,0 +1,30 @@
+# dev image for task107 hardening (NOT shipped): the task's apt list + xdotool/imagemagick-free tools,
+# ddnet at base_commit with its .git kept (so bug/fix/test patches can be authored with git diff),
+# Release build of DDNet + DDNet-Server, plus TOOLS so a probe-map generator can be compiled.
+FROM ubuntu:24.04
+ENV DEBIAN_FRONTEND=noninteractive
+RUN sed -i 's#http://#https://#g' /etc/apt/sources.list.d/*.sources /etc/apt/sources.list 2>/dev/null; true
+RUN apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false update -y && \
+    apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false install -y --no-install-recommends ca-certificates && \
+    update-ca-certificates
+RUN apt-get update -y && apt-get install -y --no-install-recommends \
+    build-essential cmake ninja-build pkg-config git curl python3 python3-pip python3-pytest python3-pil \
+    rustc cargo gdb zlib1g-dev libavcodec-dev libavformat-dev libavutil-dev libswresample-dev \
+    libswscale-dev libx264-dev libfreetype6-dev libglew-dev libnotify-dev libpng-dev libsdl2-dev \
+    libsqlite3-dev libcurl4-openssl-dev libssl-dev libogg-dev libopus-dev libopusfile-dev \
+    libwavpack-dev libgtest-dev xvfb x11-utils xdotool mesa-utils libgl1-mesa-dri libglx-mesa0 \
+    ffmpeg fonts-dejavu-core fonts-noto-cjk fonts-noto-color-emoji \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+RUN git init -q /app && git -C /app remote add origin https://github.com/ddnet/ddnet.git \
+ && git -C /app fetch -q --depth 1 origin 174340a8c49c91a68dbd8b9a5efd6ea98c0df748 \
+ && git -C /app -c advice.detachedHead=false checkout -q FETCH_HEAD \
+ && git -C /app submodule update --init --depth 1 \
+ && git -C /app config user.email h@l && git -C /app config user.name h \
+ && git -C /app tag base
+RUN mkdir -p /app/build && cd /app/build && \
+    cmake -GNinja -DCMAKE_BUILD_TYPE=Release -DDOWNLOAD_GTEST=OFF -DCMAKE_RUNTIME_OUTPUT_DIRECTORY=/app/build \
+      -DTOOLS=ON -DVULKAN=OFF -DANTIBOT=OFF -DWEBSOCKETS=OFF -DMYSQL=OFF -DAUTOUPDATE=OFF .. && \
+    cmake --build . --target DDNet DDNet-Server -- -j$(nproc)
+ENV SDL_AUDIODRIVER=dummy LIBGL_ALWAYS_SOFTWARE=1 DDNET_BUILD_DIR=/app/build
+CMD ["bash"]

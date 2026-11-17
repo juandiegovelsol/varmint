@@ -1,0 +1,76 @@
+diff --git a/src/client/content_cao.cpp b/src/client/content_cao.cpp
+index 388c8d7..8583da4 100644
+--- a/src/client/content_cao.cpp
++++ b/src/client/content_cao.cpp
+@@ -714,17 +714,17 @@ void GenericCAO::addToScene(ITextureSource *tsrc, scene::ISceneManager *smgr)
+ 		{ // Back
+ 			scene::IMeshBuffer *buf = new scene::SMeshBuffer();
+ 			video::S3DVertex vertices[4] = {
+-				video::S3DVertex(-dx,-dy, 0, 0,0,-1, c, 1,1),
+-				video::S3DVertex( dx,-dy, 0, 0,0,-1, c, 0,1),
+-				video::S3DVertex( dx, dy, 0, 0,0,-1, c, 0,0),
+-				video::S3DVertex(-dx, dy, 0, 0,0,-1, c, 1,0),
++				video::S3DVertex( dx,-dy, 0, 0,0,-1, c, 1,1),
++				video::S3DVertex(-dx,-dy, 0, 0,0,-1, c, 0,1),
++				video::S3DVertex(-dx, dy, 0, 0,0,-1, c, 0,0),
++				video::S3DVertex( dx, dy, 0, 0,0,-1, c, 1,0),
+ 			};
+ 			if (m_is_player) {
+ 				// Move minimal Y position to 0 (feet position)
+ 				for (video::S3DVertex &vertex : vertices)
+ 					vertex.Pos.Y += dy;
+ 			}
+-			u16 indices[] = {0,3,2,2,1,0};
++			u16 indices[] = {0,1,2,2,3,0};
+ 			buf->append(vertices, 4, indices, 6);
+ 
+ 			// Set material
+@@ -815,7 +815,7 @@ void GenericCAO::addToScene(ITextureSource *tsrc, scene::ISceneManager *smgr)
+ 	// - the wieldmesh sets its own hint
+ 	// - bone transformations do not need to modify the vertex data
+ 	if (m_enable_shaders && (m_meshnode || m_animated_meshnode)) {
+-		if (m_meshnode)
++		if (m_meshnode && m_prop.visual != "upright_sprite")
+ 			m_meshnode->getMesh()->setHardwareMappingHint(scene::EHM_STATIC);
+ 		if (m_animated_meshnode)
+ 			m_animated_meshnode->getMesh()->setHardwareMappingHint(scene::EHM_STATIC);
+@@ -1202,15 +1202,14 @@ void GenericCAO::step(float dtime, ClientEnvironment *env)
+ 				m_client->sound()->playSoundAt(0, spec, foot_pos, v3f(0.0f));
+ 			}
+ 		}
++	}
+ 
+-		m_anim_timer += dtime;
+-		if(m_anim_timer >= m_anim_framelength)
+-		{
+-			m_anim_timer -= m_anim_framelength;
+-			m_anim_frame++;
+-			if(m_anim_frame >= m_anim_num_frames)
+-				m_anim_frame = 0;
+-		}
++	m_anim_timer += dtime;
++	if (m_anim_timer >= m_anim_framelength) {
++		m_anim_timer -= m_anim_framelength;
++		m_anim_frame++;
++		if (m_anim_frame >= m_anim_num_frames)
++			m_anim_frame = 0;
+ 	}
+ 
+ 	updateTexturePos();
+@@ -1288,7 +1287,7 @@ void GenericCAO::updateTexturePos()
+ 			else {
+ 				float mob_dir =
+ 						atan2(cam_to_entity.Z, cam_to_entity.X) / M_PI * 180.;
+-				float dir = mob_dir + m_rotation.Y;
++				float dir = mob_dir - m_rotation.Y;
+ 				dir = wrapDegrees_180(dir);
+ 				if (std::fabs(wrapDegrees_180(dir - 0)) <= 45.1f)
+ 					col += 2;
+@@ -1329,6 +1328,7 @@ void GenericCAO::updateTexturePos()
+ 			auto mesh = m_meshnode->getMesh();
+ 			setMeshBufferTextureCoords(mesh->getMeshBuffer(0), t, 4);
+ 			setMeshBufferTextureCoords(mesh->getMeshBuffer(1), t, 4);
++			mesh->setDirty(scene::EBT_VERTEX);
+ 		}
+ 	}
+ }

@@ -1,0 +1,53 @@
+version = "1.0"
+reward_type = "binary"
+
+[task]
+name = "scale-ai/ddnet__ddnet_10943_mm"
+
+[metadata]
+task_id = "ddnet__ddnet_10943_mm"
+title = "Hook aim preview line never appears, no matter which way the player aims"
+repository_name = "ddnet/ddnet"
+repo_url = "https://github.com/ddnet/ddnet"
+issue_number = 10943
+pr_number = 10951
+base_commit = "174340a8c49c91a68dbd8b9a5efd6ea98c0df748"
+fix_commit = "a617915ab785f501ca07f9c1fc809555e489f168"
+task_type = "2d_video"
+language = "C++"
+framework = "DDNet"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "medium"
+difficulty_explanation = """
+The video is needed because it pins down which specific manifestation of the hook-line bug is being graded: the issue lists several distinct hook-collision-line defects (teleport-chain skip, excessive length, performance under extreme tunings, and low-fire-speed desync), and only watching the render shows that in this case the line is not merely wrong in length or color but completely absent across every aim direction, for the entire time the sub-1 tuning is active. Text alone could describe 'the line looks wrong' in several mutually-inconsistent ways; only the frames confirm it is a full disappearance, which is what the chosen test actually checks for.
+
+The fix is not trivial because the relevant code lives inside CPlayers::RenderHookCollLine, a long, branch-heavy rendering function (client-prediction lookups, local-vs-remote-player handling, multiple display-setting checks, and a forward hook simulation) spread across three files (players.cpp, players.h, ghost.cpp) in an area of the codebase a newcomer has to read carefully to avoid breaking the normal-tuning guard test. The specific root cause -- a server tuning that is a float elsewhere in the tuning struct but is copied into a local C++ int before an `<= 0` early-return guard -- is easy to miss among the function's many other checks (aim-flag checks, alpha/visibility checks, team/other-player checks) that look superficially similar. A shallow fix that only patches the symptom at the wrong spot, or that changes the truncation but breaks the early-exit guard's semantics for zero/negative tunings, would pass a casual read but fail the paired p2p guard test that re-checks the ordinary hook_fire_speed=80 case.
+"""
+files_edited = [
+  "src/game/client/components/ghost.cpp",
+  "src/game/client/components/players.cpp",
+  "src/game/client/components/players.h",
+]
+f2p = [
+  "scripts/test_harvest_c01_hookline.py::test_hook_coll_line_drawn_with_subunit_fire_speed",
+]
+p2p = [
+  "scripts/test_harvest_c01_hookline.py::test_hook_coll_line_drawn_with_normal_fire_speed",
+]
+tags = ["multimodal", "2d_video", "visual_bug_fix", "recording", "ddnet", "c++", "rendering", "hud"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

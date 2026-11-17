@@ -1,0 +1,94 @@
+diff --git a/src/game/client/components/players.cpp b/src/game/client/components/players.cpp
+index d8922b4..0c80793 100644
+--- a/src/game/client/components/players.cpp
++++ b/src/game/client/components/players.cpp
+@@ -217,6 +217,8 @@ void CPlayers::RenderHookCollLine(
+ 
+ 	ColorRGBA HookCollColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClHookCollColorNoColl));
+ 
++	const vec2 AimDirection = Direction;
++	vec2 SegmentStart = InitPos;
+ 	vec2 OldPos = InitPos + Direction * LineOffset;
+ 	vec2 NewPos = OldPos;
+ 
+@@ -236,7 +238,8 @@ void CPlayers::RenderHookCollLine(
+ 		int Tele;
+ 		int Hit = Collision()->IntersectLineTeleHook(OldPos, NewPos, &FinishPos, nullptr, &Tele);
+ 
+-		if(ClientId >= 0 && GameClient()->IntersectCharacter(OldPos, NewPos, FinishPos, ClientId) != -1)
++		// like the hook itself, only check tees in front of the first collision of this step
++		if(ClientId >= 0 && GameClient()->IntersectCharacter(OldPos, FinishPos, FinishPos, ClientId) != -1)
+ 		{
+ 			HookCollColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClHookCollColorTeeColl));
+ 			break;
+@@ -250,8 +253,10 @@ void CPlayers::RenderHookCollLine(
+ 			}
+ 			else
+ 			{
+-				vLineSegments.emplace_back(InitPos, FinishPos);
+-				InitPos = NewPos = Collision()->TeleOuts(Tele - 1)[0];
++				vLineSegments.emplace_back(SegmentStart, FinishPos);
++				// the hook continues from the tele out, offset along the aim like when it is fired
++				SegmentStart = Collision()->TeleOuts(Tele - 1)[0];
++				InitPos = NewPos = SegmentStart + AimDirection * LineOffset;
+ 			}
+ 		}
+ 
+@@ -272,7 +277,7 @@ void CPlayers::RenderHookCollLine(
+ 		Direction.y = round_to_int(Direction.y * 256.0f) / 256.0f;
+ 	} while(!DoBreak);
+ 
+-	vLineSegments.emplace_back(InitPos, FinishPos);
++	vLineSegments.emplace_back(SegmentStart, FinishPos);
+ 
+ 	if(AlwaysRenderHookColl && RenderHookCollPlayer)
+ 	{
+@@ -294,7 +299,7 @@ void CPlayers::RenderHookCollLine(
+ 		vLineQuadSegments.reserve(vLineSegments.size());
+ 
+ 		float LineWidth = 0.5f + (float)(HookCollSize - 1) * 0.25f;
+-		const vec2 PerpToAngle = direction(pi / 2.0f - angle(Direction)) * GameClient()->m_Camera.m_Zoom;
++		const vec2 PerpToAngle = vec2(-AimDirection.y, AimDirection.x) * GameClient()->m_Camera.m_Zoom;
+ 
+ 		for(const auto &LineSegment : vLineSegments)
+ 		{
+diff --git a/src/game/client/gameclient.cpp b/src/game/client/gameclient.cpp
+index 60d0cde..c38b333 100644
+--- a/src/game/client/gameclient.cpp
++++ b/src/game/client/gameclient.cpp
+@@ -3163,6 +3163,10 @@ int CGameClient::IntersectCharacter(vec2 HookPos, vec2 NewPos, vec2 &NewPos2, in
+ 
+ 	const CClientData &OwnClientData = m_aClients[OwnId];
+ 
++	// a hook that can't hit players passes through every tee
++	if(OwnClientData.m_HookHitDisabled)
++		return -1;
++
+ 	for(int i = 0; i < MAX_CLIENTS; i++)
+ 	{
+ 		if(i == OwnId)
+@@ -3170,7 +3174,7 @@ int CGameClient::IntersectCharacter(vec2 HookPos, vec2 NewPos, vec2 &NewPos2, in
+ 
+ 		const CClientData &Data = m_aClients[i];
+ 
+-		if(!Data.m_Active)
++		if(!Data.m_Active || !m_Snap.m_aCharacters[i].m_Active)
+ 			continue;
+ 
+ 		CNetObj_Character Prev = m_Snap.m_aCharacters[i].m_Prev;
+@@ -3181,13 +3185,13 @@ int CGameClient::IntersectCharacter(vec2 HookPos, vec2 NewPos, vec2 &NewPos2, in
+ 		bool IsOneSuper = Data.m_Super || OwnClientData.m_Super;
+ 		bool IsOneSolo = Data.m_Solo || OwnClientData.m_Solo;
+ 
+-		if(!IsOneSuper && (!m_Teams.SameTeam(i, OwnId) || IsOneSolo || OwnClientData.m_HookHitDisabled))
++		if(!IsOneSuper && (!m_Teams.SameTeam(i, OwnId) || IsOneSolo))
+ 			continue;
+ 
+ 		vec2 ClosestPoint;
+ 		if(closest_point_on_line(HookPos, NewPos, Position, ClosestPoint))
+ 		{
+-			if(distance(Position, ClosestPoint) < CCharacterCore::PhysicalSize() / 2.0f + 2.0f)
++			if(distance(Position, ClosestPoint) < CCharacterCore::PhysicalSize() + 2.0f)
+ 			{
+ 				if(ClosestId == -1 || distance(HookPos, Position) < Distance)
+ 				{

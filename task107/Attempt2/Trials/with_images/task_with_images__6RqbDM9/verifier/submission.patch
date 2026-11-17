@@ -1,0 +1,50 @@
+diff --git a/src/game/client/components/players.cpp b/src/game/client/components/players.cpp
+index d8922b4..7076216 100644
+--- a/src/game/client/components/players.cpp
++++ b/src/game/client/components/players.cpp
+@@ -205,11 +205,11 @@ void CPlayers::RenderHookCollLine(
+ 	}
+ 
+ 	// Calculate hook coll line position
+-	int HookSpeed = GameClient()->m_aClients[ClientId].m_Predicted.m_Tuning.m_HookFireSpeed;
+-	if(HookSpeed <= 0)
++	const float HookSpeed = GameClient()->m_aClients[ClientId].m_Predicted.m_Tuning.m_HookFireSpeed;
++	if(HookSpeed <= 0.0f)
+ 		return;
+ 
+-	int HookLength = GameClient()->m_aClients[ClientId].m_Predicted.m_Tuning.m_HookLength;
++	const float HookLength = GameClient()->m_aClients[ClientId].m_Predicted.m_Tuning.m_HookLength;
+ 
+ 	const float LineOffset = CCharacterCore::PhysicalSize() * 1.5f;
+ 	vec2 InitPos = Position;
+@@ -236,7 +236,7 @@ void CPlayers::RenderHookCollLine(
+ 		int Tele;
+ 		int Hit = Collision()->IntersectLineTeleHook(OldPos, NewPos, &FinishPos, nullptr, &Tele);
+ 
+-		if(ClientId >= 0 && GameClient()->IntersectCharacter(OldPos, NewPos, FinishPos, ClientId) != -1)
++		if(ClientId >= 0 && GameClient()->IntersectCharacter(OldPos, FinishPos, FinishPos, ClientId) != -1)
+ 		{
+ 			HookCollColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClHookCollColorTeeColl));
+ 			break;
+@@ -294,7 +294,7 @@ void CPlayers::RenderHookCollLine(
+ 		vLineQuadSegments.reserve(vLineSegments.size());
+ 
+ 		float LineWidth = 0.5f + (float)(HookCollSize - 1) * 0.25f;
+-		const vec2 PerpToAngle = direction(pi / 2.0f - angle(Direction)) * GameClient()->m_Camera.m_Zoom;
++		const vec2 PerpToAngle = normalize(vec2(Direction.y, -Direction.x)) * GameClient()->m_Camera.m_Zoom;
+ 
+ 		for(const auto &LineSegment : vLineSegments)
+ 		{
+diff --git a/src/game/client/gameclient.cpp b/src/game/client/gameclient.cpp
+index 60d0cde..b96a139 100644
+--- a/src/game/client/gameclient.cpp
++++ b/src/game/client/gameclient.cpp
+@@ -3187,7 +3187,7 @@ int CGameClient::IntersectCharacter(vec2 HookPos, vec2 NewPos, vec2 &NewPos2, in
+ 		vec2 ClosestPoint;
+ 		if(closest_point_on_line(HookPos, NewPos, Position, ClosestPoint))
+ 		{
+-			if(distance(Position, ClosestPoint) < CCharacterCore::PhysicalSize() / 2.0f + 2.0f)
++			if(distance(Position, ClosestPoint) < CCharacterCore::PhysicalSize() + 2.0f)
+ 			{
+ 				if(ClosestId == -1 || distance(HookPos, Position) < Distance)
+ 				{

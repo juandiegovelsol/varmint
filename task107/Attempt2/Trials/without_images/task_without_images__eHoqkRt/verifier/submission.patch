@@ -1,0 +1,67 @@
+diff --git a/src/game/client/components/players.cpp b/src/game/client/components/players.cpp
+index d8922b4..bbe8a45 100644
+--- a/src/game/client/components/players.cpp
++++ b/src/game/client/components/players.cpp
+@@ -205,11 +205,11 @@ void CPlayers::RenderHookCollLine(
+ 	}
+ 
+ 	// Calculate hook coll line position
+-	int HookSpeed = GameClient()->m_aClients[ClientId].m_Predicted.m_Tuning.m_HookFireSpeed;
+-	if(HookSpeed <= 0)
++	const float HookSpeed = GameClient()->m_aClients[ClientId].m_Predicted.m_Tuning.m_HookFireSpeed;
++	if(HookSpeed <= 0.0f)
+ 		return;
+ 
+-	int HookLength = GameClient()->m_aClients[ClientId].m_Predicted.m_Tuning.m_HookLength;
++	const float HookLength = GameClient()->m_aClients[ClientId].m_Predicted.m_Tuning.m_HookLength;
+ 
+ 	const float LineOffset = CCharacterCore::PhysicalSize() * 1.5f;
+ 	vec2 InitPos = Position;
+@@ -236,7 +236,8 @@ void CPlayers::RenderHookCollLine(
+ 		int Tele;
+ 		int Hit = Collision()->IntersectLineTeleHook(OldPos, NewPos, &FinishPos, nullptr, &Tele);
+ 
+-		if(ClientId >= 0 && GameClient()->IntersectCharacter(OldPos, NewPos, FinishPos, ClientId) != -1)
++		// players are only checked up to the point where the hook hits a tile, like in the game core
++		if(ClientId >= 0 && GameClient()->m_aClients[ClientId].m_Predicted.m_Tuning.m_PlayerHooking && GameClient()->IntersectCharacter(OldPos, FinishPos, FinishPos, ClientId) != -1)
+ 		{
+ 			HookCollColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClHookCollColorTeeColl));
+ 			break;
+@@ -251,13 +252,15 @@ void CPlayers::RenderHookCollLine(
+ 			else
+ 			{
+ 				vLineSegments.emplace_back(InitPos, FinishPos);
+-				InitPos = NewPos = Collision()->TeleOuts(Tele - 1)[0];
++				// the hook continues from the tele out, offset like a freshly launched hook
++				InitPos = NewPos = Collision()->TeleOuts(Tele - 1)[0] + Direction * LineOffset;
+ 			}
+ 		}
+ 
+ 		if(Hit && Hit != TILE_TELEINHOOK)
+ 		{
+-			if(Hit != TILE_NOHOOK)
++			// the hook retracts without grabbing when it reaches its maximum length
++			if(!DoBreak && Hit != TILE_NOHOOK)
+ 				HookCollColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClHookCollColorHookableColl));
+ 			break;
+ 		}
+diff --git a/src/game/client/gameclient.cpp b/src/game/client/gameclient.cpp
+index 60d0cde..5deb6b6 100644
+--- a/src/game/client/gameclient.cpp
++++ b/src/game/client/gameclient.cpp
+@@ -3181,13 +3181,13 @@ int CGameClient::IntersectCharacter(vec2 HookPos, vec2 NewPos, vec2 &NewPos2, in
+ 		bool IsOneSuper = Data.m_Super || OwnClientData.m_Super;
+ 		bool IsOneSolo = Data.m_Solo || OwnClientData.m_Solo;
+ 
+-		if(!IsOneSuper && (!m_Teams.SameTeam(i, OwnId) || IsOneSolo || OwnClientData.m_HookHitDisabled))
++		if(OwnClientData.m_HookHitDisabled || (!IsOneSuper && (!m_Teams.SameTeam(i, OwnId) || IsOneSolo)))
+ 			continue;
+ 
+ 		vec2 ClosestPoint;
+ 		if(closest_point_on_line(HookPos, NewPos, Position, ClosestPoint))
+ 		{
+-			if(distance(Position, ClosestPoint) < CCharacterCore::PhysicalSize() / 2.0f + 2.0f)
++			if(distance(Position, ClosestPoint) < CCharacterCore::PhysicalSize() + 2.0f)
+ 			{
+ 				if(ClosestId == -1 || distance(HookPos, Position) < Distance)
+ 				{

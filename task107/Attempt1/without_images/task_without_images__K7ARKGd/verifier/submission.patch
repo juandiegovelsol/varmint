@@ -1,0 +1,96 @@
+diff --git a/src/game/client/components/players.cpp b/src/game/client/components/players.cpp
+index d8922b4..1276eb3 100644
+--- a/src/game/client/components/players.cpp
++++ b/src/game/client/components/players.cpp
+@@ -204,16 +204,20 @@ void CPlayers::RenderHookCollLine(
+ 			Direction = vec2(1.0f, 0.0f);
+ 	}
+ 
+-	// Calculate hook coll line position
+-	int HookSpeed = GameClient()->m_aClients[ClientId].m_Predicted.m_Tuning.m_HookFireSpeed;
+-	if(HookSpeed <= 0)
++	// Calculate hook coll line position, mirroring the hook physics in CCharacterCore::Tick
++	const CTuningParams &Tuning = GameClient()->m_aClients[ClientId].m_Predicted.m_Tuning;
++	const float HookSpeed = Tuning.m_HookFireSpeed;
++	if(HookSpeed <= 0.0f)
+ 		return;
+ 
+-	int HookLength = GameClient()->m_aClients[ClientId].m_Predicted.m_Tuning.m_HookLength;
++	const float HookLength = Tuning.m_HookLength;
++	const bool PlayerHooking = Tuning.m_PlayerHooking;
+ 
+ 	const float LineOffset = CCharacterCore::PhysicalSize() * 1.5f;
+-	vec2 InitPos = Position;
+-	vec2 FinishPos = InitPos + Direction * (HookLength - LineOffset);
++	const vec2 TargetDirection = Direction;
++	vec2 InitPos = Position; // start of the currently drawn segment
++	vec2 HookBase = Position; // base used for the hook length check
++	vec2 FinishPos = InitPos + Direction * HookLength;
+ 
+ 	ColorRGBA HookCollColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClHookCollColorNoColl));
+ 
+@@ -227,16 +231,17 @@ void CPlayers::RenderHookCollLine(
+ 		OldPos = NewPos;
+ 		NewPos = OldPos + Direction * HookSpeed;
+ 
+-		if(distance(InitPos, NewPos) > HookLength)
++		if(distance(HookBase, NewPos) > HookLength)
+ 		{
+-			NewPos = InitPos + normalize(NewPos - InitPos) * HookLength;
++			NewPos = HookBase + normalize(NewPos - HookBase) * HookLength;
+ 			DoBreak = true;
+ 		}
+ 
+ 		int Tele;
+ 		int Hit = Collision()->IntersectLineTeleHook(OldPos, NewPos, &FinishPos, nullptr, &Tele);
+ 
+-		if(ClientId >= 0 && GameClient()->IntersectCharacter(OldPos, NewPos, FinishPos, ClientId) != -1)
++		// players are only checked along the path the hook actually travels (up to the tile it hits)
++		if(PlayerHooking && ClientId >= 0 && GameClient()->IntersectCharacter(OldPos, FinishPos, FinishPos, ClientId) != -1)
+ 		{
+ 			HookCollColor = color_cast<ColorRGBA>(ColorHSLA(g_Config.m_ClHookCollColorTeeColl));
+ 			break;
+@@ -251,7 +256,11 @@ void CPlayers::RenderHookCollLine(
+ 			else
+ 			{
+ 				vLineSegments.emplace_back(InitPos, FinishPos);
+-				InitPos = NewPos = Collision()->TeleOuts(Tele - 1)[0];
++				InitPos = Collision()->TeleOuts(Tele - 1)[0];
++				Direction = TargetDirection;
++				HookBase = NewPos = InitPos + Direction * LineOffset;
++				FinishPos = NewPos;
++				continue;
+ 			}
+ 		}
+ 
+@@ -294,7 +303,7 @@ void CPlayers::RenderHookCollLine(
+ 		vLineQuadSegments.reserve(vLineSegments.size());
+ 
+ 		float LineWidth = 0.5f + (float)(HookCollSize - 1) * 0.25f;
+-		const vec2 PerpToAngle = direction(pi / 2.0f - angle(Direction)) * GameClient()->m_Camera.m_Zoom;
++		const vec2 PerpToAngle = normalize(vec2(-TargetDirection.y, TargetDirection.x)) * GameClient()->m_Camera.m_Zoom;
+ 
+ 		for(const auto &LineSegment : vLineSegments)
+ 		{
+diff --git a/src/game/client/gameclient.cpp b/src/game/client/gameclient.cpp
+index 60d0cde..af573f8 100644
+--- a/src/game/client/gameclient.cpp
++++ b/src/game/client/gameclient.cpp
+@@ -3170,7 +3170,7 @@ int CGameClient::IntersectCharacter(vec2 HookPos, vec2 NewPos, vec2 &NewPos2, in
+ 
+ 		const CClientData &Data = m_aClients[i];
+ 
+-		if(!Data.m_Active)
++		if(!Data.m_Active || !m_Snap.m_aCharacters[i].m_Active)
+ 			continue;
+ 
+ 		CNetObj_Character Prev = m_Snap.m_aCharacters[i].m_Prev;
+@@ -3187,7 +3187,7 @@ int CGameClient::IntersectCharacter(vec2 HookPos, vec2 NewPos, vec2 &NewPos2, in
+ 		vec2 ClosestPoint;
+ 		if(closest_point_on_line(HookPos, NewPos, Position, ClosestPoint))
+ 		{
+-			if(distance(Position, ClosestPoint) < CCharacterCore::PhysicalSize() / 2.0f + 2.0f)
++			if(distance(Position, ClosestPoint) < CCharacterCore::PhysicalSize() + 2.0f)
+ 			{
+ 				if(ClosestId == -1 || distance(HookPos, Position) < Distance)
+ 				{

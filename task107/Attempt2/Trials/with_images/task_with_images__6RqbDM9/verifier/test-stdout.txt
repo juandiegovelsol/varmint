@@ -1,0 +1,71 @@
+== captured submission.patch (2377 bytes, 2 files) ==
+== applying test.patch ==
+== running f2p + p2p tests ==
+(tests exited non-zero; parsing the report)
+== computing reward ==
+{"reward": 0.0, "tests_passed": 0.0, "f2p_passed": 4, "f2p_total": 5, "p2p_passed": 7, "p2p_total": 7, "rubric_passed": -1}
+reward=0.0
+/bin/python3
+rootdir: /app
+collecting ... collected 12 items
+
+scripts/test_harvest_c01_hookline.py::test_hook_coll_line_drawn_with_subunit_fire_speed PASSED [  8%]
+scripts/test_harvest_c01_hookline.py::test_hook_coll_line_wall_past_hook_reach_is_not_hookable FAILED [ 16%]
+scripts/test_harvest_c01_hookline.py::test_hook_coll_line_tee_grazed_by_hook_path PASSED [ 25%]
+scripts/test_harvest_c01_hookline.py::test_hook_coll_line_stops_at_wall_in_front_of_tee PASSED [ 33%]
+scripts/test_harvest_c01_hookline.py::test_hook_coll_line_width_setting_diagonal_aim PASSED [ 41%]
+scripts/test_harvest_c01_hookline.py::test_hook_coll_line_drawn_with_normal_fire_speed PASSED [ 50%]
+scripts/test_harvest_c01_hookline.py::test_hook_coll_line_hookable_wall_within_reach PASSED [ 58%]
+scripts/test_harvest_c01_hookline.py::test_hook_coll_line_unhookable_wall PASSED [ 66%]
+scripts/test_harvest_c01_hookline.py::test_hook_coll_line_tee_straight_ahead PASSED [ 75%]
+scripts/test_harvest_c01_hookline.py::test_hook_coll_line_tee_clearly_missed PASSED [ 83%]
+scripts/test_harvest_c01_hookline.py::test_hook_coll_line_tee_in_front_of_wall PASSED [ 91%]
+scripts/test_harvest_c01_hookline.py::test_hook_coll_line_width_setting_straight_aim PASSED [100%]
+
+=================================== FAILURES ===================================
+___________ test_hook_coll_line_wall_past_hook_reach_is_not_hookable ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-0/test_hook_coll_line_wall_past_0/attempt2')
+home_isolated = PosixPath('/tmp/pytest-of-root/pytest-0/test_hook_coll_line_wall_past_0/home')
+
+    @_twice
+    def test_hook_coll_line_wall_past_hook_reach_is_not_hookable(tmp_path, home_isolated):
+        """A hookable wall 368 units away is closer than hook_length (380), but the hook gives up on
+        the step that would reach it and never attaches: the line must not promise a hookable hit."""
+        with Session(tmp_path, "wall_past_reach") as s:
+            line = s.line_off_on()
+        best, share, total = _dominant(line, RIGHT)
+        assert total >= 100, f"no guide line drawn ({total} legend-coloured pixels)"
+>       assert share["hookable"] < 0.2 and best == "nothing", (
+            f"line previews a hookable hit on a wall the hook cannot reach: {share}")
+E       AssertionError: line previews a hookable hit on a wall the hook cannot reach: {'nothing': 0.0, 'hookable': 1.0, 'tee': 0.0}
+E       assert (1.0 < 0.2)
+
+scripts/test_harvest_c01_hookline.py:513: AssertionError
+
+The above exception was the direct cause of the following exception:
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-0/test_hook_coll_line_wall_past_0')
+home_isolated = PosixPath('/tmp/pytest-of-root/pytest-0/test_hook_coll_line_wall_past_0/home')
+
+    @functools.wraps(test)
+    def run(tmp_path, home_isolated):
+        errors = []
+        for attempt in (1, 2):
+            work = tmp_path / f"attempt{attempt}"
+            work.mkdir()
+            try:
+                return test(work, home_isolated)
+            except Exception as e:  # noqa: BLE001 - reported below
+                errors.append(e)
+>       raise AssertionError(f"failed on both attempts; first: {errors[0]!r}") from errors[1]
+E       AssertionError: failed on both attempts; first: AssertionError("line previews a hookable hit on a wall the hook cannot reach: {'nothing': 0.0, 'hookable': 1.0, 'tee': 0.0}\nassert (1.0 < 0.2)")
+
+scripts/test_harvest_c01_hookline.py:463: AssertionError
+----------------- generated xml file: /logs/verifier/junit.xml -----------------
+=========================== short test summary info ============================
+FAILED scripts/test_harvest_c01_hookline.py::test_hook_coll_line_wall_past_hook_reach_is_not_hookable
+=================== 1 failed, 11 passed in 234.61s (0:03:54) ===================
+(tests exited non-zero; parsing the report)
+== computing reward ==
+reward=0.0

@@ -1,0 +1,255 @@
+diff --git a/scripts/test_harvest_c01_hookline.py b/scripts/test_harvest_c01_hookline.py
+new file mode 100644
+index 000000000..c2cf19551
+--- /dev/null
++++ b/scripts/test_harvest_c01_hookline.py
+@@ -0,0 +1,249 @@
++"""Regression test for the hook-collision guide line (CPlayers::RenderHookCollLine).
++
++Bug (ddnet/ddnet issue #10943, fixed by PR #10951): the guide line that previews
++where the grappling hook will travel is computed from the server's `hook_fire_speed`
++tuning, which the renderer reads as an `int`. Any server that tunes
++`hook_fire_speed` below 1 (a legitimate, if unusual, physics tuning some custom
++game modes use) truncates to 0, and the old code returns immediately without
++drawing anything at all -- the guide line silently disappears, even though the
++hook itself still fires normally. The fix reads the tuning as a `float`, so the
++line is drawn whenever hook_fire_speed is merely positive, matching the hook's
++real behavior.
++
++This test drives the real client and server (no mocks): it starts a dedicated
++server on a real map, sets a sub-1 `hook_fire_speed` tuning live over the
++server's console, connects a real client, and takes two in-engine screenshots
++of the same, settled scene a moment apart: one with "always show my hook
++collision line" off, one with it on. It then compares the two screenshots in
++the region around the player. If turning the setting on changes nothing a
++player would see, the guide line was not drawn. This does not read any
++source file, string, or internal name, and it does not assume what color the
++line is (that depends on what the hook would hit, which isn't the point of
++this test) -- it only cares whether turning a real client display setting on
++visibly changes what is on screen, which is exactly what a player would
++notice.
++
++Uses the project's own integration-test harness (scripts/integration_test.py).
++"""
++import os
++import sys
++import time
++from pathlib import Path
++
++import pytest
++from PIL import Image
++
++REPO_ROOT = Path(__file__).resolve().parent.parent
++sys.path.insert(0, str(REPO_ROOT / "scripts"))
++
++import integration_test as it  # noqa: E402,F401
++
++
++def _builddir():
++    d = os.environ.get("DDNET_BUILD_DIR")
++    if d:
++        return Path(d)
++    for cand in (REPO_ROOT / "build", REPO_ROOT / "debug", REPO_ROOT / "release"):
++        if (cand / "DDNet").exists() and (cand / "DDNet-Server").exists():
++            return cand
++    raise RuntimeError("could not find a DDNet/DDNet-Server build; set DDNET_BUILD_DIR")
++
++
++def _start_xvfb(display_num):
++    import subprocess
++    proc = subprocess.Popen(
++        ["Xvfb", f":{display_num}", "-screen", "0", "1280x800x24"],
++        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
++    )
++    time.sleep(1.0)
++    return proc
++
++
++# The guide line is a thin (default width) line, possibly colored differently
++# depending on what it would hit, but whenever it is drawn it forms one long,
++# straight run of changed pixels along a single screen row (the line is
++# always closer to horizontal than vertical from the player's hook origin in
++# this scene). We only need to know whether *something line-shaped* a player
++# would see appeared between "off" and "on" -- not what color it is -- so this
++# is robust to any of its possible colors (no-collision, hookable, teammate)
++# and to any correct reimplementation of the fix. Unrelated animated art
++# (the sun rays, drifting clouds, the idle "zzz" bubble) changes scattered,
++# isolated pixels between two shots a moment apart, not one long contiguous
++# run in a single row, so it will not trip this check.
++def _longest_changed_run(png_off, png_on, box):
++    x0, y0, x1, y1 = box
++    a = Image.open(png_off).convert("RGB").crop((x0, y0, x1, y1))
++    b = Image.open(png_on).convert("RGB").crop((x0, y0, x1, y1))
++    wa, ha = a.size
++    pa, pb = a.load(), b.load()
++    best = 0
++    for y in range(ha):
++        run = 0
++        for x in range(wa):
++            ra, ga, ba_ = pa[x, y]
++            rb, gb, bb = pb[x, y]
++            if abs(ra - rb) + abs(ga - gb) + abs(ba_ - bb) > 60:
++                run += 1
++                best = max(best, run)
++            else:
++                run = 0
++    return best
++
++
++class _Session:
++    """Starts one dedicated DDNet-Server + DDNet client pair and sets a
++    tuning live, over the server's own console, before the player spawns."""
++
++    def __init__(self, tmp_path, port, display_num, hook_fire_speed, map_name="dm1"):
++        self.tmp_path = tmp_path
++        self.port = port
++        self.display_num = display_num
++        self.hook_fire_speed = hook_fire_speed
++        self.map_name = map_name
++        self.procs = []
++        self.xvfb = None
++
++    def __enter__(self):
++        import subprocess
++        builddir = _builddir()
++        self.xvfb = _start_xvfb(self.display_num)
++        env = dict(os.environ)
++        env["DISPLAY"] = f":{self.display_num}"
++        env["SDL_AUDIODRIVER"] = "dummy"
++        env["LIBGL_ALWAYS_SOFTWARE"] = "1"
++        self.env = env
++
++        work = self.tmp_path
++        server_fifo = work / "server.fifo"
++        client_fifo = work / "client.fifo"
++
++        server = subprocess.Popen(
++            [str(builddir / "DDNet-Server"),
++             "sv_rcon_password harvest",
++             f"sv_map {self.map_name}",
++             f"sv_port {self.port}",
++             "sv_register 0",
++             f"sv_input_fifo {server_fifo.name}"],
++            cwd=work, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
++        )
++        self.procs.append(server)
++        for _ in range(100):
++            if server_fifo.exists():
++                break
++            time.sleep(0.1)
++        time.sleep(1.0)
++
++        # Tunings only stick once set live, after the game world has finished
++        # its own startup initialization (setting them as startup arguments
++        # races that initialization and is silently overwritten).
++        with open(server_fifo, "w") as f:
++            f.write(f"tune hook_fire_speed {self.hook_fire_speed}\n")
++        time.sleep(0.5)
++
++        client = subprocess.Popen(
++            [str(builddir / "DDNet"),
++             "gfx_fullscreen 0", "gfx_screen_width 1280", "gfx_screen_height 800",
++             f"cl_input_fifo {client_fifo.name}", "cl_save_settings 0",
++             "cl_show_hook_coll_own 1",
++             f"connect 127.0.0.1:{self.port}"],
++            cwd=work, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
++        )
++        self.procs.append(client)
++        for _ in range(150):
++            if client_fifo.exists():
++                break
++            time.sleep(0.1)
++        # let the motd clear and the character spawn/settle
++        time.sleep(11.0)
++        self.client_fifo = client_fifo
++        return self
++
++    def _screenshot(self, dest_name):
++        # Screenshot filenames only have 1-second resolution, so two shots
++        # requested within the same second would collide; wait out the
++        # second boundary before asking for a new one.
++        screenshots_dir = Path(os.environ["HOME"]) / ".local" / "share" / "ddnet" / "screenshots"
++        before = set(screenshots_dir.glob("*.png")) if screenshots_dir.is_dir() else set()
++        time.sleep(1.1)
++        with open(self.client_fifo, "w") as f:
++            f.write("screenshot\n")
++        for _ in range(80):
++            time.sleep(0.1)
++            after = set(screenshots_dir.glob("*.png")) if screenshots_dir.is_dir() else set()
++            new = after - before
++            if new:
++                time.sleep(0.2)
++                src = sorted(new)[-1]
++                dest = self.tmp_path / dest_name
++                dest.write_bytes(src.read_bytes())
++                return dest
++        raise RuntimeError("no screenshot appeared")
++
++    def capture_off_and_on(self):
++        """Returns (screenshot_with_line_off, screenshot_with_line_on), taken
++        a moment apart with nothing else changed."""
++        with open(self.client_fifo, "w") as f:
++            f.write("cl_show_hook_coll_own 1\n")
++        time.sleep(0.3)
++        shot_off = self._screenshot("shot_off.png")
++        with open(self.client_fifo, "w") as f:
++            f.write("cl_show_hook_coll_own 2\n")
++        time.sleep(0.3)
++        shot_on = self._screenshot("shot_on.png")
++        return shot_off, shot_on
++
++    def __exit__(self, *exc):
++        for p in self.procs:
++            p.kill()
++        for p in self.procs:
++            p.wait()
++        if self.xvfb:
++            self.xvfb.kill()
++            self.xvfb.wait()
++
++
++@pytest.fixture
++def home_isolated(tmp_path, monkeypatch):
++    # Give each test its own HOME so screenshots/config/userdir don't collide.
++    home = tmp_path / "home"
++    home.mkdir()
++    monkeypatch.setenv("HOME", str(home))
++    return home
++
++
++# The game viewport, excluding the top-left weapon/jump HUD icons, the top
++# timer, the bottom-left chat log, and the bottom-right scoreboard -- just
++# the open world area in front of and around the player.
++VIEWPORT_BOX = (150, 80, 1050, 560)
++MIN_CHANGED_RUN = 80
++
++
++def test_hook_coll_line_drawn_with_subunit_fire_speed(tmp_path, home_isolated):
++    """f2p: a server tuned to hook_fire_speed=0.9 (below 1, truncates to 0 as
++    an int) must still show the hook-collision guide line when the client's
++    "always show my hook collision line" setting is turned on. Fails on the
++    pre-fix client (which reads the tuning as an int and bails out before
++    drawing anything, so turning the setting on changes nothing on screen),
++    passes once the tuning is read as a float."""
++    with _Session(tmp_path, port=18303, display_num=93, hook_fire_speed="0.9") as sess:
++        shot_off, shot_on = sess.capture_off_and_on()
++        changed = _longest_changed_run(shot_off, shot_on, VIEWPORT_BOX)
++    assert changed >= MIN_CHANGED_RUN, (
++        f"expected turning on 'always show my hook collision line' to visibly draw the "
++        f"guide line with hook_fire_speed=0.9, but only {changed} pixels changed on screen"
++    )
++
++
++def test_hook_coll_line_drawn_with_normal_fire_speed(tmp_path, home_isolated):
++    """p2p guard: with an ordinary (>=1) hook_fire_speed tuning, turning on
++    "always show my hook collision line" must still visibly draw the guide
++    line, on base and fix alike. This guards against a change that "fixes"
++    the bug in a way that breaks the normal case."""
++    with _Session(tmp_path, port=18304, display_num=94, hook_fire_speed="80") as sess:
++        shot_off, shot_on = sess.capture_off_and_on()
++        changed = _longest_changed_run(shot_off, shot_on, VIEWPORT_BOX)
++    assert changed >= MIN_CHANGED_RUN, (
++        f"expected turning on 'always show my hook collision line' to visibly draw the "
++        f"guide line with the default hook_fire_speed=80 tuning, but only {changed} pixels "
++        f"changed on screen"
++    )
