@@ -1,0 +1,120 @@
+diff --git a/packages/desktop-client/src/components/reports/graphs/showActivity.ts b/packages/desktop-client/src/components/reports/graphs/showActivity.ts
+index 266ad48..66d5655 100644
+--- a/packages/desktop-client/src/components/reports/graphs/showActivity.ts
++++ b/packages/desktop-client/src/components/reports/graphs/showActivity.ts
+@@ -77,7 +77,8 @@ export function showActivity({
+     !(
+       ['netAssets', 'netDebts'].includes(balanceTypeOp) ||
+       (['totalTotals', 'totalBudgeted'].includes(balanceTypeOp) &&
+-        (type === 'totals' || type === 'time'))
++        type === 'totals') ||
++      type === 'time'
+     ) && {
+       field: 'amount',
+       op: 'gte',
+diff --git a/packages/desktop-client/src/components/reports/spreadsheets/calculateLegend.ts b/packages/desktop-client/src/components/reports/spreadsheets/calculateLegend.ts
+index 9d7b2cd..95471e9 100644
+--- a/packages/desktop-client/src/components/reports/spreadsheets/calculateLegend.ts
++++ b/packages/desktop-client/src/components/reports/spreadsheets/calculateLegend.ts
+@@ -70,7 +70,7 @@ export function calculateLegend(
+       id: item.id || '',
+       name: item.name || '',
+       color: getColor(item.data, index),
+-      dataKey: item.id || item.name || '', // Use id for unique data lookup
++      dataKey: item.name || item.id || '',
+     };
+   });
+   return legend;
+diff --git a/packages/desktop-client/src/components/reports/spreadsheets/custom-spreadsheet.ts b/packages/desktop-client/src/components/reports/spreadsheets/custom-spreadsheet.ts
+index b744487..8d5484f 100644
+--- a/packages/desktop-client/src/components/reports/spreadsheets/custom-spreadsheet.ts
++++ b/packages/desktop-client/src/components/reports/spreadsheets/custom-spreadsheet.ts
+@@ -228,8 +228,7 @@ export function createCustomSpreadsheet({
+             stackAmounts += netAmounts;
+           }
+ 
+-          // Use id as key to prevent collisions when categories have the same name
+-          stacked[item.id || item.name] = stackAmounts;
++          stacked[item.name || item.id] = stackAmounts;
+ 
+           perIntervalTotals += netAmounts;
+ 
+@@ -248,11 +247,11 @@ export function createCustomSpreadsheet({
+             ReportOptions.intervalFormat.get(interval) || '',
+           ),
+           ...stacked,
+-          intervalStartDate: index === 0 ? startDate : intervalItem,
++          intervalStartDate: intervalItem,
+           intervalEndDate:
+             index + 1 === intervals.length
+               ? endDate
+-              : monthUtils.subDays(intervals[index + 1], 1),
++              : monthUtils.dayFromDate(intervals[index + 1]),
+           totalAssets: perIntervalAssets,
+           totalDebts: perIntervalDebts,
+           netAssets: perIntervalNetAssets,
+diff --git a/packages/desktop-client/src/components/reports/spreadsheets/filterEmptyRows.ts b/packages/desktop-client/src/components/reports/spreadsheets/filterEmptyRows.ts
+index e123a03..0913b82 100644
+--- a/packages/desktop-client/src/components/reports/spreadsheets/filterEmptyRows.ts
++++ b/packages/desktop-client/src/components/reports/spreadsheets/filterEmptyRows.ts
+@@ -13,13 +13,13 @@ export function filterEmptyRows({
+   balanceTypeOp?: balanceTypeOpType;
+ }): boolean {
+   let showHide: boolean;
+-  if (balanceTypeOp === 'totalTotals' || balanceTypeOp === 'totalBudgeted') {
++  if (balanceTypeOp === 'netAssets' || balanceTypeOp === 'netDebts') {
++    showHide = data[balanceTypeOp] !== 0;
++  } else {
+     showHide =
+       data['totalDebts'] !== 0 ||
+       data['totalAssets'] !== 0 ||
+       data[balanceTypeOp] !== 0;
+-  } else {
+-    showHide = data[balanceTypeOp] !== 0;
+   }
+   return !showEmpty ? showHide : true;
+ }
+diff --git a/packages/desktop-client/src/components/reports/spreadsheets/filterHiddenItems.ts b/packages/desktop-client/src/components/reports/spreadsheets/filterHiddenItems.ts
+index 09069bf..9748dba 100644
+--- a/packages/desktop-client/src/components/reports/spreadsheets/filterHiddenItems.ts
++++ b/packages/desktop-client/src/components/reports/spreadsheets/filterHiddenItems.ts
+@@ -40,7 +40,7 @@ export function filterHiddenItems(
+       case 'transfer':
+         return isTransfer && !isOffBudget;
+       case 'other':
+-        return !isOffBudget && !isTransfer;
++        return !isOffBudget && !hasCategory;
+       case 'all':
+         return true;
+       default:
+diff --git a/packages/desktop-client/src/components/reports/spreadsheets/recalculate.ts b/packages/desktop-client/src/components/reports/spreadsheets/recalculate.ts
+index 84266aa..ef70934 100644
+--- a/packages/desktop-client/src/components/reports/spreadsheets/recalculate.ts
++++ b/packages/desktop-client/src/components/reports/spreadsheets/recalculate.ts
+@@ -91,11 +91,11 @@ export function recalculate({
+         totalTotals: intervalTotals,
+         totalBudgeted: intervalTotals,
+         change,
+-        intervalStartDate: index === 0 ? startDate : intervalItem,
++        intervalStartDate: intervalItem,
+         intervalEndDate:
+           index + 1 === intervals.length
+             ? endDate
+-            : monthUtils.subDays(intervals[index + 1], 1),
++            : monthUtils.dayFromDate(intervals[index + 1]),
+       });
+ 
+       return arr;
+diff --git a/packages/loot-core/src/types/models/reports.ts b/packages/loot-core/src/types/models/reports.ts
+index b283e51..f65e277 100644
+--- a/packages/loot-core/src/types/models/reports.ts
++++ b/packages/loot-core/src/types/models/reports.ts
+@@ -89,7 +89,7 @@ export type LegendEntity = {
+   name: string;
+   id: string | null;
+   color: string;
+-  dataKey: string; // Uses id for unique data lookup when categories have same name
++  dataKey: string;
+ };
+ 
+ export type IntervalEntity = {

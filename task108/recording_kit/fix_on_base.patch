@@ -1,0 +1,280 @@
+diff --git a/packages/desktop-client/src/components/reports/graphs/BarGraph.tsx b/packages/desktop-client/src/components/reports/graphs/BarGraph.tsx
+index ae92734..e983de9 100644
+--- a/packages/desktop-client/src/components/reports/graphs/BarGraph.tsx
++++ b/packages/desktop-client/src/components/reports/graphs/BarGraph.tsx
+@@ -185,6 +185,14 @@ const customLabel = (props, typeOp, format) => {
+   return renderCustomLabel(calcX, calcY, textAnchor, display, textSize);
+ };
+ 
++type ReportDrilldownPayload = Pick<GroupedEntity, 'uncategorizedId'>;
++
++function hasUncategorizedId(value: unknown): value is ReportDrilldownPayload {
++  return (
++    value !== null && typeof value === 'object' && 'uncategorizedId' in value
++  );
++}
++
+ type BarGraphProps = {
+   style?: CSSProperties;
+   data: DataEntity;
+@@ -313,24 +321,31 @@ export function BarGraph({
+                   !['Group', 'Interval'].includes(groupBy) &&
+                   setPointer('pointer')
+                 }
+-                onClick={item =>
+-                  ((compact && showTooltip) || !compact) &&
+-                  !['Group', 'Interval'].includes(groupBy) &&
+-                  showActivity({
+-                    navigate,
+-                    categories,
+-                    accounts,
+-                    balanceTypeOp,
+-                    filters,
+-                    showHiddenCategories,
+-                    showOffBudget,
+-                    type: 'totals',
+-                    startDate: data.startDate,
+-                    endDate: data.endDate,
+-                    field: groupBy.toLowerCase(),
+-                    id: item.id,
+-                  })
+-                }
++                onClick={item => {
++                  const itemPayload = hasUncategorizedId(item.payload)
++                    ? item.payload
++                    : undefined;
++
++                  return (
++                    ((compact && showTooltip) || !compact) &&
++                    !['Group', 'Interval'].includes(groupBy) &&
++                    showActivity({
++                      navigate,
++                      categories,
++                      accounts,
++                      balanceTypeOp,
++                      filters,
++                      showHiddenCategories,
++                      showOffBudget,
++                      type: 'totals',
++                      startDate: data.startDate,
++                      endDate: data.endDate,
++                      field: groupBy.toLowerCase(),
++                      id: item.id,
++                      uncategorizedId: itemPayload?.uncategorizedId,
++                    })
++                  );
++                }}
+                 shape={(props: BarShapeProps) => (
+                   <Rectangle
+                     {...props}
+diff --git a/packages/desktop-client/src/components/reports/graphs/DonutGraph.tsx b/packages/desktop-client/src/components/reports/graphs/DonutGraph.tsx
+index 7d3fcef..a87ce4d 100644
+--- a/packages/desktop-client/src/components/reports/graphs/DonutGraph.tsx
++++ b/packages/desktop-client/src/components/reports/graphs/DonutGraph.tsx
+@@ -31,7 +31,8 @@ const RADIAN = Math.PI / 180;
+ 
+ const canDeviceHover = () => window.matchMedia('(hover: hover)').matches;
+ 
+-type ClickablePieItem = PieSectorDataItem & { id?: string };
++type ClickablePieItem = PieSectorDataItem &
++  Partial<Pick<GroupedEntity, 'id' | 'uncategorizedId'>>;
+ 
+ // ---------------------------------------------------------------------------
+ // Dimension helpers
+@@ -600,6 +601,7 @@ export function DonutGraph({
+                           endDate: data.endDate,
+                           field: 'category',
+                           id: item.id,
++                          uncategorizedId: item.uncategorizedId,
+                         });
+                       }
+                     }}
+@@ -707,6 +709,8 @@ export function DonutGraph({
+                             ? 'category'
+                             : groupBy.toLowerCase(),
+                         id: groupBy === 'Group' ? groupCategoryIds : item.id,
++                        uncategorizedId:
++                          groupBy === 'Group' ? undefined : item.uncategorizedId,
+                       });
+                     }
+                   }}
+diff --git a/packages/desktop-client/src/components/reports/graphs/LineGraph.tsx b/packages/desktop-client/src/components/reports/graphs/LineGraph.tsx
+index ce49140..d7d4dee 100644
+--- a/packages/desktop-client/src/components/reports/graphs/LineGraph.tsx
++++ b/packages/desktop-client/src/components/reports/graphs/LineGraph.tsx
+@@ -189,7 +189,7 @@ export function LineGraph({
+     ? computeTrendLines(data.intervalData, data.legend)
+     : [];
+ 
+-  const onShowActivity = (item, id, payload) => {
++  const onShowActivity = (id, payload, uncategorizedId) => {
+     showActivity({
+       navigate,
+       categories,
+@@ -203,6 +203,7 @@ export function LineGraph({
+       endDate: payload.payload.intervalEndDate,
+       field: groupBy.toLowerCase(),
+       id,
++      uncategorizedId,
+       interval,
+     });
+   };
+@@ -295,7 +296,11 @@ export function LineGraph({
+                       onClick: (e, payload) =>
+                         ((compact && showTooltip) || !compact) &&
+                         !['Group', 'Interval'].includes(groupBy) &&
+-                        onShowActivity(e, entry.id, payload),
++                        onShowActivity(
++                          entry.id,
++                          payload,
++                          entry.uncategorizedId,
++                        ),
+                     }}
+                   />
+                 );
+diff --git a/packages/desktop-client/src/components/reports/graphs/StackedBarGraph.tsx b/packages/desktop-client/src/components/reports/graphs/StackedBarGraph.tsx
+index 87fb2d4..4b130b9 100644
+--- a/packages/desktop-client/src/components/reports/graphs/StackedBarGraph.tsx
++++ b/packages/desktop-client/src/components/reports/graphs/StackedBarGraph.tsx
+@@ -303,6 +303,7 @@ export function StackedBarGraph({
+                         endDate: e.payload?.intervalEndDate,
+                         field: groupBy.toLowerCase(),
+                         id: entry.id,
++                        uncategorizedId: entry.uncategorizedId,
+                         interval,
+                       })
+                     }
+diff --git a/packages/desktop-client/src/components/reports/graphs/showActivity.ts b/packages/desktop-client/src/components/reports/graphs/showActivity.ts
+index 266ad48..88c6fcd 100644
+--- a/packages/desktop-client/src/components/reports/graphs/showActivity.ts
++++ b/packages/desktop-client/src/components/reports/graphs/showActivity.ts
+@@ -24,6 +24,7 @@ type showActivityProps = {
+   endDate?: string;
+   field?: string;
+   id?: string | string[]; // changed: supports array for oneOf
++  uncategorizedId?: 'off_budget' | 'transfer' | 'other' | 'all';
+   interval?: string;
+ };
+ 
+@@ -40,6 +41,7 @@ export function showActivity({
+   endDate,
+   field,
+   id,
++  uncategorizedId,
+   interval = 'Day',
+ }: showActivityProps) {
+   const isOutFlow =
+@@ -52,16 +54,25 @@ export function showActivity({
+       : (((ReportOptions.intervalMap.get(interval) || 'Day').toLowerCase() +
+           'FromDate') as 'dayFromDate' | 'monthFromDate' | 'yearFromDate');
+   const isDateOp = interval === 'Weekly' || type !== 'time';
++  const drilldownFilter =
++    field === 'category' && uncategorizedId === 'transfer'
++      ? {
++          field: 'transfer',
++          op: 'is',
++          value: true,
++          type: 'boolean',
++        }
++      : id && {
++          // changed: use oneOf when id is an array, is when it's a string
++          field,
++          op: Array.isArray(id) ? 'oneOf' : 'is',
++          value: id,
++          type: 'id',
++        };
+ 
+   const filterConditions = [
+     ...filters,
+-    id && {
+-      // changed: use oneOf when id is an array, is when it's a string
+-      field,
+-      op: Array.isArray(id) ? 'oneOf' : 'is',
+-      value: id,
+-      type: 'id',
+-    },
++    drilldownFilter,
+     {
+       field: 'date',
+       op: isDateOp ? 'gte' : 'is',
+diff --git a/packages/desktop-client/src/components/reports/graphs/tableGraph/ReportTableRow.tsx b/packages/desktop-client/src/components/reports/graphs/tableGraph/ReportTableRow.tsx
+index 2b8495a..32e0b22 100644
+--- a/packages/desktop-client/src/components/reports/graphs/tableGraph/ReportTableRow.tsx
++++ b/packages/desktop-client/src/components/reports/graphs/tableGraph/ReportTableRow.tsx
+@@ -178,6 +178,7 @@ export const ReportTableRow = memo(
+                         endDate: intervalItem.intervalEndDate || '',
+                         field: groupBy.toLowerCase(),
+                         id: item.id,
++                        uncategorizedId: item.uncategorizedId,
+                         interval,
+                       })
+                     }
+@@ -235,6 +236,7 @@ export const ReportTableRow = memo(
+                         endDate,
+                         field: groupBy.toLowerCase(),
+                         id: item.id,
++                        uncategorizedId: item.uncategorizedId,
+                       })
+                     }
+                   />
+@@ -285,6 +287,7 @@ export const ReportTableRow = memo(
+                         endDate,
+                         field: groupBy.toLowerCase(),
+                         id: item.id,
++                        uncategorizedId: item.uncategorizedId,
+                       })
+                     }
+                   />
+@@ -334,6 +337,7 @@ export const ReportTableRow = memo(
+                 endDate,
+                 field: groupBy.toLowerCase(),
+                 id: item.id,
++                uncategorizedId: item.uncategorizedId,
+               })
+             }
+             width="flex"
+diff --git a/packages/desktop-client/src/components/reports/spreadsheets/calculateLegend.ts b/packages/desktop-client/src/components/reports/spreadsheets/calculateLegend.ts
+index 9d7b2cd..9f44358 100644
+--- a/packages/desktop-client/src/components/reports/spreadsheets/calculateLegend.ts
++++ b/packages/desktop-client/src/components/reports/spreadsheets/calculateLegend.ts
+@@ -71,6 +71,8 @@ export function calculateLegend(
+       name: item.name || '',
+       color: getColor(item.data, index),
+       dataKey: item.id || item.name || '', // Use id for unique data lookup
++      uncategorizedId:
++        'uncategorizedId' in item.data ? item.data.uncategorizedId : undefined,
+     };
+   });
+   return legend;
+diff --git a/packages/desktop-client/src/components/reports/spreadsheets/recalculate.ts b/packages/desktop-client/src/components/reports/spreadsheets/recalculate.ts
+index 84266aa..1443274 100644
+--- a/packages/desktop-client/src/components/reports/spreadsheets/recalculate.ts
++++ b/packages/desktop-client/src/components/reports/spreadsheets/recalculate.ts
+@@ -108,6 +108,7 @@ export function recalculate({
+   return {
+     id: item.id || '',
+     name: item.name,
++    uncategorizedId: item.uncategorized_id,
+     totalAssets,
+     totalDebts,
+     netAssets: totalTotals > 0 ? totalTotals : 0,
+diff --git a/packages/loot-core/src/types/models/reports.ts b/packages/loot-core/src/types/models/reports.ts
+index b283e51..a749c1b 100644
+--- a/packages/loot-core/src/types/models/reports.ts
++++ b/packages/loot-core/src/types/models/reports.ts
+@@ -90,6 +90,7 @@ export type LegendEntity = {
+   id: string | null;
+   color: string;
+   dataKey: string; // Uses id for unique data lookup when categories have same name
++  uncategorizedId?: 'off_budget' | 'transfer' | 'other' | 'all';
+ };
+ 
+ export type IntervalEntity = {
+@@ -108,6 +109,7 @@ export type IntervalEntity = {
+ export type GroupedEntity = {
+   id: string;
+   name: string;
++  uncategorizedId?: 'off_budget' | 'transfer' | 'other' | 'all';
+   date?: string;
+   intervalData: IntervalEntity[];
+   totalAssets: number;

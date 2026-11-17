@@ -1,0 +1,2 @@
+#!/bin/bash
+cd /app && cmake -S /app -B /build >/dev/null && cmake --build /build -j16 --target test_supertux2 2>&1 | grep -E "error|warning" | head; SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy timeout 600 /build/test_supertux2 --gtest_filter="${1:-RockBehaviour.*}" 2>&1 | grep -E "^\[ +(OK|FAILED) +\]|Failure|Expected|Which is|should|rock|Tux|leaf" | grep -v "^\[  FAILED  \] [0-9]" | head -${2:-80}

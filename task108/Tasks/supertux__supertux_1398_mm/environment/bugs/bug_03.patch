@@ -1,0 +1,32 @@
+diff --git a/src/object/rock.cpp b/src/object/rock.cpp
+index 5ea6fe5..64fc6df 100644
+--- a/src/object/rock.cpp
++++ b/src/object/rock.cpp
+@@ -96,6 +96,7 @@ Rock::collision_solid(const CollisionHit& hit)
+   if (hit.bottom  && !on_ground && !is_grabbed()) {
+     SoundManager::current()->play(ROCK_SOUND, get_pos());
+     physic.set_velocity_x(0);
++    set_group(COLGROUP_MOVING_STATIC);
+     on_ground = true;
+   }
+ }
+@@ -157,7 +158,6 @@ Rock::grab(MovingObject& object, const Vector& pos, Direction dir_)
+ void
+ Rock::ungrab(MovingObject& object, Direction dir)
+ {
+-  set_group(COLGROUP_MOVING_STATIC);
+   on_ground = false;
+   if (dir == Direction::UP) {
+     physic.set_velocity(0, -500);
+@@ -169,6 +169,11 @@ Rock::ungrab(MovingObject& object, Direction dir)
+     physic.set_velocity(0, 0);
+   }
+ 
++  // A lantern that is thrown forward has to keep catching willowisps on its
++  // way; it becomes solid again when it lands (see collision_solid()).
++  if (physic.get_velocity_x() == 0.0f)
++    set_group(COLGROUP_MOVING_STATIC);
++
+   if (!on_ungrab_script.empty()) {
+     Sector::get().run_script(on_ungrab_script, "Rock::on_ungrab");
+   }

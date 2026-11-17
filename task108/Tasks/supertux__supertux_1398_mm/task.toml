@@ -1,0 +1,75 @@
+version = "1.0"
+reward_type = "binary"
+
+[task]
+name = "scale-ai/supertux__supertux_1398_mm"
+
+[metadata]
+task_id = "supertux__supertux_1398_mm"
+title = "Some objects misbehave in the forest"
+repository_name = "SuperTux/supertux"
+repo_url = "https://github.com/SuperTux/supertux"
+issue_number = 1398
+pr_number = 1449
+base_commit = "d2c892e2d94308da759a3fb8451101e3add55754"
+fix_commit = "282a34e9deb70f6a703328546e1adb164973f447"
+task_type = "2d_video"
+language = "C++"
+framework = "SuperTux"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = """
+The prompt names no file, class, function, object type or number. It never names the object type: it refers only to "the objects that are grabbed in the video", says several things that happen with them in a 26 s uncut forest clip are not how those objects work in this game, and asks that they behave like ordinary objects of their kind from the moment Tux picks one up until it comes to rest and while it lies there, and that everything else in the level react to them normally, followed by one short expected-behaviour line per tested behaviour (held in front of Tux, thrown the way he walks, stays on the ground once landed, falls past coins, solid for Tux when lying on the ground, knocks out an enemy it falls on). It never says which object it is, which of these behaviours are broken, or how they are broken; that is legible only in the video. Every concrete defect is legible only in the video, recorded headlessly from this task's own buggy build in the repo's own walking_leaves.stl level (extra rocks, a coin column and a walking leaf placed in it).
+
+Six independent defects in four files (rock.cpp, player.cpp, player.hpp, badguy.cpp); only defect 0 and bug_03 live in rock.cpp, none of which breaks the build or logs anything:
+0. [original issue #1398, no bug patch] A falling rock treats touchable objects (coins) as something to land on, so it repeatedly stops on a column of coins and crawls down it.
+1. [bug_01, player.cpp position_grabbed_object] The held-object offset is applied on the wrong side, so Tux carries rocks behind him in both directions (and the rock jumps to his front when he lets go).
+2. [bug_02, player.cpp release code] The throw direction passed to ungrab is derived from which side of Tux the rock was put down on, with the comparison inverted, so a rock thrown while walking flies backwards.
+3. [bug_03, rock.cpp ungrab + collision_solid] A rock thrown while moving stays in the touchable collision group; the code that restores the solid group on landing never runs because touchable objects get no static collisions, so the rock falls through the ground. Needs engine knowledge of collision groups to see.
+4. [bug_04, player.hpp/player.cpp collides] A plausible-looking Player::collides override ('Tux walks up to things he can carry and grabs them') skips every portable object that is not being carried, so Tux walks through a resting rock and sinks through it when he jumps on it.
+5. [bug_05, badguy.cpp collision_tile] A "simplified" hurt branch freezes any freezable badguy instead of only on icy hazards, so a rock dropped on a walking leaf turns it into an ice block instead of knocking it out (outside the rock code entirely).
+Bugs 1-3 stack on the same throw in the clip (held behind, flies backwards, falls through the ground); fixing one leaves the others visible.
+
+Tests (tests/rock_behaviour_test.cpp) load small levels into a real Sector and run the game's own update loop and collision system at 64 fps, driving Tux through his scripting controller. They only read positions and object existence, never implementation details. f2p (7): rock dropped through a coin column reaches the floor within 2 frames of the same drop through open air and uses up no coins (0); carried rock centre is on Tux's facing side, both directions (1); a rock thrown while walking travels at least 16 px forward in 0.25 s (accepts throws down to ~64 px/s), both directions (2); a thrown rock lies still on the floor two seconds later, both directions (3); Tux dropped on a resting rock stands on top of it, and Tux walking into a resting rock is stopped by it (4); a rock dropped from a ledge onto a walking leaf pacing in a two-tile trench right below (so no timing or drop-position assumption) leaves no leaf standing in the room four seconds later (5). p2p (3): the carried rock travels with Tux; a put-down rock lands on the floor; a rock dropped on a resting rock rests on top of it. The old direct-call probe tests (which pinned FORCE_MOVE and exact velocities) were replaced because a correct fix returning a different HitResponse would have failed them.
+
+Validated locally in the task image's toolchain (harbor not run): buggy tree -> all 7 f2p fail, 3 p2p pass; buggy + solution/fix.patch -> 10/10; each bug alone on the fixed tree fails only its own tests; base commit alone fails only the coin test; an independent alternative fix (early return for touchables, different hold offset, 110 px/s throw, unconditional group restore, override kept but limited to the carried object, reordered freeze branch) passes 10/10.
+
+Known limits: a coin-specific fix for defect 0 passes (the clip only shows coins); the leaf test accepts any outcome that removes the leaf from the room (fall or squish).
+"""
+files_edited = [
+  "src/badguy/badguy.cpp",
+  "src/object/player.cpp",
+  "src/object/rock.cpp",
+  "src/object/player.hpp",
+]
+f2p = [
+  "RockBehaviour DroppedRockFallsPastCoinsLikeThroughOpenAir",
+  "RockBehaviour CarriedRockIsHeldInFrontOfTux",
+  "RockBehaviour RockThrownWhileWalkingFliesForward",
+  "RockBehaviour ThrownRockLandsAndStaysOnTheGround",
+  "RockBehaviour TuxCanStandOnARestingRock",
+  "RockBehaviour TuxWalkingIntoARestingRockIsStoppedByIt",
+  "RockBehaviour RockDroppedOnAWalkingLeafKnocksItOut",
+]
+p2p = [
+  "RockBehaviour CarriedRockMovesAlongWithTux",
+  "RockBehaviour PutDownRockLandsOnTheGround",
+  "RockBehaviour RockDroppedOnARestingRockStaysOnTop",
+]
+tags = ["multimodal", "2d_video", "temporal_interaction", "beyond_browser", "supertux", "c++", "physics", "collision", "platformer", "gtest"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

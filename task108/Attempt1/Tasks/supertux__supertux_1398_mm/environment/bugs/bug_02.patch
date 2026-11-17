@@ -1,0 +1,15 @@
+diff --git a/src/object/player.cpp b/src/object/player.cpp
+index 401ae0c..a49a00c 100644
+--- a/src/object/player.cpp
++++ b/src/object/player.cpp
+@@ -1132,7 +1132,9 @@ if (m_swimming) {
+         } else if (m_controller->hold(Control::DOWN)) {
+           m_grabbed_object->ungrab(*this, Direction::DOWN);
+         } else {
+-          m_grabbed_object->ungrab(*this, m_dir);
++          // throw it away from Tux, towards the side it was put down on
++          m_grabbed_object->ungrab(*this, (dest_.get_left() > m_col.m_bbox.get_left()) ?
++                                   Direction::LEFT : Direction::RIGHT);
+         }
+         m_grabbed_object = nullptr;
+       }
