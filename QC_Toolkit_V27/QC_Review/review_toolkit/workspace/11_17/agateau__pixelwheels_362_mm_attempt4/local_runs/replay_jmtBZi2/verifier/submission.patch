@@ -1,0 +1,97 @@
+diff --git a/core/src/com/agateau/pixelwheels/bonus/Missile.java b/core/src/com/agateau/pixelwheels/bonus/Missile.java
+index e6a94a5..8561bbb 100644
+--- a/core/src/com/agateau/pixelwheels/bonus/Missile.java
++++ b/core/src/com/agateau/pixelwheels/bonus/Missile.java
+@@ -137,7 +137,7 @@ public class Missile extends GameObjectAdapter
+         Vehicle vehicle = shooter.getVehicle();
+         object.mShooter = shooter;
+         object.mBodyDef.position.set(vehicle.getX(), vehicle.getY());
+-        object.mBodyDef.angle = AgcMathUtils.normalizeAnglePiRad(vehicle.getAngle());
++        object.mBodyDef.angle = AgcMathUtils.normalizeAnglePiRad(vehicle.getBody().getAngle());
+ 
+         object.mBody = gameWorld.getBox2DWorld().createBody(object.mBodyDef);
+         object.mBody.createFixture(object.mShape, WAITING_DENSITY);
+@@ -258,14 +258,29 @@ public class Missile extends GameObjectAdapter
+ 
+     @Override
+     public void draw(Batch batch, ZLevel zLevel, Rectangle viewBounds) {
++        if (mStatus == Status.WAITING) {
++            // While carried, the missile must be drawn at the same level as its vehicle, so that
++            // it is hidden by whatever hides the vehicle (bridges, ...). The shadow is drawn at
++            // this level too so that it is drawn *over* its vehicle.
++            Vehicle vehicle = mShooter.getVehicle();
++            ZLevel vehicleZLevel = vehicle.isFlying() ? ZLevel.FLYING : ZLevel.VEHICLES;
++            if (zLevel == vehicleZLevel) {
++                batch.setColor(mShooter.getVehicleRenderer().getBatchColor());
++                drawShadow(batch);
++                drawMissile(batch);
++                batch.setColor(Color.WHITE);
++            }
++            if (zLevel == ZLevel.FLYING) {
++                drawTarget(batch);
++            }
++            return;
++        }
+         if (zLevel == ZLevel.FLYING) {
+             // Draw the shadow at Z_FLYING so that the shadow is drawn *over* its vehicle
+             drawShadow(batch);
+             drawMissile(batch);
+             drawTarget(batch);
+-            if (mStatus != Status.WAITING) {
+-                drawReactorFire(batch);
+-            }
++            drawReactorFire(batch);
+         }
+     }
+ 
+diff --git a/core/src/com/agateau/pixelwheels/racer/VehicleRenderer.java b/core/src/com/agateau/pixelwheels/racer/VehicleRenderer.java
+index 7e8553c..aaf480a 100644
+--- a/core/src/com/agateau/pixelwheels/racer/VehicleRenderer.java
++++ b/core/src/com/agateau/pixelwheels/racer/VehicleRenderer.java
+@@ -155,7 +155,7 @@ public class VehicleRenderer implements CellFrameBufferUser {
+                 float old = batch.getPackedColor();
+                 batch.setColor(0, 0, 0, BodyRegionDrawer.SHADOW_ALPHA);
+                 mCellFrameBufferManager.drawCell(
+-                        batch, mVehicle.getX() - offset, mVehicle.getY() + offset, mCellId);
++                        batch, mVehicle.getX() + offset, mVehicle.getY() - offset, mCellId);
+                 batch.setPackedColor(old);
+             }
+             return;
+diff --git a/core/src/com/agateau/pixelwheels/racescreen/RacerCameraUpdater.java b/core/src/com/agateau/pixelwheels/racescreen/RacerCameraUpdater.java
+index f16e0f3..4faa7b0 100644
+--- a/core/src/com/agateau/pixelwheels/racescreen/RacerCameraUpdater.java
++++ b/core/src/com/agateau/pixelwheels/racescreen/RacerCameraUpdater.java
+@@ -56,15 +56,14 @@ class RacerCameraUpdater extends CameraUpdater {
+ 
+         // Compute pos
+         float advance = Math.min(viewportWidth, viewportHeight) * Constants.CAMERA_ADVANCE_PERCENT;
+-        sDelta.set(0, advance)
+-                .rotate(90 - mRacer.getCameraAngle())
++        sDelta.set(advance, 0)
++                .rotate(mRacer.getCameraAngle())
+                 .add(vehicle.getPosition())
+                 .sub(mCameraInfo.position);
+-        mNextCameraInfo.position.set(mCameraInfo.position).add(sDelta);
+         if (!immediate) {
+             sDelta.limit(MAX_CAMERA_DELTA * delta);
+         }
+-        limitZoomChange(delta);
++        mNextCameraInfo.position.set(mCameraInfo.position).add(sDelta);
+         applyChanges();
+     }
+ }
+diff --git a/core/src/com/agateau/pixelwheels/utils/BodyRegionDrawer.java b/core/src/com/agateau/pixelwheels/utils/BodyRegionDrawer.java
+index 6bbb42c..2e47c6b 100644
+--- a/core/src/com/agateau/pixelwheels/utils/BodyRegionDrawer.java
++++ b/core/src/com/agateau/pixelwheels/utils/BodyRegionDrawer.java
+@@ -102,8 +102,8 @@ public class BodyRegionDrawer {
+                 region, x - w / 2, y - h / 2, // pos
+                 w / 2, h / 2, // origin
+                 w, h, // size
+-                1, 1, // scale
+-                angle);
++                mScale, mScale, // scale
++                angle * MathUtils.radDeg);
+         mBatch.setPackedColor(old);
+     }
+ 

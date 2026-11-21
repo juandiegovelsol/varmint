@@ -1,0 +1,925 @@
+diff --git a/core-tests/build.gradle b/core-tests/build.gradle
+index 63f49e8..ae464cc 100644
+--- a/core-tests/build.gradle
++++ b/core-tests/build.gradle
+@@ -8,6 +8,11 @@ dependencies {
+     implementation "com.badlogicgames.gdx:gdx-box2d-platform:$gdxVersion:natives-desktop"
+     implementation "junit:junit:4.12"
+     implementation "org.mockito:mockito-core:3.12.4"
++
++    // Used by MissileZOrderTest: GameRenderer needs a real, working OpenGL context (it eagerly
++    // creates a ShapeRenderer and a FrameBuffer), so the test opens a real (off-screen) desktop
++    // window, the same way the game itself renders on desktop.
++    implementation "com.badlogicgames.gdx:gdx-backend-lwjgl3:$gdxVersion"
+ }
+ 
+ sourceCompatibility = JavaVersion.VERSION_1_8
+diff --git a/core-tests/src/com/agateau/pixelwheels/bonus/RocketTest.java b/core-tests/src/com/agateau/pixelwheels/bonus/RocketTest.java
+new file mode 100755
+index 0000000..a41fed2
+--- /dev/null
++++ b/core-tests/src/com/agateau/pixelwheels/bonus/RocketTest.java
+@@ -0,0 +1,282 @@
++/*
++ * Behavior of the rocket bonus as the player sees it: a rocket picked up by a car rides on the car
++ * pointing the same way, flies straight ahead of the car when fired, trails its exhaust behind it
++ * and casts a shadow shaped (and turned) like itself.
++ *
++ * The rocket is created through its public factory for a real Box2D car body, stepped with the
++ * game's fixed time step, and drawn through a Batch that records every textured quad (see
++ * DrawRecorder), so the checks are about what ends up on screen, not about how it is computed.
++ */
++package com.agateau.pixelwheels.bonus;
++
++import static com.agateau.pixelwheels.GameWorld.BOX2D_TIME_STEP;
++import static com.agateau.pixelwheels.GameWorld.POSITION_ITERATIONS;
++import static com.agateau.pixelwheels.GameWorld.VELOCITY_ITERATIONS;
++import static org.junit.Assert.assertFalse;
++import static org.junit.Assert.assertTrue;
++import static org.mockito.Mockito.mock;
++import static org.mockito.Mockito.when;
++
++import com.agateau.pixelwheels.Assets;
++import com.agateau.pixelwheels.GameWorld;
++import com.agateau.pixelwheels.ZLevel;
++import com.agateau.pixelwheels.racer.Racer;
++import com.agateau.pixelwheels.racer.Vehicle;
++import com.agateau.pixelwheels.racer.VehicleRenderer;
++import com.agateau.pixelwheels.sound.AudioManager;
++import com.agateau.pixelwheels.testutils.DrawRecorder;
++import com.badlogic.gdx.graphics.Texture;
++import com.badlogic.gdx.graphics.g2d.Animation;
++import com.badlogic.gdx.graphics.g2d.TextureRegion;
++import com.badlogic.gdx.math.MathUtils;
++import com.badlogic.gdx.math.Rectangle;
++import com.badlogic.gdx.math.Vector2;
++import com.badlogic.gdx.physics.box2d.Body;
++import com.badlogic.gdx.physics.box2d.BodyDef;
++import com.badlogic.gdx.physics.box2d.Filter;
++import com.badlogic.gdx.physics.box2d.Fixture;
++import com.badlogic.gdx.physics.box2d.PolygonShape;
++import com.badlogic.gdx.physics.box2d.World;
++import com.badlogic.gdx.utils.Array;
++import java.lang.reflect.Field;
++import java.util.ArrayList;
++import java.util.List;
++import org.junit.Test;
++import org.junit.runner.RunWith;
++import org.junit.runners.JUnit4;
++
++@RunWith(JUnit4.class)
++public class RocketTest {
++    // Car headings (degrees, counter-clockwise from +X) the scenarios are played with.
++    private static final float[] HEADINGS = {30, 90, 135, 200, 290};
++    private static final float ANGLE_TOLERANCE = 5;
++    private static final Rectangle VIEW = new Rectangle(-1000, -1000, 3000, 3000);
++
++    private static class Scene {
++        World world;
++        Body carBody;
++        Texture rocketTexture;
++        Texture flameTexture;
++        Missile missile;
++
++        void step(int count) {
++            for (int i = 0; i < count; ++i) {
++                world.step(BOX2D_TIME_STEP, VELOCITY_ITERATIONS, POSITION_ITERATIONS);
++                missile.act(BOX2D_TIME_STEP);
++            }
++        }
++
++        DrawRecorder draw() {
++            DrawRecorder batch = new DrawRecorder();
++            for (ZLevel zLevel : ZLevel.values()) {
++                missile.draw(batch, zLevel, VIEW);
++            }
++            return batch;
++        }
++
++        /** The rocket sprite itself: the untinted quad(s) using the rocket image. */
++        DrawRecorder.Quad rocketSprite(DrawRecorder batch) {
++            List<DrawRecorder.Quad> list = new ArrayList<>();
++            for (DrawRecorder.Quad quad : batch.quadsOf(rocketTexture)) {
++                if (!quad.isShadowLike()) {
++                    list.add(quad);
++                }
++            }
++            assertFalse("the rocket should be drawn", list.isEmpty());
++            DrawRecorder.Quad first = list.get(0);
++            for (DrawRecorder.Quad other : list) {
++                assertTrue(
++                        "the rocket is drawn several times, at different places: " + list,
++                        other.center().dst(first.center()) < 0.05f
++                                && angleBetween(other.imageXAxis(), first.imageXAxis()) < 1);
++            }
++            return first;
++        }
++    }
++
++    private static Texture texture() {
++        Texture texture = mock(Texture.class);
++        when(texture.getWidth()).thenReturn(64);
++        when(texture.getHeight()).thenReturn(64);
++        return texture;
++    }
++
++    private static Scene createScene(float headingDeg) throws Exception {
++        Scene scene = new Scene();
++        scene.world = new World(new Vector2(0, 0), true);
++
++        BodyDef bodyDef = new BodyDef();
++        bodyDef.type = BodyDef.BodyType.DynamicBody;
++        bodyDef.position.set(20, 20);
++        bodyDef.angle = headingDeg * MathUtils.degRad;
++        Body carBody = scene.world.createBody(bodyDef);
++        PolygonShape shape = new PolygonShape();
++        shape.setAsBox(1.4f, 0.75f);
++        Fixture fixture = carBody.createFixture(shape, 1f);
++        shape.dispose();
++        // The car body only carries the rocket here: keep it out of any collision.
++        Filter filter = new Filter();
++        filter.categoryBits = 0x4000;
++        filter.maskBits = 0;
++        fixture.setFilterData(filter);
++        scene.carBody = carBody;
++
++        Vehicle vehicle = mock(Vehicle.class);
++        when(vehicle.getBody()).thenReturn(carBody);
++        when(vehicle.getX()).thenAnswer(i -> carBody.getPosition().x);
++        when(vehicle.getY()).thenAnswer(i -> carBody.getPosition().y);
++        when(vehicle.getPosition()).thenAnswer(i -> carBody.getPosition());
++        when(vehicle.getAngle())
++                .thenAnswer(i -> ((carBody.getAngle() * MathUtils.radDeg) % 360 + 360) % 360);
++        Racer racer = mock(Racer.class);
++        when(racer.getVehicle()).thenReturn(vehicle);
++        when(racer.getPosition()).thenAnswer(i -> carBody.getPosition());
++        carBody.setUserData(racer);
++
++        GameWorld gameWorld = mock(GameWorld.class);
++        when(gameWorld.getBox2DWorld()).thenReturn(scene.world);
++
++        scene.rocketTexture = texture();
++        scene.flameTexture = texture();
++        Array<TextureRegion> flameFrames = new Array<>();
++        flameFrames.add(new TextureRegion(scene.flameTexture, 0, 0, 7, 14));
++        flameFrames.add(new TextureRegion(scene.flameTexture, 8, 0, 7, 14));
++        Assets assets = mock(Assets.class);
++        setField(assets, "missile", new TextureRegion(scene.rocketTexture, 0, 0, 44, 13));
++        setField(assets, "target", new TextureRegion(texture(), 0, 0, 16, 16));
++        setField(assets, "turboFlame", new Animation<>(0.1f, flameFrames));
++        // A real Racer always has a VehicleRenderer; code drawing what it carries may use it.
++        when(racer.getVehicleRenderer()).thenReturn(new VehicleRenderer(assets, vehicle));
++
++        scene.missile = Missile.create(assets, gameWorld, mock(AudioManager.class), racer);
++        return scene;
++    }
++
++    private static void setField(Object target, String name, Object value) throws Exception {
++        Field field = Assets.class.getDeclaredField(name);
++        field.setAccessible(true);
++        field.set(target, value);
++    }
++
++    /** Absolute difference between two angles in degrees, in [0, 180]. */
++    private static float angleBetween(Vector2 direction, float angleDeg) {
++        float delta = (direction.angleDeg() - angleDeg) % 360;
++        if (delta < -180) {
++            delta += 360;
++        } else if (delta > 180) {
++            delta -= 360;
++        }
++        return Math.abs(delta);
++    }
++
++    private static float angleBetween(Vector2 a, Vector2 b) {
++        return angleBetween(a, b.angleDeg());
++    }
++
++    @Test
++    public void carriedRocketPointsWhereTheCarPoints() throws Exception {
++        for (float heading : HEADINGS) {
++            Scene scene = createScene(heading);
++            scene.step(20);
++            DrawRecorder.Quad rocket = scene.rocketSprite(scene.draw());
++            Vector2 nose = rocket.imageXAxis();
++            assertTrue(
++                    "car heading " + heading + "°: the rocket it carries is drawn pointing "
++                            + nose.angleDeg() + "°",
++                    angleBetween(nose, heading) < ANGLE_TOLERANCE);
++        }
++    }
++
++    @Test
++    public void firedRocketFliesWhereTheCarPoints() throws Exception {
++        for (float heading : HEADINGS) {
++            Scene scene = createScene(heading);
++            scene.step(10);
++            scene.missile.shoot();
++            Vector2 start = new Vector2(scene.missile.getX(), scene.missile.getY());
++            scene.step(30);
++            Vector2 travel =
++                    new Vector2(scene.missile.getX(), scene.missile.getY()).sub(start);
++            assertTrue(
++                    "car heading " + heading + "°: the fired rocket barely moved (" + travel + ")",
++                    travel.len() > 5);
++            assertTrue(
++                    "car heading " + heading + "°: the fired rocket flew towards "
++                            + travel.angleDeg() + "°",
++                    angleBetween(travel, heading) < ANGLE_TOLERANCE);
++            Vector2 nose = scene.rocketSprite(scene.draw()).imageXAxis();
++            assertTrue(
++                    "car heading " + heading + "°: the flying rocket is drawn pointing "
++                            + nose.angleDeg() + "° while flying towards " + travel.angleDeg() + "°",
++                    angleBetween(nose, travel) < ANGLE_TOLERANCE);
++        }
++    }
++
++    @Test
++    public void rocketExhaustComesOutOfItsTail() throws Exception {
++        for (float heading : HEADINGS) {
++            Scene scene = createScene(heading);
++            scene.step(10);
++            scene.missile.shoot();
++            scene.step(3);
++            DrawRecorder batch = scene.draw();
++            DrawRecorder.Quad rocket = scene.rocketSprite(batch);
++            List<DrawRecorder.Quad> flames = batch.quadsOf(scene.flameTexture);
++            assertFalse(
++                    "car heading " + heading + "°: a fired rocket should show its exhaust",
++                    flames.isEmpty());
++
++            Vector2 axis = rocket.imageXAxis();
++            float length = rocket.imageWidth();
++            for (DrawRecorder.Quad flame : flames) {
++                Vector2 offset = flame.center().sub(rocket.center());
++                float along = offset.dot(axis);
++                float aside = Math.abs(offset.crs(axis));
++                assertTrue(
++                        "car heading " + heading + "°: the exhaust should be behind the rocket's"
++                                + " tail, it is " + along + " along the rocket axis (rocket"
++                                + " length " + length + ")",
++                        along < -0.45f * length);
++                assertTrue(
++                        "car heading " + heading + "°: the exhaust should be in line with the"
++                                + " rocket, it is " + aside + " to the side (rocket length "
++                                + length + ")",
++                        aside < 0.15f * length);
++            }
++        }
++    }
++
++    @Test
++    public void rocketShadowHasTheRocketsOrientation() throws Exception {
++        for (float heading : HEADINGS) {
++            for (boolean fired : new boolean[] {false, true}) {
++                Scene scene = createScene(heading);
++                scene.step(10);
++                if (fired) {
++                    scene.missile.shoot();
++                    scene.step(5);
++                }
++                DrawRecorder batch = scene.draw();
++                DrawRecorder.Quad rocket = scene.rocketSprite(batch);
++                List<DrawRecorder.Quad> shadows = new ArrayList<>();
++                for (DrawRecorder.Quad quad : batch.quadsOf(scene.rocketTexture)) {
++                    if (quad.isShadowLike()) {
++                        shadows.add(quad);
++                    }
++                }
++                String what = "car heading " + heading + "°, " + (fired ? "fired" : "carried");
++                assertFalse(what + ": the rocket should cast a shadow", shadows.isEmpty());
++                for (DrawRecorder.Quad shadow : shadows) {
++                    assertTrue(
++                            what + ": rocket drawn at " + rocket.imageXAxis().angleDeg()
++                                    + "° but its shadow at " + shadow.imageXAxis().angleDeg()
++                                    + "°",
++                            angleBetween(shadow.imageXAxis(), rocket.imageXAxis()) < 2);
++                    assertTrue(
++                            what + ": the shadow should stay right under the rocket",
++                            shadow.center().dst(rocket.center()) < 0.5f * rocket.imageWidth());
++                }
++            }
++        }
++    }
++}
+diff --git a/core-tests/src/com/agateau/pixelwheels/racer/VehicleShadowTest.java b/core-tests/src/com/agateau/pixelwheels/racer/VehicleShadowTest.java
+new file mode 100755
+index 0000000..beab7f6
+--- /dev/null
++++ b/core-tests/src/com/agateau/pixelwheels/racer/VehicleShadowTest.java
+@@ -0,0 +1,110 @@
++/*
++ * A car on the ground casts its shadow the same way as every other object of the game: slightly
++ * down and to the right of it (the same side the rocket shadows, obstacle shadows and the map's
++ * buildings, trees and bridges cast theirs).
++ *
++ * The real VehicleRenderer is drawn, at every drawing level, through a Batch that records every
++ * textured quad (see DrawRecorder). The vehicle is pre-rendered in an off-screen cell, so the test
++ * runs inside a real hidden GL context (see GlContext).
++ */
++package com.agateau.pixelwheels.racer;
++
++import static org.junit.Assert.assertFalse;
++import static org.junit.Assert.assertTrue;
++import static org.mockito.ArgumentMatchers.anyFloat;
++import static org.mockito.Mockito.mock;
++import static org.mockito.Mockito.when;
++
++import com.agateau.pixelwheels.Assets;
++import com.agateau.pixelwheels.ZLevel;
++import com.agateau.pixelwheels.gameobject.CellFrameBufferManager;
++import com.agateau.pixelwheels.testutils.DrawRecorder;
++import com.agateau.pixelwheels.testutils.GlContext;
++import com.badlogic.gdx.graphics.Texture;
++import com.badlogic.gdx.graphics.g2d.TextureRegion;
++import com.badlogic.gdx.math.Rectangle;
++import com.badlogic.gdx.math.Vector2;
++import com.badlogic.gdx.utils.Array;
++import java.util.ArrayList;
++import java.util.List;
++import org.junit.Test;
++import org.junit.runner.RunWith;
++import org.junit.runners.JUnit4;
++
++@RunWith(JUnit4.class)
++public class VehicleShadowTest {
++    private static final Vector2 POS = new Vector2(30, 30);
++
++    @Test(timeout = 60000)
++    public void vehicleShadowFallsLikeEveryOtherShadow() {
++        GlContext.run(
++                () -> {
++                    // The light does not turn with the car: check several headings.
++                    for (float heading : new float[] {0, 90, 200, 315}) {
++                        checkShadow(heading);
++                    }
++                });
++    }
++
++    private static void checkShadow(float heading) {
++        Texture texture = mock(Texture.class);
++        when(texture.getWidth()).thenReturn(64);
++        when(texture.getHeight()).thenReturn(64);
++        TextureRegion region = new TextureRegion(texture, 0, 0, 30, 52);
++
++        Vehicle vehicle = mock(Vehicle.class);
++        when(vehicle.getWheelInfos()).thenReturn(new Array<>());
++        when(vehicle.getRegion(anyFloat())).thenReturn(region);
++        when(vehicle.getPosition()).thenReturn(new Vector2(POS));
++        when(vehicle.getX()).thenReturn(POS.x);
++        when(vehicle.getY()).thenReturn(POS.y);
++        when(vehicle.getAngle()).thenReturn(heading);
++        when(vehicle.getZ()).thenReturn(0f);
++        when(vehicle.isFlying()).thenReturn(false);
++        when(vehicle.isFalling()).thenReturn(false);
++        when(vehicle.getTurboTime()).thenReturn(-1f);
++
++        VehicleRenderer renderer = new VehicleRenderer(mock(Assets.class), vehicle);
++        renderer.init(new CellFrameBufferManager());
++
++        DrawRecorder batch = new DrawRecorder();
++        Rectangle view = new Rectangle(0, 0, 60, 60);
++        for (ZLevel zLevel : ZLevel.values()) {
++            renderer.draw(batch, zLevel, view);
++        }
++
++        String what = "heading " + heading + "°: ";
++        List<DrawRecorder.Quad> bodies = new ArrayList<>();
++        for (DrawRecorder.Quad quad : batch.quads()) {
++            if (!quad.isShadowLike()) {
++                bodies.add(quad);
++            }
++        }
++        assertFalse(what + "the car should be drawn", bodies.isEmpty());
++        DrawRecorder.Quad body = bodies.get(0);
++        assertTrue(
++                what + "the car should be drawn where it is (" + body.center() + ")",
++                body.center().dst(POS) < 0.01f);
++
++        // Shadows are darkened copies of the car image (same texture as the car itself).
++        List<DrawRecorder.Quad> shadows = new ArrayList<>();
++        for (DrawRecorder.Quad quad : batch.quadsOf(body.texture)) {
++            if (quad.isShadowLike()) {
++                shadows.add(quad);
++            }
++        }
++        assertFalse(what + "the car should cast a shadow", shadows.isEmpty());
++        for (DrawRecorder.Quad shadow : shadows) {
++            Vector2 offset = shadow.center().sub(body.center());
++            assertTrue(
++                    what
++                            + "the car shadow should fall down and to the right of the car, like"
++                            + " every other shadow; it is offset by "
++                            + offset,
++                    offset.x > 0.05f && offset.y < -0.05f);
++            assertTrue(
++                    what + "the shadow of a car on the ground should stay close to it: " + offset,
++                    offset.len() < 1);
++        }
++    }
++}
+diff --git a/core-tests/src/com/agateau/pixelwheels/racescreen/MissileZOrderTest.java b/core-tests/src/com/agateau/pixelwheels/racescreen/MissileZOrderTest.java
+new file mode 100644
+index 0000000..2f33441
+--- /dev/null
++++ b/core-tests/src/com/agateau/pixelwheels/racescreen/MissileZOrderTest.java
+@@ -0,0 +1,397 @@
++/*
++ * Tests for https://github.com/agateau/pixelwheels/issues/362 ("the rocket weapon on the vehicles
++ * is shown on top of the race map elements": footbridges, bridge sides, tree clusters, huts).
++ *
++ * They drive the real GameRenderer rendering loop with a real (but code-built, not loaded from an
++ * asset file) track made of one background layer and one foreground layer, and real game objects,
++ * through a Batch that records every textured quad in the order it is drawn. What is checked is
++ * the painter's-algorithm order the player sees: drawn earlier means drawn underneath.
++ *
++ * GameRenderer eagerly creates a ShapeRenderer and a CellFrameBufferManager (which allocates a
++ * real FrameBuffer) in its constructor, so these tests run inside a real, hidden desktop GL
++ * context (see GlContext).
++ */
++package com.agateau.pixelwheels.racescreen;
++
++import static org.junit.Assert.assertFalse;
++import static org.junit.Assert.assertTrue;
++import static org.mockito.ArgumentMatchers.anyFloat;
++import static org.mockito.Mockito.mock;
++import static org.mockito.Mockito.when;
++
++import com.agateau.pixelwheels.Assets;
++import com.agateau.pixelwheels.GamePlay;
++import com.agateau.pixelwheels.GameWorld;
++import com.agateau.pixelwheels.ZLevel;
++import com.agateau.pixelwheels.bonus.Missile;
++import com.agateau.pixelwheels.gameobject.CellFrameBufferManager;
++import com.agateau.pixelwheels.gameobject.CellFrameBufferUser;
++import com.agateau.pixelwheels.gameobject.GameObject;
++import com.agateau.pixelwheels.gameobject.GameObjectAdapter;
++import com.agateau.pixelwheels.map.Track;
++import com.agateau.pixelwheels.racer.Racer;
++import com.agateau.pixelwheels.racer.Vehicle;
++import com.agateau.pixelwheels.racer.VehicleRenderer;
++import com.agateau.pixelwheels.sound.AudioManager;
++import com.agateau.pixelwheels.testutils.DrawRecorder;
++import com.agateau.pixelwheels.testutils.GlContext;
++import com.badlogic.gdx.graphics.Texture;
++import com.badlogic.gdx.graphics.g2d.Batch;
++import com.badlogic.gdx.graphics.g2d.TextureRegion;
++import com.badlogic.gdx.graphics.glutils.FrameBuffer;
++import com.badlogic.gdx.maps.tiled.TiledMap;
++import com.badlogic.gdx.maps.tiled.TiledMapTileLayer;
++import com.badlogic.gdx.maps.tiled.tiles.StaticTiledMapTile;
++import com.badlogic.gdx.math.MathUtils;
++import com.badlogic.gdx.math.Rectangle;
++import com.badlogic.gdx.math.Vector2;
++import com.badlogic.gdx.physics.box2d.Body;
++import com.badlogic.gdx.physics.box2d.BodyDef;
++import com.badlogic.gdx.physics.box2d.Filter;
++import com.badlogic.gdx.physics.box2d.Fixture;
++import com.badlogic.gdx.physics.box2d.PolygonShape;
++import com.badlogic.gdx.physics.box2d.World;
++import com.badlogic.gdx.utils.Array;
++import com.badlogic.gdx.utils.PerformanceCounters;
++import java.lang.reflect.Field;
++import java.util.List;
++import org.junit.Test;
++import org.junit.runner.RunWith;
++import org.junit.runners.JUnit4;
++
++@RunWith(JUnit4.class)
++public class MissileZOrderTest {
++    private static final int TILE_PX = 20;
++    private static final int MAP_TILES = 64;
++    // World-space position (after Constants.UNIT_FOR_PIXEL scaling) of the objects and of the
++    // foreground tile above them. Matches the middle of the viewport set up below.
++    private static final float POSITION = 30f;
++
++    private static Texture texture() {
++        Texture texture = mock(Texture.class);
++        when(texture.getWidth()).thenReturn(64);
++        when(texture.getHeight()).thenReturn(64);
++        return texture;
++    }
++
++    /**
++     * A car carrying a rocket (picked up, not fired yet) drives under a foreground map element:
++     * within one rendered frame, every quad of the rocket must be drawn before the foreground
++     * layer, so the rocket ends up underneath it together with the car.
++     */
++    @Test(timeout = 60000)
++    public void missileIsDrawnBeforeForegroundLayer() {
++        GlContext.run(
++                () -> {
++                    Texture fgTexture = texture();
++                    Texture missileTexture = texture();
++                    World box2DWorld = new World(new Vector2(0, 0), true);
++                    Missile missile = buildCarriedMissile(box2DWorld, missileTexture);
++
++                    DrawRecorder batch = renderOneFrame(fgTexture, box2DWorld, missile);
++
++                    List<DrawRecorder.Quad> fg = batch.quadsOf(fgTexture);
++                    List<DrawRecorder.Quad> rocket = batch.quadsOf(missileTexture);
++                    assertFalse("the foreground layer should be drawn", fg.isEmpty());
++                    assertFalse("the carried rocket should be drawn", rocket.isEmpty());
++                    int firstFg = fg.get(0).index;
++                    for (DrawRecorder.Quad quad : rocket) {
++                        assertTrue(
++                                "The rocket (and its shadow) should be drawn before the foreground"
++                                        + " layer, so that it appears underneath it instead of"
++                                        + " over it: "
++                                        + quad
++                                        + " drawn after foreground quad #"
++                                        + firstFg,
++                                quad.index < firstFg);
++                    }
++                });
++    }
++
++    /**
++     * Guard: the rescue helicopter keeps flying *above* the foreground layer, as it does at the
++     * base commit. A fix that drew every flying object before the foreground layer would break it.
++     */
++    @Test(timeout = 60000)
++    public void helicopterIsDrawnAfterForegroundLayer() {
++        GlContext.run(
++                () -> {
++                    Texture fgTexture = texture();
++                    Texture helicopterTexture = texture();
++                    Helicopter helicopter = buildHelicopter(helicopterTexture);
++
++                    DrawRecorder batch =
++                            renderOneFrame(
++                                    fgTexture, new World(new Vector2(0, 0), true), helicopter);
++
++                    List<DrawRecorder.Quad> fg = batch.quadsOf(fgTexture);
++                    assertFalse("the foreground layer should be drawn", fg.isEmpty());
++                    int lastFg = fg.get(fg.size() - 1).index;
++                    boolean bodyDrawn = false;
++                    for (DrawRecorder.Quad quad : batch.quadsOf(helicopterTexture)) {
++                        if (quad.isShadowLike()) {
++                            continue;
++                        }
++                        bodyDrawn = true;
++                        assertTrue(
++                                "The rescue helicopter should keep being drawn over the"
++                                        + " foreground layer: "
++                                        + quad,
++                                quad.index > lastFg);
++                    }
++                    assertTrue("the helicopter should be drawn", bodyDrawn);
++                });
++    }
++
++    /**
++     * Guard: a vehicle lifted by the rescue helicopter keeps being drawn *above* the foreground
++     * layer, as it does at the base commit (it is carried in the air together with the helicopter).
++     */
++    @Test(timeout = 60000)
++    public void liftedVehicleIsDrawnAfterForegroundLayer() {
++        GlContext.run(
++                () -> {
++                    Texture fgTexture = texture();
++                    Texture vehicleTexture = texture();
++                    World box2DWorld = new World(new Vector2(0, 0), true);
++                    LiftedVehicle lifted = new LiftedVehicle(box2DWorld, vehicleTexture);
++
++                    DrawRecorder batch = renderOneFrame(fgTexture, box2DWorld, lifted);
++
++                    List<DrawRecorder.Quad> fg = batch.quadsOf(fgTexture);
++                    assertFalse("the foreground layer should be drawn", fg.isEmpty());
++                    int lastFg = fg.get(fg.size() - 1).index;
++                    boolean bodyDrawn = false;
++                    for (DrawRecorder.Quad quad : batch.quads()) {
++                        // On screen the vehicle is drawn from its pre-rendered cell: skip the
++                        // foreground tiles, the off-screen cell painting and the shadow.
++                        if (quad.texture == fgTexture
++                                || quad.texture == vehicleTexture
++                                || quad.isShadowLike()) {
++                            continue;
++                        }
++                        bodyDrawn = true;
++                        assertTrue(
++                                "A vehicle lifted by the helicopter should keep being drawn over"
++                                        + " the foreground layer: "
++                                        + quad,
++                                quad.index > lastFg);
++                    }
++                    assertTrue("the lifted vehicle should be drawn", bodyDrawn);
++                });
++    }
++
++    /** A vehicle in the air (lifted by the helicopter), rendered by the real VehicleRenderer. */
++    private static class LiftedVehicle extends GameObjectAdapter implements CellFrameBufferUser {
++        private final VehicleRenderer mRenderer;
++
++        LiftedVehicle(World world, Texture texture) {
++            BodyDef bodyDef = new BodyDef();
++            bodyDef.type = BodyDef.BodyType.DynamicBody;
++            bodyDef.position.set(POSITION, POSITION);
++            bodyDef.angle = 90 * MathUtils.degRad;
++            Body body = world.createBody(bodyDef);
++
++            Vehicle vehicle = mock(Vehicle.class);
++            when(vehicle.getBody()).thenReturn(body);
++            when(vehicle.getWheelInfos()).thenReturn(new Array<>());
++            when(vehicle.getRegion(anyFloat())).thenReturn(new TextureRegion(texture, 0, 0, 30, 52));
++            when(vehicle.getPosition()).thenReturn(new Vector2(POSITION, POSITION));
++            when(vehicle.getX()).thenReturn(POSITION);
++            when(vehicle.getY()).thenReturn(POSITION);
++            when(vehicle.getAngle()).thenReturn(90f);
++            when(vehicle.isFlying()).thenReturn(true);
++            when(vehicle.isFalling()).thenReturn(false);
++            when(vehicle.getZ()).thenReturn(0.5f);
++            when(vehicle.getTurboTime()).thenReturn(-1f);
++            mRenderer = new VehicleRenderer(mock(Assets.class), vehicle);
++        }
++
++        @Override
++        public void init(CellFrameBufferManager manager) {
++            mRenderer.init(manager);
++        }
++
++        @Override
++        public void drawToCell(Batch batch, Rectangle viewBounds) {
++            mRenderer.drawToCell(batch, viewBounds);
++        }
++
++        @Override
++        public void act(float delta) {}
++
++        @Override
++        public void draw(Batch batch, ZLevel zLevel, Rectangle viewBounds) {
++            mRenderer.draw(batch, zLevel, viewBounds);
++        }
++
++        @Override
++        public float getX() {
++            return POSITION;
++        }
++
++        @Override
++        public float getY() {
++            return POSITION;
++        }
++    }
++
++    private static DrawRecorder renderOneFrame(
++            Texture fgTexture, World box2DWorld, GameObject object) {
++        boolean oldFreeCamera = GamePlay.instance.freeCamera;
++        GamePlay.instance.freeCamera = true;
++        try {
++            return renderOneFrameWithFreeCamera(fgTexture, box2DWorld, object);
++        } finally {
++            GamePlay.instance.freeCamera = oldFreeCamera;
++        }
++    }
++
++    private static DrawRecorder renderOneFrameWithFreeCamera(
++            Texture fgTexture, World box2DWorld, GameObject object) {
++        FakeTrack track = new FakeTrack(buildMap(fgTexture));
++
++        GameWorld gameWorld = mock(GameWorld.class);
++        when(gameWorld.getTrack()).thenReturn(track);
++        when(gameWorld.getBox2DWorld()).thenReturn(box2DWorld);
++        Array<GameObject> gameObjects = new Array<>();
++        gameObjects.add(object);
++        when(gameWorld.getActiveGameObjects()).thenReturn(gameObjects);
++
++        DrawRecorder batch = new DrawRecorder();
++        GameRenderer renderer =
++                new GameRenderer(gameWorld, /* racer= */ null, batch, new PerformanceCounters());
++        renderer.setScreenRect(0, 0, 60, 60);
++        renderer.onAboutToStart();
++
++        // Render once so the free camera settles, then record exactly one frame: checking the
++        // order across several frames would let one frame's draws satisfy another frame's check.
++        renderer.render(0f);
++        batch.clear();
++        renderer.render(0f);
++        return batch;
++    }
++
++    private static Missile buildCarriedMissile(World world, Texture missileTexture)
++            throws Exception {
++        BodyDef bodyDef = new BodyDef();
++        bodyDef.type = BodyDef.BodyType.DynamicBody;
++        bodyDef.position.set(POSITION, POSITION);
++        bodyDef.angle = 90 * MathUtils.degRad;
++        Body carBody = world.createBody(bodyDef);
++        PolygonShape shape = new PolygonShape();
++        shape.setAsBox(1.4f, 0.75f);
++        Fixture fixture = carBody.createFixture(shape, 1f);
++        shape.dispose();
++        Filter filter = new Filter();
++        filter.categoryBits = 0x4000;
++        filter.maskBits = 0;
++        fixture.setFilterData(filter);
++
++        Vehicle vehicle = mock(Vehicle.class);
++        when(vehicle.getBody()).thenReturn(carBody);
++        when(vehicle.getX()).thenReturn(POSITION);
++        when(vehicle.getY()).thenReturn(POSITION);
++        when(vehicle.getPosition()).thenReturn(new Vector2(POSITION, POSITION));
++        when(vehicle.getAngle()).thenReturn(90f);
++        Racer racer = mock(Racer.class);
++        when(racer.getVehicle()).thenReturn(vehicle);
++        carBody.setUserData(racer);
++
++        GameWorld gameWorld = mock(GameWorld.class);
++        when(gameWorld.getBox2DWorld()).thenReturn(world);
++
++        Assets assets = mock(Assets.class);
++        setField(assets, Assets.class, "missile", new TextureRegion(missileTexture, 44, 13));
++        setField(assets, Assets.class, "target", new TextureRegion(missileTexture, 16, 16));
++        // A real Racer always has a VehicleRenderer; code drawing what it carries may use it.
++        when(racer.getVehicleRenderer()).thenReturn(new VehicleRenderer(assets, vehicle));
++        return Missile.create(assets, gameWorld, mock(AudioManager.class), racer);
++    }
++
++    private static Helicopter buildHelicopter(Texture frameBufferTexture) throws Exception {
++        Helicopter helicopter = Helicopter.class.getDeclaredConstructor().newInstance();
++
++        FrameBuffer frameBuffer = mock(FrameBuffer.class);
++        when(frameBuffer.getWidth()).thenReturn(TILE_PX);
++        when(frameBuffer.getHeight()).thenReturn(TILE_PX);
++        when(frameBuffer.getColorBufferTexture()).thenReturn(frameBufferTexture);
++        setField(helicopter, Helicopter.class, "mFrameBuffer", frameBuffer);
++
++        // mFrameBufferRadiusU is only used to cull off-screen helicopters; a few world units are
++        // plenty to keep it comfortably inside the viewBounds set up around POSITION.
++        setField(helicopter, Helicopter.class, "mFrameBufferRadiusU", 5f);
++
++        Field positionField = Helicopter.class.getDeclaredField("mPosition");
++        positionField.setAccessible(true);
++        ((Vector2) positionField.get(helicopter)).set(POSITION, POSITION);
++
++        return helicopter;
++    }
++
++    private static TiledMap buildMap(Texture fgTexture) {
++        TiledMap map = new TiledMap();
++
++        TiledMapTileLayer bgLayer = new TiledMapTileLayer(MAP_TILES, MAP_TILES, TILE_PX, TILE_PX);
++        bgLayer.setName("bg");
++        map.getLayers().add(bgLayer);
++
++        TiledMapTileLayer fgLayer = new TiledMapTileLayer(MAP_TILES, MAP_TILES, TILE_PX, TILE_PX);
++        fgLayer.setName("fg");
++        StaticTiledMapTile fgTile = new StaticTiledMapTile(new TextureRegion(fgTexture, TILE_PX, TILE_PX));
++        // TILE_PX pixels per tile, scaled by Constants.UNIT_FOR_PIXEL (1/20) gives exactly 1 world
++        // unit per tile, so the tile coordinate matching a world position is the position itself.
++        for (int dx = -2; dx <= 2; ++dx) {
++            for (int dy = -2; dy <= 2; ++dy) {
++                TiledMapTileLayer.Cell cell = new TiledMapTileLayer.Cell();
++                cell.setTile(fgTile);
++                fgLayer.setCell((int) POSITION + dx, (int) POSITION + dy, cell);
++            }
++        }
++        map.getLayers().add(fgLayer);
++
++        return map;
++    }
++
++    private static void setField(Object target, Class<?> declaringClass, String name, Object value)
++            throws Exception {
++        Field field = declaringClass.getDeclaredField(name);
++        field.setAccessible(true);
++        field.set(target, value);
++    }
++
++    /** A Track that doesn't load anything from disk: it is built entirely in memory. */
++    private static class FakeTrack extends Track {
++        private final TiledMap mMap;
++
++        FakeTrack(TiledMap map) {
++            super(null, "test-track", "Test track");
++            mMap = map;
++        }
++
++        @Override
++        public TiledMap getMap() {
++            return mMap;
++        }
++
++        @Override
++        public int[] getExtraBackgroundLayerIndexes() {
++            return new int[0];
++        }
++
++        @Override
++        public int[] getForegroundLayerIndexes() {
++            return new int[] {1};
++        }
++
++        @Override
++        public float getMapWidth() {
++            return 2000;
++        }
++
++        @Override
++        public float getMapHeight() {
++            return 2000;
++        }
++    }
++}
+diff --git a/core-tests/src/com/agateau/pixelwheels/racescreen/RacerCameraTest.java b/core-tests/src/com/agateau/pixelwheels/racescreen/RacerCameraTest.java
+new file mode 100755
+index 0000000..bae7ba4
+--- /dev/null
++++ b/core-tests/src/com/agateau/pixelwheels/racescreen/RacerCameraTest.java
+@@ -0,0 +1,95 @@
++/*
++ * How the race view follows the player's car: it keeps the car on screen and leaves more room in
++ * front of the car than behind it, whichever way the car is heading.
++ *
++ * The camera updater used by the race screen is driven with a car standing still in the middle of
++ * a large track, facing various directions, and the resulting camera is inspected.
++ */
++package com.agateau.pixelwheels.racescreen;
++
++import static org.junit.Assert.assertTrue;
++import static org.mockito.Mockito.mock;
++import static org.mockito.Mockito.when;
++
++import com.agateau.pixelwheels.GameWorld;
++import com.agateau.pixelwheels.map.Track;
++import com.agateau.pixelwheels.racer.Racer;
++import com.agateau.pixelwheels.racer.Vehicle;
++import com.badlogic.gdx.graphics.OrthographicCamera;
++import com.badlogic.gdx.math.Vector2;
++import org.junit.Test;
++import org.junit.runner.RunWith;
++import org.junit.runners.JUnit4;
++
++@RunWith(JUnit4.class)
++public class RacerCameraTest {
++    private static final float[] HEADINGS = {0, 45, 90, 135, 180, 225, 270, 315};
++    private static final Vector2 CAR = new Vector2(500, 500);
++
++    /** Returns where the view is centered, relative to the car. */
++    private static Vector2 viewOffset(float heading) {
++        Track track = mock(Track.class);
++        when(track.getMapWidth()).thenReturn(1000f);
++        when(track.getMapHeight()).thenReturn(1000f);
++        GameWorld world = mock(GameWorld.class);
++        when(world.getTrack()).thenReturn(track);
++
++        Vehicle vehicle = mock(Vehicle.class);
++        when(vehicle.getPosition()).thenReturn(new Vector2(CAR));
++        when(vehicle.getX()).thenReturn(CAR.x);
++        when(vehicle.getY()).thenReturn(CAR.y);
++        when(vehicle.getAngle()).thenReturn(heading);
++        when(vehicle.getSpeed()).thenReturn(0f);
++        Racer racer = mock(Racer.class);
++        when(racer.getVehicle()).thenReturn(vehicle);
++        when(racer.getCameraAngle()).thenReturn(heading);
++        when(racer.getPosition()).thenReturn(new Vector2(CAR));
++        when(racer.getX()).thenReturn(CAR.x);
++        when(racer.getY()).thenReturn(CAR.y);
++
++        OrthographicCamera camera = new OrthographicCamera();
++        RacerCameraUpdater updater = new RacerCameraUpdater(world, racer);
++        updater.init(camera, 1920, 1080);
++        updater.update(CameraUpdater.IMMEDIATE);
++
++        float halfW = camera.viewportWidth * camera.zoom / 2;
++        float halfH = camera.viewportHeight * camera.zoom / 2;
++        Vector2 offset = new Vector2(camera.position.x, camera.position.y).sub(CAR);
++        assertTrue(
++                "heading " + heading + "°: the car is out of the view (view offset " + offset + ")",
++                Math.abs(offset.x) < halfW && Math.abs(offset.y) < halfH);
++        return offset;
++    }
++
++    private static float angleBetween(Vector2 direction, float angleDeg) {
++        float delta = (direction.angleDeg() - angleDeg) % 360;
++        if (delta < -180) {
++            delta += 360;
++        } else if (delta > 180) {
++            delta -= 360;
++        }
++        return Math.abs(delta);
++    }
++
++    @Test
++    public void viewLooksAheadOfTheCarWhicheverWayItHeads() {
++        for (float heading : HEADINGS) {
++            Vector2 offset = viewOffset(heading);
++            assertTrue(
++                    "heading " + heading + "°: the view should show more of the road ahead of the"
++                            + " car than behind it (view offset " + offset + ")",
++                    offset.len() > 1);
++            assertTrue(
++                    "heading " + heading + "°: the view is shifted towards " + offset.angleDeg()
++                            + "° instead of towards where the car is heading",
++                    angleBetween(offset, heading) < 5);
++        }
++    }
++
++    @Test
++    public void viewKeepsTheCarOnScreen() {
++        for (float heading : HEADINGS) {
++            viewOffset(heading);
++        }
++    }
++}
+diff --git a/core-tests/src/com/agateau/pixelwheels/testutils/DrawRecorder.java b/core-tests/src/com/agateau/pixelwheels/testutils/DrawRecorder.java

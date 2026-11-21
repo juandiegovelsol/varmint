@@ -1,0 +1,68 @@
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 4.35kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/ubuntu:20.04
+#2 DONE 0.8s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B done
+#3 DONE 0.0s
+
+#4 [ 1/13] FROM docker.io/library/ubuntu:20.04@sha256:8feb4d8ca5354def3d8fce243717141ce31e2c428701f6682bd2fafe15388214
+#4 resolve docker.io/library/ubuntu:20.04@sha256:8feb4d8ca5354def3d8fce243717141ce31e2c428701f6682bd2fafe15388214 0.0s done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 2.58MB 0.1s done
+#5 DONE 0.1s
+
+#6 [10/13] RUN cmake -S /app -B /build       -DCMAKE_BUILD_TYPE=Debug       -DBUILD_TESTS=ON       -DGLBINDING_ENABLED=OFF       -DENABLE_OPENGL=ON       -DCMAKE_VERBOSE_MAKEFILE=OFF  && cmake --build /build -j"$(nproc)" --target test_supertux2
+#6 CACHED
+
+#7 [ 5/13] WORKDIR /app
+#7 CACHED
+
+#8 [ 7/13] COPY bugs/ /tmp/bugs/
+#8 CACHED
+
+#9 [ 3/13] RUN apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false update  && apt-get -o Acquire::https::Verify-Peer=false -o Acquire::https::Verify-Host=false install -y --no-install-recommends ca-certificates  && update-ca-certificates
+#9 CACHED
+
+#10 [ 2/13] RUN sed -i       -e 's#http://archive.ubuntu.com/ubuntu#https://mirrors.edge.kernel.org/ubuntu#g'       -e 's#http://security.ubuntu.com/ubuntu#https://mirrors.edge.kernel.org/ubuntu#g'       /etc/apt/sources.list 2>/dev/null; true
+#10 CACHED
+
+#11 [12/13] RUN mkdir -p /logs /app/.harbor_assets
+#11 CACHED
+
+#12 [ 6/13] RUN git -C /app init -q  && git -C /app remote add origin https://github.com/SuperTux/supertux.git  && git -C /app fetch --depth 1 origin d2c892e2d94308da759a3fb8451101e3add55754  && git -C /app -c advice.detachedHead=false checkout d2c892e2d94308da759a3fb8451101e3add55754  && git -C /app submodule update --init --recursive --depth 1  && find /app -mindepth 2 -name .git -exec rm -rf {} +
+#12 CACHED
+
+#13 [ 8/13] RUN set -e; for p in /tmp/bugs/*.patch; do git -C /app apply "$p" || patch -p1 -d /app < "$p"; done;     rm -rf /tmp/bugs
+#13 CACHED
+
+#14 [ 4/13] RUN apt-get update && apt-get install -y --no-install-recommends       build-essential       cmake       git       ca-certificates       pkg-config       libsdl2-dev       libsdl2-image-dev       libopenal-dev       libogg-dev       libvorbis-dev       libboost-filesystem-dev       libboost-system-dev       libboost-date-time-dev       libboost-locale-dev       libcurl4-openssl-dev       libpng-dev       libfreetype6-dev       libglew-dev       libgl1-mesa-dev       libgl1-mesa-dri       zlib1g-dev       xvfb       ffmpeg   && rm -rf /var/lib/apt/lists/*
+#14 CACHED
+
+#15 [ 9/13] RUN find /app -mindepth 1 -not -path '/app/.git*' -exec touch -h -t 202301010000 {} +
+#15 CACHED
+
+#16 [11/13] RUN rm -rf /app/.git  && git -C /app init -q  && git -C /app -c user.email=h@l -c user.name=h add -A  && git -C /app -c user.email=h@l -c user.name=h commit -q -m base  && git -C /app tag harbor_base
+#16 CACHED
+
+#17 [13/13] COPY assets/recording.mp4 /app/.harbor_assets/
+#17 CACHED
+
+#18 exporting to image
+#18 exporting layers done
+#18 exporting manifest sha256:30dedea639177ea508ba10fac4462fb31836050f0e87d0b6817e8a3bd58554c5 done
+#18 exporting config sha256:29514723ef95c563b7d662494ef36080bf8ab7ef3e0a3a935b3b10b4ea2006da done
+#18 exporting attestation manifest sha256:3fcc8a11cb7406473b44ffdd6ab4c5f83b66b6800114947f51ce0e7541b9002d 0.0s done
+#18 exporting manifest list sha256:c38aae92d09ebba57898cf880e97f788d3ae6efcfb8fd81a186591eff87351aa 0.0s done
+#18 naming to docker.io/library/qc_st1398_fresh:task
+#18 naming to docker.io/library/qc_st1398_fresh:task done
+#18 unpacking to docker.io/library/qc_st1398_fresh:task done
+#18 DONE 0.1s
+exit=0

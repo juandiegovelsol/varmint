@@ -1,0 +1,46 @@
+{
+  "behavior_in_task_description": {
+    "outcome": "pass",
+    "explanation": "instruction.md's four Expected bullets map onto the four test categories: 'labels and controls ... shown whole, within the chart's dimensions and without overlaps' covers the axes/legend/toolbar/title containment-and-overlap checks; 'the area the points are drawn in keeps the size it was given' covers the frame-size assertions; 'charts side by side share one height, stacked charts share one width, the areas ... line up' covers the row/column/grid alignment checks; and 'every chart stays within the row or column it is placed in' plus the 'at every moment of the clip' framing cover the stretch-width and post-change relayout tests. The instruction intentionally uses plain-language terms (charts/labels and controls/the area the points are drawn in) instead of Bokeh jargon (plot/axis/legend/toolbar/frame), but per the task's own difficulty rationale this is a deliberate abstraction level for a video-driven bug-finding task, not a missing requirement — every behavior class the hidden tests check is named at this level."
+  },
+  "behavior_in_tests": {
+    "outcome": "pass",
+    "explanation": "The hidden test.patch (plots_in_layouts.ts) exercises rows, columns, grids, nested layouts, left/right/above/below legends, left-toolbar, growing/shrinking tick labels, growing legend labels, and stretch_width overflow — covering all four Expected rules in instruction.md (containment/no-overlap, frame-size stability, row/column/grid alignment, and staying within the row/column including after a mid-clip change). 'Everything else should keep looking and behaving as it does now' is backed by the p2p regression tests (row spacing, PlotView element style, narrowing tick labels, right-legend, alike-grid alignment) that must keep passing. No described behavior appears untested."
+  },
+  "informative_test_structure": {
+    "outcome": "pass",
+    "explanation": "plots_in_layouts.ts is organized into nested describe/it blocks named after the scenario ('in a row', 'in a grid', 'with a legend on the left', 'after what they show changes', 'stretching across a row'), with well-named helper functions (problems, geometry_differences, changed_vs_fresh) and a doc comment explaining the shared 'problems' assertion helper. gen_junit.mjs is also commented to explain its parsing strategy. Overall the test code is clear and maintainable."
+  },
+  "anti_cheating_measures": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile applies the five injected bug patches to a temp path, builds, snapshots to the harbor_base git tag, and deletes the patches in the same RUN layer so no diff reaches the final image; it also normalizes all file timestamps to one value so mtime can't point at the injected bugs, and explicitly deletes the integration-suite's .blf/.png baseline snapshots that would otherwise hand the agent the exact expected geometry of every layout (called out in the Dockerfile comment and difficulty_explanation, including a cited prior attempt that exploited this). tests/ and solution/ are never copied into the image, and test.sh restores any paths test.patch touches from the immutable harbor_base tag before applying hidden tests, so a candidate cannot tamper with test plumbing."
+  },
+  "structured_data_schema": {
+    "outcome": "not_applicable",
+    "explanation": "This is a visual/behavioral bug-fix task (BokehJS layout code); it does not require the agent to produce structured output like JSON/CSV/API responses, so no schema documentation is expected."
+  },
+  "pinned_dependencies": {
+    "outcome": "pass",
+    "explanation": "The repository is checked out at an exact pinned commit (base_commit in task.toml) and `npm ci` installs from that commit's committed package-lock.json, so JS dependency versions are pinned. The base image uses a major-version tag (node:22-bookworm) and apt packages are unpinned, which is acceptable per the guidance that apt packages generally need not be pinned."
+  },
+  "typos": {
+    "outcome": "pass",
+    "explanation": "Reviewed instruction.md, task.toml, README.md, Dockerfile, test.sh, verifier.py, config.json, solve.sh and the patch files; file paths, commands (node make build/test:unit), and test IDs referenced across task.toml, config.json, tests.json and test.patch are mutually consistent, and no typos were found that would cause failures or confusion."
+  },
+  "tests_or_solution_in_image": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile's only COPY instructions bring in bugs/ (deleted within the same RUN before the harbor_base commit) and assets/recording.mp4. Neither tests/ nor solution/ is copied into the image at any point."
+  },
+  "test_deps_in_image": {
+    "outcome": "pass",
+    "explanation": "`npm ci` and the Playwright/Chromium install happen at image build time, but these are the project's normal build/devDependencies (pinned via package-lock.json) needed to run `node make build`/`node make test:unit`, not grading-specific tooling. Since the agent phase runs with network_mode = no-network, the browser binary used by the test harness must be pre-installed in the image rather than fetched in test.sh; this is a necessity of the sandboxing, not test logic leaking into the environment."
+  },
+  "hardcoded_solution": {
+    "outcome": "pass",
+    "explanation": "solution/solve.sh applies solution/fix.patch, which contains the actual multi-file TypeScript code changes (border.ts, side_panel.ts, alignments.ts, flex_box.ts, plot_canvas.ts) that fix the six layout defects. It demonstrates the real code fix rather than printing or echoing a final answer."
+  },
+  "file_reference_mentioned": {
+    "outcome": "not_applicable",
+    "explanation": "The task does not require the agent to produce specific output artifact files (e.g., output.csv) for the verifier to check; success is judged by running existing/added unit tests against the agent's source-code changes, so there is no output filename to reference in instruction.md."
+  }
+}

@@ -1,0 +1,54 @@
+version = "1.0"
+reward_type = "binary"
+
+[task]
+name = "scale-ai/luanti_org__luanti_15821_mm"
+
+[metadata]
+task_id = "luanti_org__luanti_15821_mm"
+title = "Node selection outline draws as disconnected fragments instead of a full box"
+repository_name = "luanti-org/luanti"
+repo_url = "https://github.com/luanti-org/luanti"
+issue_number = 15821
+pr_number = 15867
+base_commit = "c07499ccfc5622f7cdb08e69e63b61327d9242c1"
+fix_commit = "42ac5b2f406078a8f53d1b3f4335d7de94ca1b21"
+task_type = "3d_video"
+language = "C++"
+framework = "Luanti"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = """
+The image is required because the exact shape of the artifact -- a short floating line near the horizon plus two short disconnected leg fragments near the bottom corners, with no continuous side edges connecting them -- is only knowable by rendering the scene; nothing in the base-commit source (no test, no comment, no TODO) says what visual output the unconditional polygon offset actually produces, or that it is specific to overlay-textured nodes like dirt-with-grass rather than generic geometry. Only watching bug.mp4 against expected.mp4 along the same camera path confirms what 'fixed' looks like: the same single, fully-closed four-sided box, not merely a less-faded one.
+
+The fix is not a one-line guard: it spans three files (src/client/tile.cpp, src/client/tile.h, src/nodedef.cpp) and both adds a data-model field (need_polygon_offset on TileLayer, including updating the struct's equality operator and reordering existing fields) and threads it between two different subsystems -- nodedef.cpp's per-tile texture-building pass, where the flag must be computed from whether the *overlay* (layer 1) is actually populated, and tile.cpp's material setup, where the offset must then be applied to the *base* layer (layer 0) with the opposite sign from before. A shallow fix that merely wraps the old 'if (layer == 1)' branch in a null/overlay check without relocating and flipping the sign of the offset would still leave the overlay at an artificially close depth (continuing to occlude the wireframe) or reintroduce the original z-fighting the offset existed to prevent. Getting it right requires understanding OpenGL polygon-offset semantics and their side effect on unrelated depth-tested geometry (the selection wireframe), not just pattern-matching the diff.
+"""
+files_edited = [
+  "src/client/tile.cpp",
+  "src/client/tile.h",
+  "src/nodedef.cpp",
+]
+f2p = [
+  "TileLayer::applyMaterialOptions does not push an overlay slot toward the camera just because it is layer 1",
+]
+p2p = [
+  "TileLayer::applyMaterialOptions configures basic material state from material_flags",
+  "TileLayer::applyMaterialOptions leaves a tile's own layer-0 polygon offset untouched",
+]
+tags = ["multimodal", "3d_video", "visual_regression", "recording", "luanti", "c++", "3d-rendering", "opengl", "z-fighting", "voxel-game"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "checks": {
+        "behavior_in_task_description": {
+          "explanation": "instruction.md's 'Expected' section states the four general rules that the hidden tests check: a shut door keeps hazards separated (FirelockSealTest), the warning identifies the correct hazard kind (WarningLights_GlassFirelockShowsWarning, WarningLights_SpaceBreachIsAPressureWarning), the warning only shows while shut (WarningLights_HideWhenDoorLeavesClosed), and the door closes smoothly as a whole (FirelockAnimationTest). The instruction deliberately withholds which lane/door/hazard is affected, but that is by design for this visual-evidence task -- the attached recording.mp4 (explicitly referenced, with an ffmpeg frame-extraction hint) is the documented mechanism for the agent to discover the specifics, not an undocumented requirement.",
+          "outcome": "pass"
+        },
+        "behavior_in_tests": {
+          "explanation": "Each expected-behavior bullet in instruction.md maps to at least one f2p test (sealing -> FirelockSealTest, warning-kind -> WarningLights_GlassFirelockShowsWarning/_SpaceBreachIsAPressureWarning, warning-only-while-shut -> WarningLights_HideWhenDoorLeavesClosed, smooth whole-panel closing -> FirelockAnimationTest), and the 'everything else should keep looking and behaving as it does now' clause is backed by p2p regression tests (OpenCloseDestroyTest, WarningLights_MatchTheHazardKind, WarningLights_StayOnWhileWelded). No described behavior is left untested.",
+          "outcome": "pass"
+        },
+        "informative_test_structure": {
+          "explanation": "test.patch adds a well-organized set of files: a shared FirelockLane helper class with XML doc comments describing the test-bench geometry and each helper method, plus three test classes (FirelockSealTest, FirelockWarningLightTest, FirelockAnimationTest) each carrying class- and method-level [Description(...)] attributes that state exactly what behavior each test checks and why (e.g. explaining the edge firelock's seal orientation). This is clear and maintainable.",
+          "outcome": "pass"
+        },
+        "anti_cheating_measures": {
+          "explanation": "The Dockerfile applies the injected bug patches in the same RUN as the checkout and immediately deletes them (rm -rf /tmp/bugs), so no patch file or diff reaches the built image. tests/ and solution/ are never COPYed into the image. ASSET_MANIFEST.json, which contains a prose description and a 'reproduces' pointer to the real GitHub issue, is explicitly kept out of the image (only the raw recording.mp4 is copied). The agent's own container runs with network_mode = 'no-network', preventing it from browsing the public GitHub issue/PR for the real-world fix. task.toml (with base/fix commit hashes and a fully detailed difficulty_explanation enumerating all six bugs) lives outside environment/ and is not shipped into the runtime image.",
+          "outcome": "pass"
+        },
+        "structured_data_schema": {
+          "explanation": "The task requires source-code fixes verified by compiling and running NUnit integration tests; the agent is not asked to emit any structured data file (JSON/CSV/API schema) for the verifier to parse.",
+          "outcome": "not_applicable"
+        },
+        "pinned_dependencies": {
+          "explanation": "The image is pinned to mcr.microsoft.com/dotnet/sdk:10.0, and NuGet package versions are governed by the checked-out repository's own csproj/lock files at the pinned base commit. apt packages are unpinned, which is acceptable per the stated guidance. No ad hoc pip packages are installed.",
+          "outcome": "pass"
+        },
+        "typos": {
+          "explanation": "No typos were found in the task-authored files (instruction.md, task.toml, Dockerfile, tests/, solution/). Verified the recording.mp4's sha256/byte count in ASSET_MANIFEST.json actually matches the file on disk. The one odd phrase ('a a mess') is a pre-existing comment in the upstream Space Station 14 source code, not an artifact introduced by this task.",
+          "outcome": "pass"
+        },
+        "tests_or_solution_in_image": {
+          "explanation": "environment/Dockerfile only COPYs bugs/ (deleted within the same layer before the image is finalized) and assets/recording.mp4. Neither tests/ nor solution/ appear anywhere in the Dockerfile.",
+          "outcome": "pass"
+        },
+        "test_deps_in_image": {
+          "explanation": "The image's build step restores and builds Content.IntegrationTests.csproj (the project the tests live in) because that is also required to produce a working baseline build; test.sh only applies the hidden test.patch and re-runs dotnet build/test against the already-restored packages. No separate test-only dependency installation is baked into the Dockerfile beyond what the main solution build already needs.",
+          "outcome": "pass"
+        },
+        "hardcoded_solution": {
+          "explanation": "solution/solve.sh applies solution/fix.patch, a genuine multi-file source diff (client C# appearance logic, server atmos logic, a shared component default, two YAML prototypes, and sprite animation timing JSON) that reproduces the real engineering fix, rather than printing or copying a precomputed answer.",
+          "outcome": "pass"
+        },
+        "file_reference_mentioned": {
+          "explanation": "The task does not require the agent to produce any specific named output file; success is judged by whether the agent's in-place source-code fix makes the hidden NUnit integration tests pass.",
+          "outcome": "not_applicable"
+        }
+      },
+      "cost_usd": 0.45273179999999996,
+      "task_name": "space_wizards__space_station_14_36889_mm",
+      "error": null
+    }
+  ]
+}

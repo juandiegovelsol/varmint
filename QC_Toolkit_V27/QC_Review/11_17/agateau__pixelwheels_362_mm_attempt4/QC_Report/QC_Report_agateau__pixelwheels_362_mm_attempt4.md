@@ -1,0 +1,247 @@
+# QC Report: agateau__pixelwheels_362_mm
+
+- **Task hash:** `agateau__pixelwheels_362_mm_attempt4`
+- **Title:** Several things look wrong in a race recording (agateau/pixelwheels #362, temporal_interaction)
+- **Rubric:** Official V27 (6a676431c4ebbc30851d6f10-V27_removing_misaligned_task_type_redundancy)
+- **Review date:** 2026-11-17
+- **Verdict:** **FAIL**. One dimension fails: Tests – Implementation Overfit (dim 11, [Fail - Overfit Tests]). RocketTest and MissileZOrderTest build the shooter as mock(Racer.class) and stub only getVehicle()/getPosition(). So a correct fix that tints the carried missile with its vehicle's colour, exactly as the repo's own Mine.draw tints a carried mine (Mine.java:181), crashes 3 of the 7 f2p with a NullPointerException. Verified locally: golden + that one tint block = reward 0.0 (f2p 4/7); the same code with the two mocks stubbed = 1.0 (7/7). Trial jmtBZi2 wrote this tint and lost exactly those 3 f2p to the same NPE. Difficulty, the Attempt3 failure, now passes: 0/3 no-image and exactly 1/4 with-image (afXQArC). Symptom Specificity scores 3 [Non-Fail - Image-carried Symptom], which is not a fail. The new wording states the z-order and shadow defects in text and removes the Attempt3 misreading (every with-image run now names the rocket over the footbridge as a bug). The rocket's orientation, its flame and the camera stay image-carried. The other 17 dimensions score 5. Local oracle 1.0, nop 0.0, re-run identical.
+
+## Scorecard
+
+| # | Dimension | Score | Result | Error category |
+|---|---|---|---|---|
+| 1 | Structure – Task Bundle Files | 5 | Pass | — |
+| 2 | Structure – Deliverables & Packaging | 5 | Pass | — |
+| 3 | Instruction – Requires Visual Evidence | 5 | Pass | — |
+| 4 | Instruction – Symptom Specificity | 3 | Non-Fail | [Non-Fail - Image-carried Symptom] |
+| 5 | Instruction – Task Type | 5 | Pass | — |
+| 6 | Image – Evidence Quality | 5 | Pass | — |
+| 7 | Metadata – task_type | 5 | Pass | — |
+| 8 | Evidence – Chain Consistency | 5 | Pass | — |
+| 9 | Golden Fix – Applies Cleanly | 5 | Pass | — |
+| 10 | Golden Fix – Source-Only Scope | 5 | Pass | — |
+| 11 | Tests – Implementation Overfit | 2 | Fail | [Fail - Overfit Tests] |
+| 12 | Tests – f2p/p2p Identifier Validity | 5 | Pass | — |
+| 13 | Tests – p2p Classification | 5 | Pass | — |
+| 14 | Tests – Discriminating (f2p) | 5 | Pass | — |
+| 15 | Tests – Determinism | 5 | Pass | — |
+| 16 | Hardening – Difficulty (Model Trial Fails) | 5 | Pass | — |
+| 17 | Hardening – Real & Feasible | 5 | Pass | — |
+| 18 | Gate – Oracle/Nop | 5 | Pass | — |
+| 19 | Unauditable | 5 | Pass | — |
+
+## Delivery gate
+
+| # | Check | Result | Detail |
+|---|---|---|---|
+| 1 | Local oracle | PASS | reward 1.0, f2p 7/7, p2p 2/2 (pw109:task at harbor_base, task test.sh) |
+| 2 | Local nop | PASS | reward 0.0, f2p 0/7, p2p 2/2 |
+| 3 | Local oracle re-run | PASS | identical: reward 1.0, f2p 7/7, p2p 2/2 |
+| 4 | CB Oracle / Nop (lock 5dd0ffe2) | PASS | Oracle eLEhRxL 1.0 (7/7, 2/2); Nop 8RpigCZ 0.0 (0/7, 2/2); 0.6 min each |
+| 5 | Golden patch apply | PASS | git apply --check /solution/fix.patch = OK at harbor_base (HEAD 2f1ec51) |
+| 6 | Verifier completion | PASS | All 9 CB runs and 9 local runs wrote reward.txt and a junit.xml with 9 testcases |
+| 7 | pass@3 (no-image) | PASS | 0/3 (f2p 4/7 each); /app/.harbor_assets empty in every run |
+| 8 | pass@4 (with-image, Option A) | PASS | exactly 1/4 (afXQArC = 1.0; cM2qDRx 4/7, jmtBZi2 3/7, YXypWaB 4/7) |
+| 9 | Trial run time (informational) | PASS | 2.5-3.9 min per trial |
+| 10 | Trial/task checksum | PASS | 17/17 files match task_manifest.json; Oracle = Nop = with-image trials = 5dd0ffe2; no-image runs use the stripped variant 0c782d90; all runs are from tonight, after the instruction change |
+| 11 | Packaging | PASS | Tasks/ + Trials/ (3 no-image + 4 with-image); tar each as Tasks.tar.gz / Trials.tar.gz for submission |
+| 12 | Leaks | PASS | instruction.md names no repo, URL, file, object, mechanism or timestamp; the mechanism is only in task.toml (blind to the agent) |
+| 13 | Evidence-chain integrity | PASS | File, ASSET_MANIFEST, evidence_bundle, instruction and Dockerfile COPY all agree (sha256 976eac49, 4717379 B); same hash inside the image |
+| 14 | Test harness robustness (dim 11) | FAIL | mock(Racer.class) returns null for getVehicleRenderer(): golden + Mine-style tint = 0.0 (f2p 4/7, NPE); same code with the mocks stubbed = 1.0; jmtBZi2 hit it |
+| 15 | Dim 4 trajectory check | PASS | No with-image run calls any defect intended; all 4 name the rocket over the footbridge as a bug. 2/4 never mention the crosswise rocket (perception miss, noted as a risk) |
+
+## Trials
+
+| Trial | Mode | Reward | f2p | p2p | Minutes | Failed tests |
+|---|---|---|---|---|---|---|
+| task_without_images__fkxpDNJ | no-image | 0.0 | 4/7 | 2/2 | 2.9 | carriedRocketPointsWhereTheCarPoints; firedRocketFliesWhereTheCarPoints; rocketExhaustComesOutOfItsTail |
+| task_without_images__ggXurKy | no-image | 0.0 | 4/7 | 2/2 | 2.5 | carriedRocketPointsWhereTheCarPoints; firedRocketFliesWhereTheCarPoints; rocketExhaustComesOutOfItsTail |
+| task_without_images__LbeZiX2 | no-image | 0.0 | 4/7 | 2/2 | 2.9 | carriedRocketPointsWhereTheCarPoints; firedRocketFliesWhereTheCarPoints; rocketExhaustComesOutOfItsTail |
+| task_with_images__afXQArC | with-image | 1.0 | 7/7 | 2/2 | 3.3 | — |
+| task_with_images__cM2qDRx | with-image | 0.0 | 4/7 | 2/2 | 2.9 | carriedRocketPointsWhereTheCarPoints; firedRocketFliesWhereTheCarPoints; rocketExhaustComesOutOfItsTail |
+| task_with_images__jmtBZi2 | with-image | 0.0 | 3/7 | 2/2 | 3.9 | missileIsDrawnBeforeForegroundLayer (NPE: mocked Racer); carriedRocketPointsWhereTheCarPoints (NPE: mocked Racer); rocketShadowHasTheRocketsOrientation (NPE: mocked Racer); rocketExhaustComesOutOfItsTail |
+| task_with_images__YXypWaB | with-image | 0.0 | 4/7 | 2/2 | 3.2 | carriedRocketPointsWhereTheCarPoints; firedRocketFliesWhereTheCarPoints; rocketExhaustComesOutOfItsTail |
+
+## Issues & suggested fixes
+
+### Instruction – Symptom Specificity: 3 [Non-Fail - Image-carried Symptom]
+
+**What is wrong:** Not a fail. Flag for feedback: [Non-Fail - Image-carried Symptom]. The text states the z-order and shadow defects, but the rocket's orientation, its flight direction, its flame and the camera's look-ahead appear only as a kind of problem; the exact defect is left to in-clip comparisons. RISK, not scored: 2 of the 4 with-image runs (cM2qDRx, YXypWaB) never mention the crosswise rocket, although it fills the 0-1.2 s countdown close-up. A strict reviewer could read that silence as 'agents could not tell the bug from intended behavior'. The rubric needs the trials to show that, and no run does: none calls any defect intended. This is a clear improvement on Attempt3, where wewmugH explicitly ruled the footbridge defect intended.
+
+**Suggested fix:** None required. If you edit instruction.md anyway (the dim 11 fix already forces a re-run of every trial), a line that would reach 5 without naming any object, cause or timestamp is: 'Some of what a vehicle carries is drawn wrongly compared with that vehicle: it can show through something that covers the vehicle, or not face the way the vehicle faces; and the race view doesn't keep the road ahead in view whichever way the car drives.' Warning: clearer text raises the with-image pass rate (now exactly 1/4) and the no-image fix rate. Changing instruction.md changes the task checksum, so all 7 trials must be re-run.
+
+### Tests – Implementation Overfit: 2 [Fail - Overfit Tests]
+
+**What is wrong:** 3 of the 7 f2p (missileIsDrawnBeforeForegroundLayer, carriedRocketPointsWhereTheCarPoints, rocketShadowHasTheRocketsOrientation) reject a correct fix written another way. The cause is the harness: the mocked Racer returns null for getVehicleRenderer(), a public getter that the real game always fills and that the repo's own carried mine uses in its draw(). The fix's behavior is not the problem. A fix that tints the carried missile like the carried mine scores 0.0. It did not change this batch's outcome: replaying jmtBZi2's submission under the stubbed tests gives 6/7, still 0.0, because it really missed the exhaust. The 1/4 with-image result stands, but the tests are coupled to an implementation detail (that Missile.draw never asks the shooter for its renderer), and a real trial hit it.
+
+**Suggested fix:** Stub the renderer on both mocked racers. In RocketTest.java and MissileZOrderTest.java, right after `when(racer.getVehicle()).thenReturn(vehicle);` (test.patch lines 153 and 721), add `VehicleRenderer renderer = mock(VehicleRenderer.class); when(renderer.getBatchColor()).thenReturn(Color.WHITE); when(racer.getVehicleRenderer()).thenReturn(renderer);` plus the imports. Then regenerate test.patch from the edited sources, since added lines change the hunk headers. Verified locally with this stub (written inline on the same line): golden 1.0 (7/7, 2/2), nop 0.0 (0/7, 2/2, same assertion messages), golden + tint 1.0, jmtBZi2 replay 6/7. Also check other getters a carried-item fix may reasonably call (e.g. gameWorld.getTrack(), which Mine.draw uses). Changing test.patch changes the task checksum, so re-run Oracle, Nop and all 7 trials.
+
+## Dimension details
+
+### 1. Structure – Task Bundle Files: 5 (Pass)
+
+**Evidence:** Attempt4/Tasks/agateau__pixelwheels_362_mm has all 11 fixed files, none empty: task.toml 5988 B, instruction.md 948 B, evidence_bundle.json 1859 B, environment/Dockerfile 3063 B, environment/assets/ASSET_MANIFEST.json 605 B, solution/fix.patch 8587 B, solution/solve.sh 349 B, tests/config.json 1450 B, tests/test.patch 59246 B, tests/test.sh 11141 B, tests/verifier.py 8482 B. All three JSON files parse (json.load) and tests/verifier.py passes py_compile. The asset recording.mp4 (4717379 B) decodes in the task image: ffprobe gives 1920x1080, 30/1 fps, 345 frames read, duration 11.5 s. The extras environment/bugs/bug_01..05.patch are injected-bug patches that the Dockerfile applies and deletes in the same RUN, which is allowed. README.md is also extra. Compared with Attempt3, only instruction.md changed (sha256 a5a7b246 vs 83baf7c0); the other 17 files are byte-identical, and the stray tests/__pycache__/verifier.cpython-313.pyc from Attempt3 is gone.
+
+**What is wrong:** Nothing found.
+
+**Suggested fix:** None.
+
+### 2. Structure – Deliverables & Packaging: 5 (Pass)
+
+**Evidence:** Attempt4 has sibling Tasks/ and Trials/ roots. Trials/without_images holds 3 runs (fkxpDNJ, ggXurKy, LbeZiX2) and Trials/with_images holds 4 (afXQArC, cM2qDRx, jmtBZi2, YXypWaB): 7 trials, the Option A count. Oracle/, Nop/, Check/ and Analyze/ are present too.
+
+**What is wrong:** Nothing found. The folders are extracted here, so they still have to ship as Tasks.tar.gz and Trials.tar.gz with top-level folders Tasks/ and Trials/.
+
+**Suggested fix:** When you submit, tar each root on its own (tar czf Tasks.tar.gz Tasks; tar czf Trials.tar.gz Trials).
+
+### 3. Instruction – Requires Visual Evidence: 5 (Pass)
+
+**Evidence:** Read without the video, instruction.md gives three kinds of problem: carried things 'drawn or hidden wrongly compared with that vehicle', shadows that 'don't fall or turn like the others', and a race view that 'doesn't follow the action the way it should'. It adds one concrete symptom, new in Attempt4: 'it can show through something that covers the vehicle'. It names no object, timestamp, file, repo or mechanism. The no-image trials show the text is not enough for a complete fix. In every no-image run /app/.harbor_assets was empty (step 3: 'total 8', only . and ..), and each scored f2p 4/7. All three fixed the z-order, both shadows and the camera from the text plus a code audit. All three missed carriedRocketPointsWhereTheCarPoints, firedRocketFliesWhereTheCarPoints and rocketExhaustComesOutOfItsTail, so the rocket orientation and flame defects (bugs 01-03) still need the video. The path resolves: the Dockerfile has `COPY assets/recording.mp4 /app/.harbor_assets/` and the in-image sha256 is 976eac49...ce179. Leak check: instruction.md names no repo, URL, file list or mechanism. The mechanism appears only in task.toml, which is blind (task_manifest.json blind list: tests/, solution/, task.toml).
+
+**What is wrong:** Nothing found. Non-graded: the new parenthetical makes the z-order defect solvable from the text alone. 3/3 no-image runs fixed missileIsDrawnBeforeForegroundLayer, against 0/3 in Attempt3, so only 3 of the 7 f2p (2 of the 6 defects) now depend on the video. V27 is fine with that. task.toml difficulty_explanation is now stale: it still quotes the Attempt3 wording ('things that go along with a vehicle', 'shadows that do not match what casts them') and still says 'Without the video the instruction gives no symptom to search for'.
+
+**Suggested fix:** None required. Optional: update difficulty_explanation to the Attempt4 wording, and say that the z-order symptom is now in the text. Editing task.toml changes the checksum, so batch it with the test.patch fix from dim 11.
+
+### 4. Instruction – Symptom Specificity: 3 (Non-Fail) [Non-Fail - Image-carried Symptom]
+
+**Evidence:** WHAT CHANGED vs Attempt3 (instruction.md is the only changed file): 'Some of the things that go along with a vehicle are drawn or hidden wrongly compared with that vehicle' became 'Some of what a vehicle carries is drawn or hidden wrongly compared with that vehicle (it can show through something that covers the vehicle)'. 'some shadows don't match what casts them' became 'some shadows don't fall or turn like the others in the clip'. 'keep looking the way it does now' became '... the way they do now'.
+TABLE (element | defect: text or image? | expected: text or image? | comparison pointed to | clue left to image | described correctly?)
+1. 'what a vehicle carries' (the rocket on the car, its flight and its flame) | z-order: TEXT, 'it can show through something that covers the vehicle'. Orientation (crosswise on the car 0-1.2 s; fired south into the fence at 9.9 s) and flame (out of the rocket's side at 9.9 s): kind only, 'drawn ... wrongly compared with that vehicle'; the exact defect is in the IMAGE | z-order: implied in text (hidden along with the vehicle). Orientation and flame: IMAGE, via 'the same kind of thing is drawn correctly elsewhere in the same clip' (the car itself is hidden by the bridge; the car's boost flame comes from its back at 6.6-7.0 s) | in-clip comparison | which object (rocket), what covers it (footbridge), when, how far off | yes, checked on sheet_2 (countdown), sheet_4b (footbridge) and sheet_5 (launch). Minor: once fired, the rocket is no longer carried, so 'what a vehicle carries ... compared with that vehicle' covers the fired-direction and flame defects only loosely. It is not false.
+2. 'some shadows' | TEXT: 'don't fall or turn like the others' | TEXT + IMAGE: like the others in the clip | in-clip comparison | which shadows (car shadow up-left in the countdown; rocket and crate shadows that don't rotate) | yes. This fixes the Attempt3 looseness, where 'don't match what casts them' did not describe the car shadow, which has the right shape but falls on the wrong side.
+3. 'the race view' | kind only: 'doesn't follow the action the way it should' | IMAGE (north/south stretches vs east/west straights; at 8 s the car is at the left edge heading west) | in-clip comparison | which stretches, which direction | yes.
+THE THREE CHECKS: (1) an element is named for all three areas, with no fix hint. (2) every general phrase comes with its context right away (compared with that vehicle / like the others / follow the action), plus the in-clip pointer. (3) the clues (which instance, when, how big) stay in the clip. The defect is stated in text for the z-order and both shadows. For the rocket's orientation, its flame and the camera, the exact defect is left to in-clip comparisons. That is the [Non-Fail - Image-carried Symptom] pattern, not a 5.
+TRAJECTORIES (all 4 with-image runs read in full): every run named the rocket drawn over the footbridge as a bug: cM2qDRx step 17 ('A carried missile showed through the bridge'), YXypWaB steps 21 and 26, jmtBZi2 steps 7 and 33, afXQArC steps 14 and 19. The Attempt3 misreading (wewmugH: 'already behave as the code intends') does not recur. All 4 found both shadow defects and the camera defect. The crosswise rocket was noticed by jmtBZi2 (step 20 'attached sideways (crosswise to the car)', step 25 'Confirmed in close-up') and afXQArC (step 14 'mounted sideways'). cM2qDRx and YXypWaB never mention it: they looked only at 2 fps 3x4 tile sheets plus a crop around the bridge. Only afXQArC fixed the side flame, and nobody else mentions it. A grep of all 4 runs for 'intended', 'by design', 'looks fine/right/correct', 'not a bug' and 'left ... alone' finds no defect described as intended. The misses are perception misses (silence), not misreadings.
+
+**What is wrong:** Not a fail. Flag for feedback: [Non-Fail - Image-carried Symptom]. The text states the z-order and shadow defects, but the rocket's orientation, its flight direction, its flame and the camera's look-ahead appear only as a kind of problem; the exact defect is left to in-clip comparisons. RISK, not scored: 2 of the 4 with-image runs (cM2qDRx, YXypWaB) never mention the crosswise rocket, although it fills the 0-1.2 s countdown close-up. A strict reviewer could read that silence as 'agents could not tell the bug from intended behavior'. The rubric needs the trials to show that, and no run does: none calls any defect intended. This is a clear improvement on Attempt3, where wewmugH explicitly ruled the footbridge defect intended.
+
+**Suggested fix:** None required. If you edit instruction.md anyway (the dim 11 fix already forces a re-run of every trial), a line that would reach 5 without naming any object, cause or timestamp is: 'Some of what a vehicle carries is drawn wrongly compared with that vehicle: it can show through something that covers the vehicle, or not face the way the vehicle faces; and the race view doesn't keep the road ahead in view whichever way the car drives.' Warning: clearer text raises the with-image pass rate (now exactly 1/4) and the no-image fix rate. Changing instruction.md changes the task checksum, so all 7 trials must be re-run.
+
+### 5. Instruction – Task Type: 5 (Pass)
+
+**Evidence:** task_type = temporal_interaction: 'Fix a defect that only appears across a sequence of interactions / state transitions'. The defects the text describes show up across transitions in the clip. The rocket shows over the footbridge only while the car passes under it (9.25-9.33 s). The fired rocket's path and flame appear only after launch (9.9-10.2 s). The look-ahead error depends on the heading as the lap goes on (east/west vs north/south stretches). The Attempt4 wording (carried things showing through a cover, shadows that don't fall or turn like the others, a view that doesn't follow the action) describes drawing and view problems in a recorded race, which fits the type.
+
+**What is wrong:** Nothing found. Two of the six defects (the crosswise rocket and the car shadow) are visible in a single frame. That is fine, since the task as a whole needs the sequence.
+
+**Suggested fix:** None.
+
+### 6. Image – Evidence Quality: 5 (Pass)
+
+**Evidence:** The asset is byte-identical to Attempt3 (sha256 976eac49...ce179, 4717379 B), so the frame analysis carries over. It was re-checked here on the contact sheets in evidence/. NAMING TABLE (file | role | what the frames show | what name/role/text claim | true? | agents confused?): recording.mp4 | bug_video | base behavior with bugs 01-05 injected. 0-1.2 s countdown: rocket crosswise on a north-facing car, car shadow up-left (sheet_2). 9.18-9.40 s: car hidden under the footbridge while the rocket and a flat rocket shadow are drawn over it (sheet_4b). 9.75-10.2 s: rocket fired, heading south into the fence while the car heads west, flame on its side, explodes at the fence at 10.05 s (sheet_5). 6.6-7.0 s: the car's own boost flame comes out of its back (sheet_3). 8 s: car at the left edge heading west (sheet_1) | neutral name; role 'bug_video'; the ASSET_MANIFEST and evidence_bundle descriptions (countdown, lap, footbridge, launch, explosion at the fence) | true | no: no run treated the video as a reference. All 4 with-image runs read the footbridge frames as the bug, and jmtBZi2 and afXQArC read the crosswise rocket correctly. F2P vs ASSET (steps 1-4): missileIsDrawnBeforeForegroundLayer ↔ rocket over the bridge (sheet_4b); fixing only that, by drawing the carried rocket at the car's level as cM2qDRx, YXypWaB and afXQArC did, passes the f2p. carriedRocketPointsWhereTheCarPoints ↔ crosswise rocket (sheet_2). firedRocketFliesWhereTheCarPoints ↔ rocket flying south into the fence (sheet_5). rocketExhaustComesOutOfItsTail ↔ side flame (sheet_5). rocketShadowHasTheRocketsOrientation ↔ flat rocket shadow (sheet_4b); the crate shadows also fail to rotate, and all 4 with-image agents used them. vehicleShadowFallsLikeEveryOtherShadow ↔ car shadow up-left (sheet_2). viewLooksAheadOfTheCarWhicheverWayItHeads ↔ road behind the car on the east/west straights (sheet_1, 8 s). Each f2p scenario (several headings, carried and fired, a foreground tile above) contains the state the clip shows. STEP 7 (injected defects, bugs 01-05): a fix that skips any of them leaves a defect visible in the clip, so it is incomplete, not a valid alternative. The upstream #362 symptom (rocket over the footbridge) is what the clip shows. The dim 11 problem comes from the test mocks, not from a gap between evidence and f2p, so it does not touch this dimension.
+
+**What is wrong:** Nothing found.
+
+**Suggested fix:** None.
+
+### 7. Metadata – task_type: 5 (Pass)
+
+**Evidence:** task_type = "temporal_interaction" is one of the seven values and fits a video whose defects appear across state transitions (see dim 5).
+
+**What is wrong:** Nothing found. Non-graded: Guidelines Step IV says tags should include the task_type. tags has "visual_bug_fix" and no "temporal_interaction".
+
+**Suggested fix:** Optional: replace "visual_bug_fix" with "temporal_interaction" in tags. This changes the checksum, so batch it with the test.patch fix.
+
+### 8. Evidence – Chain Consistency: 5 (Pass)
+
+**Evidence:** On disk: environment/assets/recording.mp4, 4717379 B, sha256 976eac49ad8af73175bc20545e8f19c520f7691ceb150e437ab192f95edce179. ASSET_MANIFEST.json: file recording.mp4, container_path /app/.harbor_assets/recording.mp4, same bytes and sha256. evidence_bundle.json: file recording.mp4, local_path /app/.harbor_assets/recording.mp4, same bytes and sha256. instruction.md refs: `recording.mp4` and `/app/.harbor_assets/recording.mp4`. Dockerfile: `COPY assets/recording.mp4 /app/.harbor_assets/`. In the task image, sha256sum of /app/.harbor_assets/recording.mp4 gives the same hash.
+
+**What is wrong:** Nothing found.
+
+**Suggested fix:** None.
+
+### 9. Golden Fix – Applies Cleanly: 5 (Pass)
+
+**Evidence:** Local, in the pw109:task image: Dockerfile, bugs/ and assets are byte-identical to the Attempt3 bundle it was built from, and instruction.md is not copied into the image. At HEAD 2f1ec51 (tag harbor_base), `git apply --check /solution/fix.patch` prints FIX_APPLY_CHECK=OK, and test.sh then logs '== captured submission.patch (8587 bytes, 8 files) =='. The CB Oracle (eLEhRxL) logs the same capture and reward 1.0.
+
+**What is wrong:** Nothing found.
+
+**Suggested fix:** None.
+
+### 10. Golden Fix – Source-Only Scope: 5 (Pass)
+
+**Evidence:** The 8 `diff --git` paths in fix.patch equal files_edited exactly (set compare = True, no extra or missing path): ZLevel.java, bonus/Missile.java, racer/VehicleRenderer.java, racescreen/GameRenderer.java, racescreen/Helicopter.java, racescreen/RacerCameraUpdater.java, racescreen/debug/DropLocationDebugObject.java and utils/BodyRegionDrawer.java, all under core/src. There is no test, doc, lockfile or changeset path.
+
+**What is wrong:** Nothing found.
+
+**Suggested fix:** None.
+
+### 11. Tests – Implementation Overfit: 2 (Fail) [Fail - Overfit Tests]
+
+**Evidence:** The assertions themselves are behavioral and tolerant: recorded draw order and quad geometry from a DrawRecorder batch, Box2D positions and the camera offset, with angle tolerances (< 5° for the rocket nose and travel, < 2° for the shadow) and positional ones. None compares a string, enum or format, so there is no output-form issue. The problem is the harness. RocketTest (test.patch line 152) and MissileZOrderTest (line 720) create the shooter as `Racer racer = mock(Racer.class)` and stub only getVehicle()/getPosition(), so every other Racer getter returns null. In the real game Racer.getVehicleRenderer() is never null: Racer.java:127 has `mVehicleRenderer = new VehicleRenderer(assets, mVehicle)`. The repo's own carried item calls it while drawing: Mine.java:181 has `batch.setColor(mOwner.getVehicleRenderer().getBatchColor())` for an attached mine, followed by `batch.setColor(Color.WHITE)`. GunBonus:102/165 and TurboBonus:75/108 call it too.
+EQUIVALENCE TABLE (alternative | correct & in repo context? | test accepts? | evidence):
+(A) golden ZLevel split (FLYING_LOW / FG_LAYERS / FLYING_HIGH) | yes | yes | local oracle and re-run 7/7, 2/2.
+(B) carried missile drawn at its vehicle's ZLevel, fired missile on top | yes, plausible | yes | cM2qDRx, YXypWaB and afXQArC pass missileIsDrawnBeforeForegroundLayer.
+(C) golden + tint the carried missile with its vehicle's batch colour, as Mine.draw does: `if (mStatus == Status.WAITING) batch.setColor(mShooter.getVehicleRenderer().getBatchColor());` before drawShadow/drawMissile, then `batch.setColor(Color.WHITE)` | yes. It fixes the whole issue (golden untouched). It respects the repo's contracts (a public getter that is never null in game; p2p 2/2). It is plausible (it copies Mine.draw line for line). It matches the evidence: getBatchColor() returns WHITE unless the car is sinking (VehicleRenderer.java:68-77), so every recorded frame is unchanged. It is arguably more complete: without it, a carried missile still shows through the water covering a sinking car, which is the instruction's own 'it can show through something that covers the vehicle' | NO | local run alt_tint: reward 0.0, f2p 4/7. missileIsDrawnBeforeForegroundLayer, carriedRocketPointsWhereTheCarPoints and rocketShadowHasTheRocketsOrientation all fail with 'NullPointerException: Cannot invoke VehicleRenderer.getBatchColor() because the return value of Racer.getVehicleRenderer() is null' at Missile.draw. The same code with the two mocks stubbed (alt_tint_stubbed): 1.0, 7/7, 2/2. TRIAL EVIDENCE: jmtBZi2 wrote this tint ('dims with the car when it falls into water', step 33) and lost exactly those 3 f2p to the same NPE (its junit.xml). A local replay of its submission.patch reproduces 0.0 with f2p 3/7.
+(D) rocket angle: golden degRad / vehicle.getBody().getAngle() / referenceAngle = 0 | yes | yes | afXQArC (degreesToRadians) passed; jmtBZi2 (getBody().getAngle()) passed firedRocketFliesWhereTheCarPoints, and also carriedRocketPointsWhereTheCarPoints once the mocks are stubbed (replay 6/7).
+(E) exhaust by cos/sin (golden) or Vector2(refH, 0).rotateRad | yes, same vector | yes | afXQArC.
+(F) shadow angle radDeg in BodyRegionDrawer, with or without the extra scale fix | yes | yes | all 4 with-image runs.
+(G) car shadow sign flip | yes | yes | all 4 with-image runs.
+(H) look-ahead as (advance, 0).rotate(a) or (0, advance).rotate(a - 90), with or without moving the camera speed clamp | yes, same vector | yes | all 4 with-image runs passed viewLooksAheadOfTheCarWhicheverWayItHeads.
+RESULT: (C) is a valid, plausible and correct alternative that 3 of the 7 f2p reject for a reason unrelated to the graded behavior.
+
+**What is wrong:** 3 of the 7 f2p (missileIsDrawnBeforeForegroundLayer, carriedRocketPointsWhereTheCarPoints, rocketShadowHasTheRocketsOrientation) reject a correct fix written another way. The cause is the harness: the mocked Racer returns null for getVehicleRenderer(), a public getter that the real game always fills and that the repo's own carried mine uses in its draw(). The fix's behavior is not the problem. A fix that tints the carried missile like the carried mine scores 0.0. It did not change this batch's outcome: replaying jmtBZi2's submission under the stubbed tests gives 6/7, still 0.0, because it really missed the exhaust. The 1/4 with-image result stands, but the tests are coupled to an implementation detail (that Missile.draw never asks the shooter for its renderer), and a real trial hit it.
+
+**Suggested fix:** Stub the renderer on both mocked racers. In RocketTest.java and MissileZOrderTest.java, right after `when(racer.getVehicle()).thenReturn(vehicle);` (test.patch lines 153 and 721), add `VehicleRenderer renderer = mock(VehicleRenderer.class); when(renderer.getBatchColor()).thenReturn(Color.WHITE); when(racer.getVehicleRenderer()).thenReturn(renderer);` plus the imports. Then regenerate test.patch from the edited sources, since added lines change the hunk headers. Verified locally with this stub (written inline on the same line): golden 1.0 (7/7, 2/2), nop 0.0 (0/7, 2/2, same assertion messages), golden + tint 1.0, jmtBZi2 replay 6/7. Also check other getters a carried-item fix may reasonably call (e.g. gameWorld.getTrack(), which Mine.draw uses). Changing test.patch changes the task checksum, so re-run Oracle, Nop and all 7 trials.
+
+### 12. Tests – f2p/p2p Identifier Validity: 5 (Pass)
+
+**Evidence:** The task.toml f2p/p2p lists equal tests/config.json exactly (python compare = True for both). Each of the 9 IDs ('fully.qualified.Class method') matches exactly one testcase (count = 1) in all 9 CB JUnit reports and all 9 local ones. test.sh turns each ID into `--tests Class.method` and runs only those.
+
+**What is wrong:** Nothing found. Non-graded, carried over from Attempt3: test.patch also adds MissileZOrderTest.liftedVehicleIsDrawnAfterForegroundLayer, which is in neither list and so never runs.
+
+**Suggested fix:** Optional: add liftedVehicleIsDrawnAfterForegroundLayer to p2p after checking it passes on nop and oracle, or drop it from test.patch. Batch this with the dim 11 test.patch fix.
+
+### 13. Tests – p2p Classification: 5 (Pass)
+
+**Evidence:** helicopterIsDrawnAfterForegroundLayer and viewKeepsTheCarOnScreen pass on nop (CB Nop 8RpigCZ and local nop: p2p 2/2) and on oracle (CB Oracle eLEhRxL, local oracle and re-run: 2/2). They also pass in all 7 trials and in every local variant (stubbed, tint, replays).
+
+**What is wrong:** Nothing found.
+
+**Suggested fix:** None.
+
+### 14. Tests – Discriminating (f2p): 5 (Pass)
+
+**Evidence:** All 7 f2p fail on nop with behavioral messages (CB Nop and local nop agree). Examples: 'car heading 30.0°: the rocket it carries is drawn pointing 278.9°', 'the fired rocket flew towards 278.9°', 'the exhaust should be behind the rocket's tail, it is -0.35 along the rocket axis', 'rocket drawn at 278.9° but its shadow at 358.6°', 'the view is shifted towards 180.0° instead of towards where the car is heading', 'the car shadow ... is offset by (-0.15, 0.15)', and 'The rocket (and its shadow) should be drawn before the foreground layer'. All 7 pass on oracle (CB and local, twice). Each f2p maps to one injected or upstream defect.
+
+**What is wrong:** Nothing found.
+
+**Suggested fix:** None.
+
+### 15. Tests – Determinism: 5 (Pass)
+
+**Evidence:** The local oracle and the local oracle re-run give identical results (reward 1.0, f2p 7/7, p2p 2/2), matching the CB Oracle. The local nop and the stubbed nop both fail the same 7 f2p with the same values (e.g. 278.8665°). Box2D steps at a fixed BOX2D_TIME_STEP, and missile.act() uses the same step, so the flame animation time is deterministic. Textures are Mockito mocks, so no fonts or image loading are involved. The GL tests run in a hidden software-GL context (Xvfb, LIBGL_ALWAYS_SOFTWARE=1). Nothing uses the network or wall-clock time. test.sh runs `./gradlew --no-daemon --offline` and installs nothing at test time; the Dockerfile pre-warms every jar.
+
+**What is wrong:** Nothing found. [verifier] network_mode = "public" is more than the offline run needs, but it is harmless.
+
+**Suggested fix:** Optional: set [verifier] network_mode = "no-network", since test.sh is fully offline.
+
+### 16. Hardening – Difficulty (Model Trial Fails): 5 (Pass)
+
+**Evidence:** Option A (7 trials). No-image 0/3: fkxpDNJ 0.0 (f2p 4/7), ggXurKy 0.0 (4/7), LbeZiX2 0.0 (4/7); /app/.harbor_assets was empty in each trajectory, and they ran on the stripped-variant checksum 0c782d90. With-image exactly 1/4: afXQArC 1.0 (7/7), cM2qDRx 0.0 (4/7: missed the carried and fired rocket orientation and the flame), jmtBZi2 0.0 (3/7: missed the flame, plus 3 NPEs from its tint, see dim 11), YXypWaB 0.0 (4/7, same misses as cM2qDRx). All 4 ran on checksum 5dd0ffe2, the same as Oracle and Nop. Every reward was read from verifier/reward.txt. Run times are 2.5-3.9 min per trial (informational). The dim 11 harness issue does not change the count: replaying jmtBZi2 under stubbed mocks gives 6/7, still 0.0, and the other runs never call getVehicleRenderer(). afXQArC's pass uses the vehicle-level z-order approach, not the upstream ZLevel restructure, so there is no sign it recalled the public fix.
+
+**What is wrong:** Nothing found. This was the Attempt3 failure (2/4 with-image) and it is now fixed. Heads-up: the dim 11 fix changes the checksum, so all 7 trials must be re-run. With a with-image pass rate somewhere around 25-50%, a re-run can land on 0/4 or 2/4.
+
+**Suggested fix:** None for this dimension. When you re-run after the test.patch fix, Option B (3 no-image + 8 with-image, 1-2 passes allowed) is more tolerant of that pass rate than Option A's exactly 1/4.
+
+### 17. Hardening – Real & Feasible: 5 (Pass)
+
+**Evidence:** Defect 1 is upstream issue #362 (PR #373): the carried rocket is drawn over foreground map elements. Bugs 01-05 are plausible developer mistakes: a degrees/radians mix-up hidden behind normalizeAnglePiRad, a joint reference angle that keeps the wrong offset, a sprite axis swap for the exhaust, a radians-for-degrees mix-up in BodyRegionDrawer, a sign flip in the car shadow offset, and a +Y look-ahead rotated by (90 - heading). Each fix is a one- or two-line correction a real developer would write. The z-order fix is the upstream restructure, and simpler valid fixes also pass. Feasible: afXQArC solved all six from the video and the code.
+
+**What is wrong:** Nothing found.
+
+**Suggested fix:** None.
+
+### 18. Gate – Oracle/Nop: 5 (Pass)
+
+**Evidence:** Local (pw109:task, HEAD 2f1ec51, tag harbor_base, task test.sh): oracle logs '== captured submission.patch (8587 bytes, 8 files) ==', '== applying test.patch ==', '== running f2p + p2p tests ==', '== computing reward ==' and reward=1.0 (f2p 7/7, p2p 2/2). The oracle re-run is identical. Nop shows the same banners, captures 0 bytes and gives reward=0.0 (f2p 0/7, p2p 2/2). No log contains 'could not apply test.patch'. CB runs: Oracle eLEhRxL 1.0 (7/7, 2/2, 0.6 min) and Nop 8RpigCZ 0.0 (0/7, 2/2, 0.6 min), both on lock 5dd0ffe2, the same checksum as the 4 with-image trials. The current files match all 17 sha256 entries in Trials/with_images/task_manifest.json.
+
+**What is wrong:** Nothing found.
+
+**Suggested fix:** None.
+
+### 19. Unauditable: 5 (Pass)
+
+**Evidence:** The submission is complete and auditable: bundle, 7 trials with trajectories, Oracle, Nop, Check and Analyze.
+
+**What is wrong:** Nothing found.
+
+**Suggested fix:** None.

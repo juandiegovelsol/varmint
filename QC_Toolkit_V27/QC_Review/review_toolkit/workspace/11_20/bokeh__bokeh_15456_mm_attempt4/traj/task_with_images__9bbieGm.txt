@@ -1,0 +1,497 @@
+### step 1 [user] 2026-11-20T19:57:43.955Z
+### step 2 [agent] 2026-11-20T19:57:46.557Z
+CALL Bash: cd /app/.harbor_assets && ls; ffprobe -v error -show_entries format=duration -of csv=p=0 recording.mp4; mkdir -p /tmp/fr && ffmpeg -v error -i recording.mp4 -vf fps=1 /tmp/fr/f%02d.png && ls /tmp/fr
+OBS: recording.mp4
+15.200000
+f01.png
+f02.png
+f03.png
+f04.png
+f05.png
+f06.png
+f07.png
+f08.png
+f09.png
+f10.png
+f11.png
+f12.png
+f13.png
+f14.png
+f15.png
+Shell cwd was reset to /app/bokehjs
+
+[stdout]
+recording.mp4
+15.200000
+f01.png
+f02.png
+f03.png
+f04.png
+f05.png
+f06.png
+f07.png
+f08.png
+f09.png
+f10.png
+f11.png
+f12.png
+f13.png
+f14.png
+f15.png
+[stderr]
+
+Shell cwd was reset to /app/bokehjs
+[metadata] {"noOutpu ...[+18 chars]
+### step 3 [agent] 2026-11-20T19:57:51.487Z
+CALL Bash: cd /tmp/fr && ffmpeg -v error -i f%02d.png -vf "scale=640:-1,tile=4x4" -frames:v 1 /tmp/tile.png -y; echo ok
+CALL Read: /tmp/tile.png
+OBS: ok
+Shell cwd was reset to /app/bokehjs
+
+[stdout]
+ok
+[stderr]
+
+Shell cwd was reset to /app/bokehjs
+[metadata] {"noOutputExpected": false}
+OBS: <image>
+### step 4 [user] 2026-11-20T19:57:52.213Z
+MSG: [Image: original 2560x2344, displayed at 2000x1831. Multiply coordinates by 1.28 to map to original image.]
+### step 5 [agent] 2026-11-20T19:57:54.715Z
+CALL Bash: git log --oneline | head; ls; ls src/lib/core/layout/; wc -l src/lib/core/layout/*.ts src/lib/models/plots/plot_canvas.ts
+OBS: f360563 base
+CHANGELOG.md
+CONTRIBUTING.md
+LICENSE
+README.md
+build
+eslint.config.mjs
+examples
+frameworks
+make
+node_modules
+npm_packages.json
+package-lock.json
+package.json
+prepare.mjs
+src
+test
+tsconfig.base.json
+alignments.ts
+border.ts
+grid.ts
+index.ts
+layoutable.ts
+side_panel.ts
+types.ts
+  190 src/lib/core/layout/alignments.ts
+  132 src/lib/core/layout/border.ts
+  675 src/lib/core/layout/grid.ts
+  ...[+854 chars]
+### step 6 [agent] 2026-11-20T19:57:57.193Z
+CALL Bash: cat src/lib/core/layout/border.ts src/lib/core/layout/layoutable.ts
+OBS: import type {SizeHint, Size, Margin} from "./types"
+import {Sizeable} from "./types"
+import {Layoutable} from "./layoutable"
+import type {LRTB} from "../util/bbox"
+import {BBox} from "../util/bbox"
+
+export class BorderLayout extends Layoutable {
+  override *[Symbol.iterator]() {
+    yield this.top_panel
+    yield this.bottom_panel
+    yield this.left_panel
+    yield this.right_panel
+    yield this ...[+28644 chars]
+### step 7 [agent] 2026-11-20T19:58:03.196Z
+CALL Bash: grep -rn "align_border\|center_border_width\|aligns\b" src/lib --include=*.ts | grep -v "^src/lib/core/layout/border.ts"; cat src/lib/core/layout/alignments.ts
+OBS: src/lib/models/layouts/alignments.ts:20:  align_borders(): void {
+src/lib/models/layouts/alignments.ts:32:      layout.align_border = {left: 0, top: 0, right: 0, bottom: 0}
+src/lib/models/layouts/alignments.ts:48:      const {aligns} = layout
+src/lib/models/layouts/alignments.ts:49:      layout.align_border = {
+src/lib/models/layouts/alignments.ts:50:        left: aligns.left ? cols[c1].left : 0,
+ ...[+16862 chars]
+### step 8 [agent] 2026-11-20T19:58:06.754Z
+CALL Bash: cat src/lib/models/layouts/alignments.ts; sed -n 500,560p src/lib/models/plots/plot_canvas.ts; sed -n 740,820p src/lib/models/plots/plot_canvas.ts
+OBS: import type {LayoutDOMView} from "./layout_dom"
+import type {Container} from "core/layout/grid"
+import {Layoutable} from "core/layout/layoutable"
+import {BorderLayout} from "core/layout/border"
+import type {Sizeable, SizeHint, Size} from "core/layout"
+import {BBox} from "core/util/bbox"
+import {assert} from "core/util/assert"
+
+const {max} = Math
+
+export class GridAlignmentLayout extends Layoutable ...[+21686 chars]
+### step 9 [agent] 2026-11-20T19:58:13.353Z
+CALL Bash: cat src/lib/models/layouts/css_grid_box.ts | head -80; pip show bokeh 2>/dev/null | head -3; find / -name "alignments.ts" -not -path "*/proc/*" 2>/dev/null | grep -v "^/app/bokehjs/src"; find / -path /proc -prune -o -name "bokeh*.js" -print 2>/dev/null | grep -v "/app/bokehjs/build" | head
+OBS: import {LayoutDOM, LayoutDOMView} from "./layout_dom"
+import {GridAlignmentLayout} from "./alignments"
+import type {UIElement} from "../ui/ui_element"
+import type {TracksSizing, TrackSizing} from "../common/kinds"
+import {GridSpacing} from "../common/kinds"
+import type {CSSStyles} from "core/css"
+import {px} from "core/dom"
+import {Container} from "core/layout/grid"
+import {enumerate} from "core/u ...[+4624 chars]
+### step 10 [agent] 2026-11-20T19:58:18.241Z
+CALL Bash: grep -rln "much longer key\|bigger key" test/ src/ examples/ 2>/dev/null
+OBS: (Bash completed with no output)
+
+[metadata] {"returnCodeInterpretation": "No matches found", "noOutputExpected": false}
+### step 11 [agent] 2026-11-20T19:58:20.865Z
+CALL Read: /tmp/fr/f13.png
+OBS: <image>
+### step 12 [user] 2026-11-20T19:58:20.963Z
+MSG: [Image: original 2250x2060, displayed at 2000x1831. Multiply coordinates by 1.13 to map to original image.]
+### step 13 [agent] 2026-11-20T19:58:24.792Z
+CALL Bash: ls test test/integration 2>/dev/null | head -50; grep -rln "align_border\|GridAlignmentLayout" test | head
+OBS: test:
+assets
+baselines
+codebase
+defaults
+devtools
+framework
+frameworks
+integration
+node_modules
+package.json
+run-baseline-tests.mjs
+unit
+
+test/integration:
+_data.ts
+annotations
+auto_index.d.ts
+axes.ts
+color_mapping.ts
+colors.ts
+contour.ts
+cross.ts
+examples
+features.ts
+glyphs
+grids.ts
+icons.ts
+index.ts
+layouts.ts
+palettes.ts
+plots.ts
+regressions.ts
+tables.ts
+tiles.ts
+tools
+tsconfig.json
+ui.ts
+widge ...[+460 chars]
+### step 14 [agent] 2026-11-20T19:58:33.575Z
+CALL Bash: grep -n "measure_layout\|_measure_layout\|compute_layout\|update_layout\|_layoutable\|is_layout_root\|after_layout\|get layout\|layout:" src/lib/models/layouts/layout_dom.ts | head -60
+CALL Bash: sed -n 80,200p src/lib/models/layouts/css_grid_box.ts
+OBS: 39:  get is_layout_root(): boolean {
+46:    if (this.is_layout_root && !this._was_built) {
+52:      this.compute_layout()
+119:  get layoutable_views(): LayoutDOMView[] {
+156:    this.update_layout()
+157:    this.compute_layout()
+209:  protected _update_layout(): void {
+319:    if (this.is_layout_root) {
+359:  update_layout(): void {
+367:      child_view.update_layout()
+370:    this._update_layout( ...[+2054 chars]
+OBS: const {_rows: rows, _cols: cols} = this
+    if (rows instanceof Map) {
+      nrows = max(nrows, ...rows.keys())
+    } else if (isArray(rows)) {
+      nrows = max(nrows, rows.length)
+    }
+
+    if (cols instanceof Map) {
+      ncols = max(ncols, ...cols.keys())
+    } else if (isArray(cols)) {
+      ncols = max(ncols, cols.length)
+    }
+
+    function parse_sizing(tracks: TracksSizing | null, templat ...[+4898 chars]
+### step 15 [agent] 2026-11-20T19:58:46.063Z
+CALL Bash: grep -n "padding\|min_border\|frame_width\|frame_height\|center_panel\|fixed_width\|fixed_height" src/lib/models/plots/plot_canvas.ts | head -40; sed -n 390,460p src/lib/models/layouts/layout_dom.ts
+OBS: 383:          padding: 0.5em;
+437:    const {frame_width, frame_height} = this.model
+441:      width_policy: frame_width != null && width_policy == "auto" ? "fit" : width_policy,
+442:      height_policy: frame_height != null && height_policy == "auto" ? "fit" : height_policy,
+598:    const min_border = this.model.min_border ?? 0
+599:    layout.min_border = {
+600:      left:   this.model.min_border ...[+7566 chars]
+### step 16 [agent] 2026-11-20T19:58:54.406Z
+CALL Bash: ls src/lib/models/layouts/; grep -rn "GridAlignmentLayout\|align_borders" src/lib | grep -v "^src/lib/models/layouts/alignments.ts"
+OBS: alignments.ts
+column.ts
+css_grid_box.ts
+flex_box.ts
+grid_box.ts
+group_box.ts
+hbox.ts
+index.ts
+layout_dom.ts
+row.ts
+scroll_box.ts
+spacer.ts
+tab_panel.ts
+tabs.tsx
+vbox.ts
+src/lib/models/layouts/tabs.tsx:17:import {GridAlignmentLayout} from "./alignments"
+src/lib/models/layouts/tabs.tsx:104:        this.layout = new GridAlignmentLayout(layoutable)
+src/lib/models/layouts/css_grid_box.ts:2:import {Grid ...[+1426 chars]
+### step 17 [agent] 2026-11-20T19:58:57.583Z
+CALL Bash: sed -n 1,130p src/lib/models/layouts/flex_box.ts; sed -n 80,120p src/lib/models/layouts/tabs.tsx
+OBS: import {LayoutDOM, LayoutDOMView} from "./layout_dom"
+import {GridAlignmentLayout} from "./alignments"
+import {Container} from "core/layout/grid"
+import {UIElement} from "../ui/ui_element"
+import {px} from "core/dom"
+import type * as p from "core/properties"
+
+type Direction = "row" | "column"
+
+export abstract class FlexBoxView extends LayoutDOMView {
+  declare model: FlexBox
+  protected abstract _ ...[+9150 chars]
+### step 18 [agent] 2026-11-20T19:59:07.530Z
+CALL Bash: grep -n "has_size_changed\|invalidate_layout\|compute_layout\|_measure_layout\|measure_layout" src/lib/models/plots/plot_canvas.ts src/lib/models/layouts/layout_dom.ts src/lib/models/plots/*.ts src/lib/models/renderers/*.ts src/lib/models/axes/axis.ts src/lib/models/annotations/*.ts | head -40
+OBS: src/lib/models/plots/grid_plot.ts:55:      this.invalidate_layout()
+src/lib/models/layouts/layout_dom.ts:52:      this.compute_layout()
+src/lib/models/layouts/layout_dom.ts:93:    ], () => this.invalidate_layout())
+src/lib/models/layouts/layout_dom.ts:102:      this.invalidate_layout()
+src/lib/models/layouts/layout_dom.ts:157:    this.compute_layout()
+src/lib/models/layouts/layout_dom.ts:168:      ...[+6152 chars]
+### step 19 [agent] 2026-11-20T19:59:11.831Z
+CALL Bash: sed -n 850,885p src/lib/models/plots/plot_canvas.ts; sed -n 1190,1250p src/lib/models/plots/plot_canvas.ts; sed -n 460,500p src/lib/models/layouts/layout_dom.ts; cat src/lib/models/plots/grid_plot.ts | sed -n 1,140p
+OBS: reset_selection(): void {
+    this.update_selection(null)
+  }
+
+  private _needs_layout: boolean = false
+
+  protected _invalidate_layout_if_needed(): void {
+    const needs_layout = (() => {
+      if (this._needs_layout) {
+        this.invalidate_painters()
+        return true
+      } else {
+        for (const panel of this.model.side_panels) {
+          const view = this.renderer_views.get(panel a ...[+15696 chars]
+### step 20 [agent] 2026-11-20T19:59:28.571Z
+CALL Bash: sed -n 1,120p src/lib/core/layout/grid.ts
+OBS: import type {SizeHint, Size} from "./types"
+import {Sizeable} from "./types"
+import type {Extents} from "../types"
+import {Layoutable} from "./layoutable"
+import type {Align} from "../enums"
+import {isNumber, isString, isPlainObject} from "../util/types"
+import {BBox} from "../util/bbox"
+import {sum, some} from "../util/array"
+
+const {max, round} = Math
+
+export class DefaultMap<K, V> {
+  private _ ...[+5734 chars]
+### step 21 [agent] 2026-11-20T19:59:39.132Z
+CALL Bash: sed -n 150,252p src/lib/core/layout/side_panel.ts; grep -n "dirty\|has_size_changed\|layout" src/lib/models/annotations/legend.ts | head -30
+OBS: constructor(readonly side: Side, face?: Face | "auto") {
+    this.face = (() => {
+      if (face != null && face != "auto") {
+        return face
+      } else {
+        switch (this.side) {
+          case "left":
+          case "above":
+            return "front"
+          case "right":
+          case "below":
+            return "back"
+        }
+      }
+    })()
+    this.dimension = this.side == " ...[+6626 chars]
+### step 22 [agent] 2026-11-20T19:59:43.988Z
+CALL Bash: sed -n 55,110p src/lib/models/annotations/legend.ts; grep -rn "has_size_changed" src/lib | grep -v plot_canvas
+OBS: height: height + 2*margin,
+    }
+  }
+
+  override update_layout(): void {
+    this.update_geometry()
+
+    const {panel} = this
+    if (panel != null) {
+      this.layout = new SideLayout(panel, () => this.get_size())
+    } else {
+      this.layout = undefined
+    }
+  }
+
+  protected _resize_observer: ResizeObserver
+
+  override initialize(): void {
+    super.initialize()
+    this._resize_observer = n ...[+3038 chars]
+### step 23 [agent] 2026-11-20T19:59:47.043Z
+CALL Bash: grep -rn "new SideLayout\|\.dirty\b\|dirty =" src/lib | head; sed -n 120,145p src/lib/models/annotations/base_color_bar.ts
+OBS: src/lib/models/axes/axis.ts:132:    this.layout = new SideLayout(this.panel, () => this.get_size(), true)
+src/lib/models/ui/examiner.tsx:373:        const dirty = prop.dirty ? "dirty" : null
+src/lib/models/ui/examiner.tsx:375:        const hidden = !prop.dirty && !show_initial.value || prop.internal && !show_internal.value ? "hidden" : null
+src/lib/models/ui/examiner.tsx:492:              <div cla ...[+3256 chars]
+### step 24 [agent] 2026-11-20T19:59:53.440Z
+CALL Bash: sed -n 560,700p src/lib/models/plots/plot_canvas.ts
+OBS: const layouts: Layoutable[] = []
+
+      for (const panel of panels) {
+        if (isArray(panel)) {
+          const items = panel.map((subpanel) => {
+            const item = set_layout(side, subpanel)
+            if (item == null) {
+              return undefined
+            }
+            if (subpanel instanceof ToolbarPanel) {
+              const dim = horizontal ? "width_policy" : "height_polic ...[+10250 chars]
+### step 25 [agent] 2026-11-20T19:59:58.710Z
+THINK: I've found the likely causes of the clipping: the size-change check in SideLayout is inverted, align_borders reads from the wrong columns, BorderLayout omits align_border.top, and only CSS grids call align_borders. I'm making those fixes next.
+CALL Bash: set -e
+python3 - <<'EOF'
+import re
+def sub(p,a,b):
+    s=open(p).read(); assert a in s,(p,a); open(p,'w').write(s.replace(a,b))
+sub('src/lib/core/layout/side_panel.ts','return this.bbox.height > height','return this.bbox.height < height')
+sub('src/lib/core/layout/side_panel.ts','return this.bbox.width > width','return this.bbox.width < width')
+sub('src/lib/models/layouts/alignments.ts','left: aligns.left ? cols[c1].left : 0,\n        right: aligns.right ? cols[c0].right : 0,','left: aligns.left ? cols[c0].left : 0,\n        right: aligns.right ? cols[c1].right : 0,')
+sub('src/lib/core/layout/border.ts','const top = Math.max(top_hint.height, this.min_border.top) + this.padding.top','const top = Math.max(Math.max(top_hint.height, this.min_border.top) + this.padding.top, this.align_border.top)')
+sub('src/lib/models/layouts/css_grid_box.ts','''  override measure_layout(): void {
+    if (this.layout instanceof GridAlignmentLayout) {
+      this.layout.align_borders()
+    }
+    super.measure_layout()
+  }
+
+''','')
+sub('src/lib/models/layouts/layout_dom.ts','''  measure_layout(): void {
+    for''','''  measure_layout(): void {
+    // Borders of aligned children must be settled before they measure themselves.
+    if (this.layout instanceof GridAlignmentLayout) {
+      this.layout.align_borders()
+    }
+
+    for''')
+EOF
+grep -n "^import" src/lib/models/layouts/layout_dom.ts | head -30
+OBS: 1:import type {DOMBoxSizing, UIElement, UIElementView} from "../ui/ui_element"
+2:import {Pane, PaneView} from "../ui/pane"
+3:import {logger} from "core/logging"
+4:import {Signal} from "core/signaling"
+5:import {Align, Dimensions, FlowMode, SizingMode} from "core/enums"
+6:import {px} from "core/dom"
+7:import type {CSSStyles} from "core/css"
+8:import {isNumber, isArray} from "core/util/types"
+9:impo ...[+4734 chars]
+### step 26 [agent] 2026-11-20T20:00:05.482Z
+CALL Bash: sed -i '18a import {GridAlignmentLayout} from "./alignments"' src/lib/models/layouts/layout_dom.ts && grep -n "GridAlignmentLayout" src/lib/models/layouts/*.ts && git diff --stat && cat package.json | grep -A15 '"scripts"'
+OBS: src/lib/models/layouts/alignments.ts:11:export class GridAlignmentLayout extends Layoutable {
+src/lib/models/layouts/flex_box.ts:2:import {GridAlignmentLayout} from "./alignments"
+src/lib/models/layouts/flex_box.ts:100:      this.layout = new GridAlignmentLayout(layoutable)
+src/lib/models/layouts/layout_dom.ts:19:import {GridAlignmentLayout} from "./alignments"
+src/lib/models/layouts/layout_dom.ts ...[+3143 chars]
+### step 27 [agent] 2026-11-20T20:00:08.536Z
+CALL Bash: git diff src/lib/models/layouts/alignments.ts src/lib/core/layout/side_panel.ts; timeout 600 node make lib 2>&1 | tail -15
+OBS: diff --git a/bokehjs/src/lib/core/layout/side_panel.ts b/bokehjs/src/lib/core/layout/side_panel.ts
+index 14adf91..db732a2 100644
+--- a/bokehjs/src/lib/core/layout/side_panel.ts
++++ b/bokehjs/src/lib/core/layout/side_panel.ts
+@@ -244,9 +244,9 @@ export class SideLayout extends ContentLayoutable {
+   override has_size_changed(): boolean {
+     const {width, height} = this._content_size()
+     if (th ...[+3298 chars]
+### step 28 [agent] 2026-11-20T20:00:14.518Z
+CALL Bash: timeout 900 node make compiler:ts 2>&1 | tail -5; timeout 900 node make lib:compile 2>&1 | tail -20
+OBS: [20:00:16] Using nodejs v22.23.5 and npm 10.9.9
+[20:00:16] Starting 'compiler:ts'...
+[20:00:17] Finished 'compiler:ts' after 933 ms
+[20:00:17] Finished 'top-level'
+[20:00:17] Using nodejs v22.23.5 and npm 10.9.9
+BuildError: can't resolve lib:compile task
+    at _resolve_task (file:///app/bokehjs/make/_build/make/task.js:99:19)
+    at _resolve_dep (file:///app/bokehjs/make/_build/make/task.js:86:31 ...[+920 chars]
+### step 29 [agent] 2026-11-20T20:00:20.234Z
+CALL Bash: grep -rhoE 'task\("[^"]+"' make/tasks/*.ts | sort | head -50
+OBS: task("all"
+task("baseline-test"
+task("baseline-test:accept"
+task("baseline-test:review"
+task("build"
+task("build:all"
+task("clean"
+task("clean:all"
+task("clean:scripts"
+task("clean:styles"
+task("compiler:build"
+task("compiler:ts"
+task("default"
+task("dev"
+task("eslint"
+task("eslint:compiler"
+task("eslint:examples"
+task("eslint:examples:frameworks"
+task("eslint:frameworks"
+task("eslint:lib"
+task("e ...[+1732 chars]
+### step 30 [agent] 2026-11-20T20:00:22.975Z
+CALL Bash: timeout 900 node make scripts:compile 2>&1 | tail -15
+OBS: [20:00:24] Finished 'styles:compile' after 327 ms
+[20:00:24] Starting 'scripts:styles'...
+[20:00:24] Finished 'scripts:styles' after 69 ms
+[20:00:24] Starting 'scripts:glsl'...
+[20:00:24] Finished 'scripts:glsl' after 20 ms
+[20:00:24] Starting 'scripts:grammar'...
+[20:00:24] Finished 'scripts:grammar' after 285 ms
+[20:00:24] Starting 'scripts:typescript'...
+[20:00:25] Finished 'scripts:typescript' ...[+980 chars]
+### step 31 [agent] 2026-11-20T20:00:28.913Z
+CALL Bash: grep -n "align_borders" build/js/lib/models/layouts/layout_dom.js build/js/lib/models/layouts/css_grid_box.js; grep -n "bbox.width <" build/js/lib/core/layout/side_panel.js; which chromium chromium-browser google-chrome 2>/dev/null; ls test/unit | head
+OBS: build/js/lib/models/layouts/layout_dom.js:339:            this.layout.align_borders();
+237:            return this.bbox.width < width;
+api
+auto_index.d.ts
+base.ts
+client
+core
+document
+embed.ts
+index.ts
+model.ts
+models
+
+[stdout]
+build/js/lib/models/layouts/layout_dom.js:339:            this.layout.align_borders();
+237:            return this.bbox.width < width;
+api
+auto_index.d.ts
+base.ts
+client
+co ...[+84 chars]
+### step 32 [agent] 2026-11-20T20:00:33.629Z
+THINK: The TypeScript build passes with all four fixes, but I can't render the charts to verify them since Chrome isn't installed here. I'm checking the existing tests for anything that depends on the old behaviour next.
+CALL Bash: grep -rn "has_size_changed\|align_border\|align_borders" test/unit test/integration | head
+OBS: (Bash completed with no output)
+
+[metadata] {"noOutputExpected": false}
+### step 33 [agent] 2026-11-20T20:00:46.319Z
+MSG: I fixed four layout bugs in bokehjs that match the problems in the clip. The code compiles, but I haven't seen it work: there's no Chrome here, so I couldn't render the charts. No existing test covers this code, so no test was run either.
+
+1. **Labels and legends getting clipped when they grow** (`src/lib/core/layout/side_panel.ts`). The check that decides whether a chart needs to be laid out again had its comparison backwards. It only fired when an axis, legend or toolbar got smaller. So when tick labels widened (the `…e+9` labels) or a legend label got longer ("a much longer key lab…"), the chart kept its old margins and cut them off. It now fires when they grow. It still does nothing when they shrink, which I believe is how Bokeh normally behaves.
+
+2. **Charts spilling out of their row or column** (`src/lib/models/layouts/alignments.ts`). When working out the margins charts should share, each chart's left margin was taken from its last column and its right margin from its first. So a chart spanning several cells, or a chart in a row, picked up a neighbour's margin and didn't fit its slot. Left now comes from the first column and right from the last.
+
+3. **Point area not keeping its given height** (`src/lib/core/layout/border.ts`). The shared top margin was used to size the chart but left out when working out where the point area goes; the other three sides were fine. On charts with a fixed point-area height, that area came out the wrong size or in the wrong place, and the frames in a row didn't line up. The top margin is now handled like the other three.
+
+4. **Rows, columns and tabs never sharing margins** (`src/lib/models/layouts/layout_dom.ts`, `css_grid_box.ts`). Margins were only shared for grid layouts. Rows, columns and linked tabs still lined their point areas up, but without the extra margin that needs. The point areas shrank or slid, and charts side by side or stacked ended up different sizes. Every layout that lines charts up now shares margins first. I moved the call out of `css_grid_box.ts` into the common base class.
+
+To check it, rebuild with `node make build` and open the same page in a browser. Change tick ranges and legend labels while it's open, since growing labels was what triggered the worst of it.

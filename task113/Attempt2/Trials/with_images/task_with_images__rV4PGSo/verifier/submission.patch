@@ -1,0 +1,247 @@
+diff --git a/Content.Client/Doors/DoorSystem.cs b/Content.Client/Doors/DoorSystem.cs
+index 1e76d22..7043cc5 100644
+--- a/Content.Client/Doors/DoorSystem.cs
++++ b/Content.Client/Doors/DoorSystem.cs
+@@ -154,7 +154,7 @@ private void UpdateAppearanceForDoorState(Entity<DoorComponent> entity, SpriteCo
+                 if (_animationSystem.HasRunningAnimation(entity, DoorComponent.OpenKey))
+                 {
+                     _animationSystem.Stop(entity, null, DoorComponent.OpenKey);
+-                    _animationSystem.Play(entity, (Animation)entity.Comp.OpeningAnimation, DoorComponent.CloseKey);
++                    _animationSystem.Play(entity, (Animation)entity.Comp.ClosingAnimation, DoorComponent.CloseKey);
+                 }
+ 
+                 foreach (var (layer, layerState) in entity.Comp.ClosedSpriteStates)
+diff --git a/Content.Server/Atmos/EntitySystems/AirtightSystem.cs b/Content.Server/Atmos/EntitySystems/AirtightSystem.cs
+index ade2b40..37e98fd 100644
+--- a/Content.Server/Atmos/EntitySystems/AirtightSystem.cs
++++ b/Content.Server/Atmos/EntitySystems/AirtightSystem.cs
+@@ -105,8 +105,7 @@ public void SetAirblocked(Entity<AirtightComponent> airtight, bool airblocked, T
+ 
+             var pos = airtight.Comp.LastPosition;
+             airtight.Comp.AirBlocked = airblocked;
+-            if (!airblocked)
+-                UpdatePosition(airtight, xform);
++            UpdatePosition(airtight, xform);
+             var airtightEv = new AirtightChanged(airtight, airtight, true, pos);
+             RaiseLocalEvent(airtight, ref airtightEv, true);
+         }
+diff --git a/Content.Server/Doors/Systems/FirelockSystem.cs b/Content.Server/Doors/Systems/FirelockSystem.cs
+index 16ebaca..6c1dd60 100644
+--- a/Content.Server/Doors/Systems/FirelockSystem.cs
++++ b/Content.Server/Doors/Systems/FirelockSystem.cs
+@@ -70,6 +70,9 @@ public override void Update(float frameTime)
+                     && door.State != DoorState.Welded
+                     && door.State != DoorState.Denying)
+                 {
++                    if (_pointLightQuery.TryComp(uid, out var openLight) && openLight.Enabled)
++                        _pointLight.SetEnabled(uid, false, openLight);
++
+                     continue;
+                 }
+ 
+diff --git a/Content.Shared/Doors/Components/FirelockComponent.cs b/Content.Shared/Doors/Components/FirelockComponent.cs
+index c777364..00f1d49 100644
+--- a/Content.Shared/Doors/Components/FirelockComponent.cs
++++ b/Content.Shared/Doors/Components/FirelockComponent.cs
+@@ -29,7 +29,7 @@ public sealed partial class FirelockComponent : Component
+     /// Maximum temperature difference before the firelock will refuse to open, in k.
+     /// </summary>
+     [DataField, GuidebookData]
+-    public float TemperatureThreshold = 230;
++    public float TemperatureThreshold = 330;
+     // this used to check for hot-spots, but because accessing that data is a a mess this now just checks
+     // temperature. This does mean a cold room will trigger hot-air pop-ups
+ 
+diff --git a/Content.Shared/Doors/Systems/SharedFirelockSystem.cs b/Content.Shared/Doors/Systems/SharedFirelockSystem.cs
+index 49532ee..6f72884 100644
+--- a/Content.Shared/Doors/Systems/SharedFirelockSystem.cs
++++ b/Content.Shared/Doors/Systems/SharedFirelockSystem.cs
+@@ -27,6 +27,7 @@ public override void Initialize()
+         SubscribeLocalEvent<FirelockComponent, PriedEvent>(OnAfterPried);
+ 
+         // Visuals
++        SubscribeLocalEvent<FirelockComponent, DoorStateChangedEvent>(UpdateVisuals);
+         SubscribeLocalEvent<FirelockComponent, MapInitEvent>(UpdateVisuals);
+         SubscribeLocalEvent<FirelockComponent, ComponentStartup>(OnComponentStartup);
+ 
+@@ -126,6 +127,8 @@ protected virtual void OnComponentStartup(Entity<FirelockComponent> ent, ref Com
+             && door.State != DoorState.Denying)
+         {
+             _appearance.SetData(uid, DoorVisuals.ClosedLights, false, appearance);
++            _appearance.SetData(uid, FirelockVisuals.PressureWarning, false, appearance);
++            _appearance.SetData(uid, FirelockVisuals.TemperatureWarning, false, appearance);
+             return;
+         }
+ 
+@@ -133,6 +136,8 @@ protected virtual void OnComponentStartup(Entity<FirelockComponent> ent, ref Com
+             return;
+ 
+         _appearance.SetData(uid, DoorVisuals.ClosedLights, firelock.IsLocked, appearance);
++        _appearance.SetData(uid, FirelockVisuals.PressureWarning, firelock.Pressure, appearance);
++        _appearance.SetData(uid, FirelockVisuals.TemperatureWarning, firelock.Temperature, appearance);
+     }
+ 
+     #endregion
+diff --git a/Resources/Prototypes/Entities/Structures/Doors/Firelocks/firelock.yml b/Resources/Prototypes/Entities/Structures/Doors/Firelocks/firelock.yml
+index cfb8c14..da46e88 100644
+--- a/Resources/Prototypes/Entities/Structures/Doors/Firelocks/firelock.yml
++++ b/Resources/Prototypes/Entities/Structures/Doors/Firelocks/firelock.yml
+@@ -203,6 +203,16 @@
+       - state: panel_open
+         sprite: Structures/Doors/Airlocks/Effects/airlock-effects.rsi
+         map: ["enum.WiresVisualLayers.MaintenancePanel"]
++      - state: pressure_unlit
++        visible: false
++        shader: unshaded
++        sprite: Structures/Doors/Airlocks/Effects/airlock-effects-firelock.rsi
++        map: ["enum.FirelockVisualLayersPressure.Base"]
++      - state: temperature_unlit
++        visible: false
++        shader: unshaded
++        sprite: Structures/Doors/Airlocks/Effects/airlock-effects-firelock.rsi
++        map: ["enum.FirelockVisualLayersTemperature.Base"]
+     - type: Occluder
+       enabled: false
+     - type: Fixtures
+@@ -249,7 +259,7 @@
+       airBlocked: false
+       noAirWhenFullyAirBlocked: false
+       airBlockedDirection:
+-        - North
++        - South
+     - type: Fixtures
+       fixtures:
+         fix1:
+diff --git a/Resources/Textures/Structures/Doors/Airlocks/Standard/firelock-base.rsi/meta.json b/Resources/Textures/Structures/Doors/Airlocks/Standard/firelock-base.rsi/meta.json
+index cd47d30..5797040 100644
+--- a/Resources/Textures/Structures/Doors/Airlocks/Standard/firelock-base.rsi/meta.json
++++ b/Resources/Textures/Structures/Doors/Airlocks/Standard/firelock-base.rsi/meta.json
+@@ -98,72 +98,72 @@
+             "directions": 4,
+             "delays": [
+                 [
++                    0.1,
++                    0.05,
++                    0.05,
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.01,
+                     0.01,
+-                    0.005,
+-                    0.005,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.005,
+-                    0.005,
+-                    0.01
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.05,
++                    0.05,
++                    0.1
+                 ],
+                 [
++                    0.1,
++                    0.05,
++                    0.05,
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.01,
+                     0.01,
+-                    0.005,
+-                    0.005,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.005,
+-                    0.005,
+-                    0.01
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.05,
++                    0.05,
++                    0.1
+                 ],
+                 [
++                    0.1,
++                    0.05,
++                    0.05,
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.01,
+                     0.01,
+-                    0.005,
+-                    0.005,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.005,
+-                    0.005,
+-                    0.01
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.05,
++                    0.05,
++                    0.1
+                 ],
+                 [
++                    0.1,
++                    0.05,
++                    0.05,
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.01,
+                     0.01,
+-                    0.005,
+-                    0.005,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.005,
+-                    0.005,
+-                    0.01
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.05,
++                    0.05,
++                    0.1
+                 ]
+             ]
+         }

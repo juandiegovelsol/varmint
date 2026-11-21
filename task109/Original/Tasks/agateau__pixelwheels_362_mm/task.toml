@@ -1,0 +1,56 @@
+version = "1.0"
+reward_type = "binary"
+
+[task]
+name = "scale-ai/agateau__pixelwheels_362_mm"
+
+[metadata]
+task_id = "agateau__pixelwheels_362_mm"
+title = "Fired rocket renders in front of the start/finish banner instead of behind it"
+repository_name = "agateau/pixelwheels"
+repo_url = "https://github.com/agateau/pixelwheels"
+issue_number = 362
+pr_number = 373
+base_commit = "8baa87705929292ea4f33f77cc34e6c06c15cb0b"
+fix_commit = "fca6a63255a15085eebe00cfc7be87122c265bde"
+task_type = "2d_video"
+language = "Java"
+framework = "libGDX"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = """
+The image is required because the defect is a draw-order/occlusion problem: nothing about it can be inferred from code comments or test names alone (ZLevel.java and GameRenderer.java carry no TODO or note about this), and the only way to confirm which object should occlude which, and that the rocket is fully opaque over the stripes rather than merely close to them, is to look at the rendered frame. The repo also gives no test or comment pointing at this before the fix, so an engineer without the video has nothing but the vague issue title to go on.
+
+The fix itself touches six files across three layers of the rendering pipeline: the ZLevel enum has to be restructured (not just reordered — FLYING is split into FLYING_LOW for missiles and FLYING_HIGH for helicopters/carried vehicles, and a new FG_LAYERS level is inserted) and every call site that branches on the old ZLevel.FLYING or draws the foreground tile layer at ZLevel.OBSTACLES has to move in lockstep (Missile.java, VehicleRenderer.java, GameRenderer.java, Helicopter.java, DropLocationDebugObject.java). A shallow fix that just swaps two enum values, or moves only the foreground-layer draw call without also separating the helicopter's high-altitude draw level, would still leave the helicopter shadow or carried-vehicle cases broken, or would reintroduce the missile-over-foreground bug in a different order. Getting all six files internally consistent, and keeping the enum's ordering semantics documented, is what makes this a real cross-file architecture fix rather than a one-line tweak.
+"""
+files_edited = [
+  "core/src/com/agateau/pixelwheels/ZLevel.java",
+  "core/src/com/agateau/pixelwheels/bonus/Missile.java",
+  "core/src/com/agateau/pixelwheels/racer/VehicleRenderer.java",
+  "core/src/com/agateau/pixelwheels/racescreen/GameRenderer.java",
+  "core/src/com/agateau/pixelwheels/racescreen/Helicopter.java",
+  "core/src/com/agateau/pixelwheels/racescreen/debug/DropLocationDebugObject.java",
+]
+f2p = [
+  "com.agateau.pixelwheels.racescreen.MissileZOrderTest missileIsDrawnBeforeForegroundLayer",
+]
+p2p = [
+  "com.agateau.pixelwheels.racescreen.MissileZOrderTest helicopterIsDrawnAfterForegroundLayer",
+]
+tags = ["multimodal", "2d_video", "visual_bug_fix", "beyond_browser", "libgdx", "java", "2d-games", "rendering", "z-order"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

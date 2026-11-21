@@ -1,0 +1,230 @@
+diff --git a/Content.Server/Atmos/EntitySystems/AirtightSystem.cs b/Content.Server/Atmos/EntitySystems/AirtightSystem.cs
+index ade2b40..37e98fd 100644
+--- a/Content.Server/Atmos/EntitySystems/AirtightSystem.cs
++++ b/Content.Server/Atmos/EntitySystems/AirtightSystem.cs
+@@ -105,8 +105,7 @@ public void SetAirblocked(Entity<AirtightComponent> airtight, bool airblocked, T
+ 
+             var pos = airtight.Comp.LastPosition;
+             airtight.Comp.AirBlocked = airblocked;
+-            if (!airblocked)
+-                UpdatePosition(airtight, xform);
++            UpdatePosition(airtight, xform);
+             var airtightEv = new AirtightChanged(airtight, airtight, true, pos);
+             RaiseLocalEvent(airtight, ref airtightEv, true);
+         }
+diff --git a/Content.Server/Doors/Systems/FirelockSystem.cs b/Content.Server/Doors/Systems/FirelockSystem.cs
+index 16ebaca..7b68280 100644
+--- a/Content.Server/Doors/Systems/FirelockSystem.cs
++++ b/Content.Server/Doors/Systems/FirelockSystem.cs
+@@ -70,6 +70,9 @@ public override void Update(float frameTime)
+                     && door.State != DoorState.Welded
+                     && door.State != DoorState.Denying)
+                 {
++                    if (_pointLightQuery.TryComp(uid, out var openLight))
++                        _pointLight.SetEnabled(uid, false, openLight);
++
+                     continue;
+                 }
+ 
+@@ -189,8 +192,13 @@ private void OnAtmosAlarm(EntityUid uid, FirelockComponent component, AtmosAlarm
+                     var p = gas.Pressure;
+                     minPressure = Math.Min(minPressure, p);
+                     maxPressure = Math.Max(maxPressure, p);
+-                    minTemperature = Math.Min(minTemperature, gas.Temperature);
+-                    maxTemperature = Math.Max(maxTemperature, gas.Temperature);
++
++                    // A vacuum has no heat to hold back, only a pressure difference.
++                    if (gas.TotalMoles > Atmospherics.GasMinMoles)
++                    {
++                        minTemperature = Math.Min(minTemperature, gas.Temperature);
++                        maxTemperature = Math.Max(maxTemperature, gas.Temperature);
++                    }
+                 }
+ 
+                 holdingPressure |= maxPressure - minPressure > firelock.PressureThreshold;
+@@ -209,15 +217,18 @@ private void OnAtmosAlarm(EntityUid uid, FirelockComponent component, AtmosAlarm
+                 var p = local.Pressure;
+                 minPressure = Math.Min(minPressure, p);
+                 maxPressure = Math.Max(maxPressure, p);
+-                minTemperature = Math.Min(minTemperature, local.Temperature);
+-                maxTemperature = Math.Max(maxTemperature, local.Temperature);
++
++                if (local.TotalMoles > Atmospherics.GasMinMoles)
++                {
++                    minTemperature = Math.Min(minTemperature, local.Temperature);
++                    maxTemperature = Math.Max(maxTemperature, local.Temperature);
++                }
+             }
+             else
+             {
++                // No mixture means vacuum: a pressure difference, but no temperature to compare against.
+                 minPressure = Math.Min(minPressure, 0);
+                 maxPressure = Math.Max(maxPressure, 0);
+-                minTemperature = Math.Min(minTemperature, 0);
+-                maxTemperature = Math.Max(maxTemperature, 0);
+             }
+ 
+             holdingPressure |= maxPressure - minPressure > firelock.PressureThreshold;
+diff --git a/Content.Shared/Doors/Systems/SharedFirelockSystem.cs b/Content.Shared/Doors/Systems/SharedFirelockSystem.cs
+index 49532ee..6f72884 100644
+--- a/Content.Shared/Doors/Systems/SharedFirelockSystem.cs
++++ b/Content.Shared/Doors/Systems/SharedFirelockSystem.cs
+@@ -27,6 +27,7 @@ public override void Initialize()
+         SubscribeLocalEvent<FirelockComponent, PriedEvent>(OnAfterPried);
+ 
+         // Visuals
++        SubscribeLocalEvent<FirelockComponent, DoorStateChangedEvent>(UpdateVisuals);
+         SubscribeLocalEvent<FirelockComponent, MapInitEvent>(UpdateVisuals);
+         SubscribeLocalEvent<FirelockComponent, ComponentStartup>(OnComponentStartup);
+ 
+@@ -126,6 +127,8 @@ protected virtual void OnComponentStartup(Entity<FirelockComponent> ent, ref Com
+             && door.State != DoorState.Denying)
+         {
+             _appearance.SetData(uid, DoorVisuals.ClosedLights, false, appearance);
++            _appearance.SetData(uid, FirelockVisuals.PressureWarning, false, appearance);
++            _appearance.SetData(uid, FirelockVisuals.TemperatureWarning, false, appearance);
+             return;
+         }
+ 
+@@ -133,6 +136,8 @@ protected virtual void OnComponentStartup(Entity<FirelockComponent> ent, ref Com
+             return;
+ 
+         _appearance.SetData(uid, DoorVisuals.ClosedLights, firelock.IsLocked, appearance);
++        _appearance.SetData(uid, FirelockVisuals.PressureWarning, firelock.Pressure, appearance);
++        _appearance.SetData(uid, FirelockVisuals.TemperatureWarning, firelock.Temperature, appearance);
+     }
+ 
+     #endregion
+diff --git a/Resources/Textures/Structures/Doors/Airlocks/Standard/firelock-base.rsi/meta.json b/Resources/Textures/Structures/Doors/Airlocks/Standard/firelock-base.rsi/meta.json
+index cd47d30..5797040 100644
+--- a/Resources/Textures/Structures/Doors/Airlocks/Standard/firelock-base.rsi/meta.json
++++ b/Resources/Textures/Structures/Doors/Airlocks/Standard/firelock-base.rsi/meta.json
+@@ -98,72 +98,72 @@
+             "directions": 4,
+             "delays": [
+                 [
++                    0.1,
++                    0.05,
++                    0.05,
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.01,
+                     0.01,
+-                    0.005,
+-                    0.005,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.005,
+-                    0.005,
+-                    0.01
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.05,
++                    0.05,
++                    0.1
+                 ],
+                 [
++                    0.1,
++                    0.05,
++                    0.05,
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.01,
+                     0.01,
+-                    0.005,
+-                    0.005,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.005,
+-                    0.005,
+-                    0.01
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.05,
++                    0.05,
++                    0.1
+                 ],
+                 [
++                    0.1,
++                    0.05,
++                    0.05,
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.01,
+                     0.01,
+-                    0.005,
+-                    0.005,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.005,
+-                    0.005,
+-                    0.01
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.05,
++                    0.05,
++                    0.1
+                 ],
+                 [
++                    0.1,
++                    0.05,
++                    0.05,
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.01,
+                     0.01,
+-                    0.005,
+-                    0.005,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.005,
+-                    0.005,
+-                    0.01
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.05,
++                    0.05,
++                    0.1
+                 ]
+             ]
+         }

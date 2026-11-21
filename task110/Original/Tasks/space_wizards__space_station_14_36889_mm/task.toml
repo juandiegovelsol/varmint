@@ -1,0 +1,52 @@
+version = "1.0"
+reward_type = "binary"
+
+[task]
+name = "scale-ai/space_wizards__space_station_14_36889_mm"
+
+[metadata]
+task_id = "space_wizards__space_station_14_36889_mm"
+title = "Firelock's warning light stays lit after the door opens"
+repository_name = "space-wizards/space-station-14"
+repo_url = "https://github.com/space-wizards/space-station-14"
+issue_number = 36889
+pr_number = 46007
+base_commit = "58dae1ce4a0806fa3b928834789b2b508b47b0f3"
+fix_commit = "763186613f196824f010bba663d353e4cce8f3ea"
+task_type = "2d_video"
+language = ""
+framework = "Space Station 14"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "medium"
+difficulty_explanation = """
+The defect is purely a client-side rendering/visibility-timing bug: a sprite layer (the pressure/temperature warning icon) stops reflecting the correct state once the door leaves Closed, and nothing in the code or tests calls this out ahead of time -- only watching the rendered client reveals that the light ignores door state entirely, versus merely being a cosmetic animation quirk.
+
+The fix is not a one-line tweak: it spans two files in different subsystems (the client's FirelockSystem.cs appearance handler and the firelock.yml entity prototype), and requires recognizing why the existing declarative GenericVisualizer component -- which only keys visibility off the raw PressureWarning/TemperatureWarning booleans -- cannot express a conjunction with door state, forcing its removal and a reimplementation inside OnAppearanceChange that re-reads both the alarm data and the current DoorState together. A shallow attempt (e.g. just hiding the layer whenever state != Open) would silently regress the Welded and Denying states, which must still show the warning lights per the real fix's `state == Closed || Welded || Denying` condition -- exactly the kind of case a reviewer only catches by understanding the full DoorState enum and the prototype's other visual layers (bolted/denying), not by reading the bug report alone.
+"""
+files_edited = [
+  "Content.Client/Doors/FirelockSystem.cs",
+  "Resources/Prototypes/Entities/Structures/Doors/Firelocks/firelock.yml",
+]
+f2p = [
+  "Content.IntegrationTests.Tests.Doors.FirelockWarningLightTest.WarningLights_HideWhenDoorLeavesClosed",
+]
+p2p = [
+  "Content.IntegrationTests.Tests.Doors.AirlockTest.OpenCloseDestroyTest",
+]
+tags = ["multimodal", "2d_video", "temporal_interaction", "beyond_browser", "space station 14", "robust-toolbox", "sprite", "doors", "atmospherics"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

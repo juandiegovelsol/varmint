@@ -1,0 +1,124 @@
+diff --git a/src/client/content_mapblock.cpp b/src/client/content_mapblock.cpp
+index eb8dabb..0b19a5a 100644
+--- a/src/client/content_mapblock.cpp
++++ b/src/client/content_mapblock.cpp
+@@ -1454,10 +1454,10 @@ namespace {
+ 		{straight,   0}, //  .  . -Z +Z
+ 		{straight,  90}, //  . -X  .  .
+ 		{  curved, 180}, //  . -X  . +Z
+-		{  curved,  90}, //  . -X -Z  .
++		{  curved, 270}, //  . -X -Z  .
+ 		{junction, 180}, //  . -X -Z +Z
+ 		{straight,  90}, // +X  .  .  .
+-		{  curved, 270}, // +X  .  . +Z
++		{  curved,  90}, // +X  .  . +Z
+ 		{  curved,   0}, // +X  . -Z  .
+ 		{junction,   0}, // +X  . -Z +Z
+ 		{straight,  90}, // +X -X  .  .
+@@ -1516,8 +1516,8 @@ namespace {
+ 	static const v3s16 nodebox_tile_dirs[6] = {
+ 		v3s16(0, 1, 0),
+ 		v3s16(0, -1, 0),
+-		v3s16(-1, 0, 0),
+ 		v3s16(1, 0, 0),
++		v3s16(-1, 0, 0),
+ 		v3s16(0, 0, 1),
+ 		v3s16(0, 0, -1)
+ 	};
+diff --git a/src/client/meshgen/collector.cpp b/src/client/meshgen/collector.cpp
+index 5a4fb84..008bef4 100644
+--- a/src/client/meshgen/collector.cpp
++++ b/src/client/meshgen/collector.cpp
+@@ -10,10 +10,18 @@
+ void MeshCollector::append(const TileSpec &tile, const video::S3DVertex *vertices,
+ 		u32 numVertices, const u16 *indices, u32 numIndices)
+ {
++	const bool has_overlay = tile.layers[1].texture_id != 0;
+ 	for (int layernum = 0; layernum < MAX_TILE_LAYERS; layernum++) {
+ 		const TileLayer *layer = &tile.layers[layernum];
+ 		if (layer->texture_id == 0)
+ 			continue;
++		TileLayer base_layer;
++		if (layernum == 0 && has_overlay) {
++			// mark the base layer so it can be kept behind its overlay
++			base_layer = *layer;
++			base_layer.material_flags |= MATERIAL_FLAG_HAS_OVERLAY;
++			layer = &base_layer;
++		}
+ 		append(*layer, vertices, numVertices, indices, numIndices, layernum,
+ 				tile.world_aligned);
+ 	}
+diff --git a/src/client/tile.cpp b/src/client/tile.cpp
+index b13d390..f1dbd8c 100644
+--- a/src/client/tile.cpp
++++ b/src/client/tile.cpp
+@@ -19,13 +19,15 @@ void TileLayer::applyMaterialOptions(video::SMaterial &material, int layer) cons
+ 	}
+ 
+ 	/*
+-	 * The second layer is for overlays, but uses the same vertex positions
+-	 * as the first, which easily leads to Z-fighting.
+-	 * To fix this we can offset the polygons in the direction of the camera.
++	 * The second layer is for overlays, which use the same vertex positions
++	 * as the base layer and thus easily lead to Z-fighting.
++	 * The overlay must stay at the true depth of its surface (pulling it towards
++	 * the camera makes it cover things resting on the node), so instead the base
++	 * layer underneath it is pushed slightly away from the camera.
+ 	 * This only affects the depth buffer and leads to no visual gaps in geometry.
+ 	 */
+-	if (layer == 1) {
+-		material.PolygonOffsetSlopeScale = -1;
+-		material.PolygonOffsetDepthBias = -1;
++	if (layer == 0 && (material_flags & MATERIAL_FLAG_HAS_OVERLAY)) {
++		material.PolygonOffsetSlopeScale = 1;
++		material.PolygonOffsetDepthBias = 1;
+ 	}
+ }
+diff --git a/src/client/tile.h b/src/client/tile.h
+index 8336d1d..ae61658 100644
+--- a/src/client/tile.h
++++ b/src/client/tile.h
+@@ -37,6 +37,8 @@ enum MaterialType : u8 {
+ //#define MATERIAL_FLAG_HIGHLIGHTED 0x10
+ #define MATERIAL_FLAG_TILEABLE_HORIZONTAL 0x20
+ #define MATERIAL_FLAG_TILEABLE_VERTICAL 0x40
++// Set on a base layer that has an overlay layer drawn on top of it
++#define MATERIAL_FLAG_HAS_OVERLAY 0x80
+ 
+ /*
+ 	This fully defines the looks of a tile.
+diff --git a/src/mapnode.cpp b/src/mapnode.cpp
+index bc10665..a82cbe0 100644
+--- a/src/mapnode.cpp
++++ b/src/mapnode.cpp
+@@ -188,14 +188,14 @@ void transformNodeBox(const MapNode &n, const NodeBox &nodebox,
+ 				box.MaxEdge.Y = (-0.5f + n.getLevel(nodemgr) / 64.0f) * BS;
+ 
+ 			if(facedir == 1) {
+-				box.MinEdge.rotateXZBy(90);
+-				box.MaxEdge.rotateXZBy(90);
++				box.MinEdge.rotateXZBy(-90);
++				box.MaxEdge.rotateXZBy(-90);
+ 			} else if(facedir == 2) {
+ 				box.MinEdge.rotateXZBy(180);
+ 				box.MaxEdge.rotateXZBy(180);
+ 			} else if(facedir == 3) {
+-				box.MinEdge.rotateXZBy(-90);
+-				box.MaxEdge.rotateXZBy(-90);
++				box.MinEdge.rotateXZBy(90);
++				box.MaxEdge.rotateXZBy(90);
+ 			}
+ 
+ 			switch (axisdir) {
+@@ -287,9 +287,9 @@ void transformNodeBox(const MapNode &n, const NodeBox &nodebox,
+ 				if(dir == v3s16(1,0,0))
+ 					vertex.rotateXZBy(180);
+ 				if(dir == v3s16(0,0,-1))
+-					vertex.rotateXZBy(-90);
+-				if(dir == v3s16(0,0,1))
+ 					vertex.rotateXZBy(90);
++				if(dir == v3s16(0,0,1))
++					vertex.rotateXZBy(-90);
+ 			}
+ 
+ 			aabb3f box = aabb3f(vertices[0]);

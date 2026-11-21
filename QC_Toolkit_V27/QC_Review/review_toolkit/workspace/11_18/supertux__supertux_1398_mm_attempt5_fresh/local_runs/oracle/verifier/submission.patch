@@ -1,0 +1,107 @@
+diff --git a/src/badguy/badguy.cpp b/src/badguy/badguy.cpp
+index 2fb0795..ca20e4b 100644
+--- a/src/badguy/badguy.cpp
++++ b/src/badguy/badguy.cpp
+@@ -319,8 +319,8 @@ BadGuy::collision_tile(uint32_t tile_attributes)
+     if (tile_attributes & Tile::FIRE) {
+       if (is_flammable()) ignite();
+     }
+-    else if (is_freezable()) {
+-      freeze();
++    else if (tile_attributes & Tile::ICE) {
++      if (is_freezable()) freeze();
+     }
+     else {
+       kill_fall();
+diff --git a/src/object/player.cpp b/src/object/player.cpp
+index a956b4b..44dfa67 100644
+--- a/src/object/player.cpp
++++ b/src/object/player.cpp
+@@ -1132,8 +1132,7 @@ if (m_swimming) {
+         } else if (m_controller->hold(Control::DOWN)) {
+           m_grabbed_object->ungrab(*this, Direction::DOWN);
+         } else {
+-          m_grabbed_object->ungrab(*this, (dest_.get_left() > m_col.m_bbox.get_left()) ?
+-                                   Direction::LEFT : Direction::RIGHT);
++          m_grabbed_object->ungrab(*this, m_dir);
+         }
+         m_grabbed_object = nullptr;
+       }
+@@ -1160,7 +1159,8 @@ Player::position_grabbed_object()
+       m_col.m_bbox.get_top() + m_col.m_bbox.get_height()*0.66666f);
+ 
+   // Adjust to find the grabbed object's upper-left corner
+-  pos.x -= object_bbox.get_width() * (m_dir == Direction::LEFT ? 0.0f : 1.0f);
++  if (m_dir == Direction::LEFT)
++    pos.x -= object_bbox.get_width();
+   pos.y -= object_bbox.get_height();
+ 
+   m_grabbed_object->grab(*this, pos, m_dir);
+@@ -1684,16 +1684,6 @@ Player::collision_solid(const CollisionHit& hit)
+   }
+ }
+ 
+-bool
+-Player::collides(GameObject& other, const CollisionHit& hit) const
+-{
+-  auto portable = dynamic_cast<Portable*>(&other);
+-  if (portable && portable->is_portable() && !portable->is_grabbed())
+-    return false;
+-
+-  return MovingObject::collides(other, hit);
+-}
+-
+ HitResponse
+ Player::collision(GameObject& other, const CollisionHit& hit)
+ {
+diff --git a/src/object/player.hpp b/src/object/player.hpp
+index 4655286..983fe05 100644
+--- a/src/object/player.hpp
++++ b/src/object/player.hpp
+@@ -49,7 +49,6 @@ public:
+   virtual void update(float dt_sec) override;
+   virtual void draw(DrawingContext& context) override;
+   virtual void collision_solid(const CollisionHit& hit) override;
+-  virtual bool collides(GameObject& other, const CollisionHit& hit) const override;
+   virtual HitResponse collision(GameObject& other, const CollisionHit& hit) override;
+   virtual void collision_tile(uint32_t tile_attributes) override;
+   virtual bool is_saveable() const override { return false; }
+diff --git a/src/object/rock.cpp b/src/object/rock.cpp
+index 4416edc..e46de4e 100644
+--- a/src/object/rock.cpp
++++ b/src/object/rock.cpp
+@@ -96,7 +96,6 @@ Rock::collision_solid(const CollisionHit& hit)
+   if (hit.bottom  && !on_ground && !is_grabbed()) {
+     SoundManager::current()->play(ROCK_SOUND, get_pos());
+     physic.set_velocity_x(0);
+-    set_group(COLGROUP_MOVING_STATIC);
+     on_ground = true;
+   }
+ }
+@@ -129,7 +128,7 @@ Rock::collision(GameObject& other, const CollisionHit& hit)
+   if (!on_ground) {
+     if (hit.bottom && physic.get_velocity_y() > 200) {
+       auto moving_object = dynamic_cast<MovingObject*> (&other);
+-      if (moving_object) {
++      if (moving_object && moving_object->get_group() != COLGROUP_TOUCHABLE) {
+         //Getting a rock on the head hurts. A lot.
+         moving_object->collision_tile(Tile::HURTS);
+         physic.set_velocity_y(0);
+@@ -158,6 +157,7 @@ Rock::grab(MovingObject& object, const Vector& pos, Direction dir_)
+ void
+ Rock::ungrab(MovingObject& object, Direction dir)
+ {
++  set_group(COLGROUP_MOVING_STATIC);
+   on_ground = false;
+   if (dir == Direction::UP) {
+     physic.set_velocity(0, -500);
+@@ -169,9 +169,6 @@ Rock::ungrab(MovingObject& object, Direction dir)
+     physic.set_velocity(0, 0);
+   }
+ 
+-  if (physic.get_velocity_x() == 0.0f)
+-    set_group(COLGROUP_MOVING_STATIC);
+-
+   if (!on_ungrab_script.empty()) {
+     Sector::get().run_script(on_ungrab_script, "Rock::on_ungrab");
+   }

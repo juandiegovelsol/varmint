@@ -1,0 +1,134 @@
+diff --git a/Content.IntegrationTests/Tests/Doors/FirelockWarningLightTest.cs b/Content.IntegrationTests/Tests/Doors/FirelockWarningLightTest.cs
+new file mode 100644
+index 0000000..d274207
+--- /dev/null
++++ b/Content.IntegrationTests/Tests/Doors/FirelockWarningLightTest.cs
+@@ -0,0 +1,128 @@
++#nullable enable
++using Content.IntegrationTests.Fixtures;
++using Content.IntegrationTests.Fixtures.Attributes;
++using Content.Shared.Doors.Components;
++using Content.Shared.Doors.Systems;
++using Robust.Client.GameObjects;
++using Robust.Shared.GameObjects;
++
++namespace Content.IntegrationTests.Tests.Doors;
++
++/// <summary>
++/// Regression test for the firelock pressure/temperature warning light sprite layers staying
++/// visible once the door has left its Closed state (the light "floats" disconnected from the
++/// door, whether the door is open or merely re-closing).
++/// </summary>
++[TestOf(typeof(FirelockComponent))]
++public sealed class FirelockWarningLightTest : GameTest
++{
++    private const string FirelockId = "Firelock";
++
++    [SidedDependency(Side.Server)] private SharedDoorSystem _sDoorSystem = null!;
++
++    // Always get a brand-new server/client pair instead of one recycled from another test. When
++    // only a couple of tests are selected (as the verifier does, running exactly the f2p + p2p
++    // ids), this test can otherwise inherit a pair whose long-lived server/client threads were
++    // first spun up for a *different* test. PoolManager re-points log output to this test via
++    // ActivateContext() on handoff, but NUnit's own per-thread test-execution context isn't
++    // re-pointed, so an assertion failure that actually happens here can get reported under that
++    // other test's name instead. Requesting Fresh avoids depending on pool luck for that.
++    public override PoolSettings PoolSettings => new() { Connected = true, Fresh = true };
++
++    [Test]
++    [Description("A firelock's pressure/temperature warning light layers must hide once the door leaves Closed, " +
++                 "and must stay hidden even once the door starts closing again.")]
++    public async Task WarningLights_HideWhenDoorLeavesClosed()
++    {
++        await Pair.CreateTestMap();
++
++        EntityUid serverUid = default;
++        Entity<DoorComponent> door = default;
++
++        await Server.WaitAssertion(() =>
++        {
++            serverUid = SSpawnAtPosition(FirelockId, TestMap!.GridCoords);
++            door = SEntity<DoorComponent>(serverUid);
++
++            // Firelocks default to Open (they're a normal doorway until there's a hazard).
++            // Close it first so we can put it into the alarmed "Closed" state.
++            _sDoorSystem.TryClose(door);
++        });
++
++        await WaitForDoorState(door, DoorState.Closed);
++
++        // Simulate an active pressure *and* temperature alarm while the door is closed.
++        await Server.WaitAssertion(() =>
++        {
++            var appearance = Server.System<SharedAppearanceSystem>();
++            appearance.SetData(serverUid, FirelockVisuals.PressureWarning, true);
++            appearance.SetData(serverUid, FirelockVisuals.TemperatureWarning, true);
++        });
++
++        await RunUntilSynced();
++
++        var clientUid = ToClientUid(serverUid);
++
++        await AssertLayers(clientUid, pressureVisible: true, temperatureVisible: true,
++            becauseClosedAndAlarmed: true);
++
++        // Open the door. The warning data is *not* cleared (mirrors the real bug: atmos hasn't
++        // re-evaluated yet), so the only thing that should hide the lights is the door no longer
++        // being Closed/Welded/Denying.
++        await Server.WaitAssertion(() =>
++        {
++            _sDoorSystem.StartOpening(door);
++        });
++
++        await WaitForDoorState(door, DoorState.Open);
++
++        // Now start closing it again (e.g. an emergency-pressure auto-reclose, or a second person
++        // toggling it) *without* the alarm ever clearing. The lights must stay hidden throughout
++        // the Closing transition too -- the bug leaves them visible for every non-Closed state,
++        // not only the fully Open one, so a fix that special-cases just "Open" would still fail
++        // here.
++        await Server.WaitAssertion(() =>
++        {
++            _sDoorSystem.StartClosing(door);
++        });
++
++        await WaitForDoorState(door, DoorState.Closing);
++        await RunUntilSynced();
++
++        await AssertLayers(clientUid, pressureVisible: false, temperatureVisible: false,
++            becauseClosedAndAlarmed: false);
++    }
++
++    /// <summary>
++    /// Wait for the door to be in a specific state.
++    /// </summary>
++    private async Task WaitForDoorState(Entity<DoorComponent> doorEnt, DoorState state)
++    {
++        await PoolManager.WaitUntil(Server, () => doorEnt.Comp.State == state);
++        Assert.That(doorEnt.Comp.State, Is.EqualTo(state));
++    }
++
++    /// <summary>
++    /// Assert the client-visible state of both warning light layers.
++    /// </summary>
++    private async Task AssertLayers(EntityUid clientUid, bool pressureVisible, bool temperatureVisible, bool becauseClosedAndAlarmed)
++    {
++        await Client.WaitAssertion(() =>
++        {
++            var sprite = CEntMan.GetComponent<SpriteComponent>(clientUid);
++            var spriteSys = Client.System<SpriteSystem>();
++
++            Assert.That(spriteSys.LayerMapTryGet((clientUid, sprite), FirelockVisualLayersPressure.Base, out var pressureLayer, false));
++            Assert.That(spriteSys.LayerMapTryGet((clientUid, sprite), FirelockVisualLayersTemperature.Base, out var tempLayer, false));
++
++            Assert.That(spriteSys.TryGetLayer((clientUid, sprite), pressureLayer, out var pLayer, false));
++            Assert.That(spriteSys.TryGetLayer((clientUid, sprite), tempLayer, out var tLayer, false));
++
++            var reason = becauseClosedAndAlarmed
++                ? "the firelock is closed and alarmed"
++                : "the firelock is no longer Closed/Welded/Denying";
++            Assert.That(pLayer.Visible, Is.EqualTo(pressureVisible), $"Pressure warning light visibility is wrong: {reason}.");
++            Assert.That(tLayer.Visible, Is.EqualTo(temperatureVisible), $"Temperature warning light visibility is wrong: {reason}.");
++        });
++    }
++}

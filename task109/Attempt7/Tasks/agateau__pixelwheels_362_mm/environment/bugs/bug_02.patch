@@ -1,0 +1,24 @@
+diff --git a/core/src/com/agateau/pixelwheels/bonus/Missile.java b/core/src/com/agateau/pixelwheels/bonus/Missile.java
+index 7131458..e6a94a5 100644
+--- a/core/src/com/agateau/pixelwheels/bonus/Missile.java
++++ b/core/src/com/agateau/pixelwheels/bonus/Missile.java
+@@ -88,6 +88,7 @@ public class Missile extends GameObjectAdapter
+     private final BodyRegionDrawer mDrawer = new BodyRegionDrawer();
+     private final ClosestRacerFinder mRacerFinder = new ClosestRacerFinder(LOCK_DISTANCE, LOCK_ARC);
+     private final MissileGuidingSystem mGuidingSystem = new MissileGuidingSystem();
++    private final Vector2 mReactorPos = new Vector2();
+     private Assets mAssets;
+ 
+     private final DebugShapeMap.Shape mDebugShape =
+@@ -292,8 +293,9 @@ public class Missile extends GameObjectAdapter
+         float w = Constants.UNIT_FOR_PIXEL * region.getRegionWidth();
+         float h = Constants.UNIT_FOR_PIXEL * region.getRegionHeight();
+         float refH = Constants.UNIT_FOR_PIXEL * -WIDTH / 2;
+-        float x = center.x + refH * MathUtils.cos(angle);
+-        float y = center.y + refH * MathUtils.sin(angle);
++        mReactorPos.set(0, refH).rotateRad(angle).add(center);
++        float x = mReactorPos.x;
++        float y = mReactorPos.y;
+         batch.draw(
+                 region,
+                 x - w / 2,

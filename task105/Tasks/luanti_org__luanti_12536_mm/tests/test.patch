@@ -1,5 +1,5 @@
 diff --git a/src/unittest/CMakeLists.txt b/src/unittest/CMakeLists.txt
-index 84f769e87..c7a66409e 100644
+index 84f769e..c7a6640 100644
 --- a/src/unittest/CMakeLists.txt
 +++ b/src/unittest/CMakeLists.txt
 @@ -40,6 +40,7 @@ set (UNITTEST_SRCS
@@ -11,11 +11,11 @@ index 84f769e87..c7a66409e 100644
  	${CMAKE_CURRENT_SOURCE_DIR}/test_gameui.cpp
  	${CMAKE_CURRENT_SOURCE_DIR}/test_keycode.cpp
 diff --git a/src/unittest/test_content_mapblock.cpp b/src/unittest/test_content_mapblock.cpp
-new file mode 100644
-index 000000000..fdfb4d75b
+new file mode 100755
+index 0000000..c753029
 --- /dev/null
 +++ b/src/unittest/test_content_mapblock.cpp
-@@ -0,0 +1,1293 @@
+@@ -0,0 +1,1911 @@
 +/*
 +Minetest
 +Copyright (C) 2022 Luanti harvest
@@ -48,6 +48,7 @@ index 000000000..fdfb4d75b
 +
 +#include <cmath>
 +#include <limits>
++#include <map>
 +#include <set>
 +#include <SMesh.h>
 +#include <SMeshBuffer.h>
@@ -85,6 +86,10 @@ index 000000000..fdfb4d75b
 +	TEX_GLASS_FRAME,
 +	TEX_GLASS_PANE,
 +	TEX_OTHER,
++	TEX_SLAB,
++	TEX_STAIR,
++	TEX_PLANT_OPTIONS,
++	TEX_CUBE, // + 0..5: the six faces of the turnable test block
 +};
 +
 +const float EPS = 0.05f; // in world units; one node is BS = 10 units
@@ -378,6 +383,67 @@ index 000000000..fdfb4d75b
 +			id("test:panel_vertical_only"), id("test:panel_left_right")};
 +		registerFence("test:fence", TEX_FENCE, joins);
 +		registerFence("test:fence_other", TEX_FENCE_OTHER, joins);
++
++		// A turnable block with a different texture on each of its six
++		// faces (in the usual order: top, bottom, right, left, back, front),
++		// and a turnable node whose only box sits off-centre by a different
++		// amount along each axis, so its box shows exactly how it is turned.
++		f = ContentFeatures();
++		f.name = "test:cube";
++		f.drawtype = NDT_NODEBOX;
++		f.param_type = CPT_LIGHT;
++		f.param_type_2 = CPT2_FACEDIR;
++		f.solidness = 0;
++		f.node_box.type = NODEBOX_FIXED;
++		f.node_box.fixed = {scaled(-0.5f, -0.5f, -0.5f, 0.5f, 0.5f, 0.5f)};
++		for (int i = 0; i < 6; i++)
++			f.tiles[i].layers[0].texture_id = TEX_CUBE + i;
++		m_ndef->set(f.name, f);
++
++		f = ContentFeatures();
++		f.name = "test:pointer";
++		f.drawtype = NDT_NODEBOX;
++		f.param_type = CPT_LIGHT;
++		f.param_type_2 = CPT2_FACEDIR;
++		f.solidness = 0;
++		f.node_box.type = NODEBOX_FIXED;
++		f.node_box.fixed = {scaled(0.05f, 0.15f, 0.25f, 0.15f, 0.25f, 0.35f)};
++		setAllTiles(f, TEX_OTHER);
++		m_ndef->set(f.name, f);
++
++		// A slab (the lower half of a node) and a stair, both opaque.
++		f = ContentFeatures();
++		f.name = "test:slab";
++		f.drawtype = NDT_NODEBOX;
++		f.param_type = CPT_LIGHT;
++		f.solidness = 0;
++		f.node_box.type = NODEBOX_FIXED;
++		f.node_box.fixed = {scaled(-0.5f, -0.5f, -0.5f, 0.5f, 0.f, 0.5f)};
++		setAllTiles(f, TEX_SLAB);
++		m_ndef->set(f.name, f);
++
++		f = ContentFeatures();
++		f.name = "test:stair";
++		f.drawtype = NDT_NODEBOX;
++		f.param_type = CPT_LIGHT;
++		f.param_type_2 = CPT2_FACEDIR;
++		f.solidness = 0;
++		f.node_box.type = NODEBOX_FIXED;
++		f.node_box.fixed = {scaled(-0.5f, -0.5f, -0.5f, 0.5f, 0.f, 0.5f),
++			scaled(-0.5f, 0.f, 0.f, 0.5f, 0.5f, 0.5f)};
++		setAllTiles(f, TEX_STAIR);
++		m_ndef->set(f.name, f);
++
++		// A plant whose param2 picks how its faces are laid out (meshoptions).
++		f = ContentFeatures();
++		f.name = "test:plant_options";
++		f.drawtype = NDT_PLANTLIKE;
++		f.param_type = CPT_LIGHT;
++		f.param_type_2 = CPT2_MESHOPTIONS;
++		f.solidness = 0;
++		f.walkable = false;
++		setAllTiles(f, TEX_PLANT_OPTIONS);
++		m_ndef->set(f.name, f);
 +	}
 +
 +	~MeshGenScene()
@@ -423,6 +489,25 @@ index 000000000..fdfb4d75b
 +			}
 +		}
 +		return e;
++	}
++
++	// Runs the generator once and returns every triangle, by texture.
++	std::map<u32, std::vector<Triangle>> trianglesByTexture(bool smooth_lighting = true)
++	{
++		MeshCollector collector;
++		run(collector, smooth_lighting);
++
++		std::map<u32, std::vector<Triangle>> result;
++		for (const auto &buffers : collector.prebuffers)
++		for (const PreMeshBuffer &buf : buffers) {
++			for (size_t i = 0; i + 2 < buf.indices.size(); i += 3) {
++				Triangle t;
++				for (int k = 0; k < 3; k++)
++					t.v[k] = buf.vertices.at(buf.indices[i + k]);
++				result[buf.layer.texture_id].push_back(t);
++			}
++		}
++		return result;
 +	}
 +
 +	// Runs the generator and returns every triangle drawn with the texture.
@@ -594,6 +679,14 @@ index 000000000..fdfb4d75b
 +	void testStraightRailsFollowTheirNeighbors();
 +	void testFramedGlassMergesWithItsNeighbors();
 +	void testLoneFramedGlassKeepsItsWholeFrame();
++	void testFlowingLiquidTextureRunsDownstream();
++	void testFlowingLiquidSideMeetsItsSurface();
++	void testNodeboxFacesTowardsAirAreDrawn();
++	void testHashStylePlantFacesSurroundItsCentre();
++	void testCrossStylePlantFacesMeetAtItsCentre();
++	void testTurnedNodeTexturesTurnWithIt();
++	void testUnturnedNodeTexturesKeepTheirFaces();
++	void testTurnedNodeBoxKeepsItsFacedir();
 +};
 +
 +static TestMapblockMeshGenerator g_test_instance;
@@ -621,6 +714,14 @@ index 000000000..fdfb4d75b
 +	TEST(testStraightRailsFollowTheirNeighbors);
 +	TEST(testFramedGlassMergesWithItsNeighbors);
 +	TEST(testLoneFramedGlassKeepsItsWholeFrame);
++	TEST(testFlowingLiquidTextureRunsDownstream);
++	TEST(testFlowingLiquidSideMeetsItsSurface);
++	TEST(testNodeboxFacesTowardsAirAreDrawn);
++	TEST(testHashStylePlantFacesSurroundItsCentre);
++	TEST(testCrossStylePlantFacesMeetAtItsCentre);
++	TEST(testTurnedNodeTexturesTurnWithIt);
++	TEST(testUnturnedNodeTexturesKeepTheirFaces);
++	TEST(testTurnedNodeBoxKeepsItsFacedir);
 +}
 +
 +// An "allfaces" node (the drawtype leaves use) with visual_scale = 2, deep
@@ -890,7 +991,7 @@ index 000000000..fdfb4d75b
 +};
 +
 +LiquidChannel buildChannel(MeshGenScene &scene, v3s16 start, v3s16 flow,
-+		const std::vector<u8> &levels)
++		const std::vector<u8> &levels, const char *outer_wall = "test:stone")
 +{
 +	LiquidChannel ch;
 +	ch.source = start;
@@ -904,7 +1005,7 @@ index 000000000..fdfb4d75b
 +	}
 +	for (s16 i = -1; i <= (s16)levels.size() + 1; i++) {
 +		v3s16 c = start + flow * i;
-+		scene.place(c + side, "test:stone");
++		scene.place(c + side, outer_wall);
 +		scene.place(c - side, "test:stone");
 +		scene.place(c - v3s16(0, 1, 0), "test:stone");
 +	}
@@ -1308,4 +1409,521 @@ index 000000000..fdfb4d75b
 +	for (const CubeEdge &e : cubeEdges())
 +		UTEST(frameDrawn(frame, p, e), "lone glass node has no frame on its %s",
 +				describe(e).c_str());
++}
++
++namespace {
++
++// The heights of a flowing cell's surface, keyed by its horizontal corners.
++float cornerHeight(const std::vector<std::pair<v3f, float>> &corners, float x, float z,
++		bool *found)
++{
++	for (const auto &c : corners)
++		if (approx(c.first.X, x) && approx(c.first.Z, z)) {
++			*found = true;
++			return c.second;
++		}
++	*found = false;
++	return 0;
++}
++
++// The horizontal direction in which the texture of one cell's liquid surface
++// runs (the direction in which its V coordinate grows), or (0,0,0).
++v3s16 surfaceTextureDirection(const std::vector<Triangle> &tris, v3s16 cell)
++{
++	const v3f o = intToFloat(cell, BS);
++	std::vector<std::pair<v3f, float>> corners;
++	for (const Triangle &t : tris) {
++		v3f centre = (t.v[0].Pos + t.v[1].Pos + t.v[2].Pos) / 3.0f - o;
++		if (std::fabs(centre.X) >= BS / 2 || std::fabs(centre.Z) >= BS / 2)
++			continue;
++		for (const video::S3DVertex &v : t.v) {
++			v3f d = v.Pos - o;
++			if (std::fabs(std::fabs(d.X) - BS / 2) > EPS || std::fabs(std::fabs(d.Z) - BS / 2) > EPS)
++				continue;
++			bool known = false;
++			for (auto &c : corners)
++				if (approx(c.first.X, d.X) && approx(c.first.Z, d.Z))
++					known = true;
++			if (!known)
++				corners.emplace_back(v3f(d.X, 0, d.Z), v.TCoords.Y);
++		}
++	}
++	if (corners.size() != 4)
++		return v3s16(0, 0, 0);
++	float gx = 0, gz = 0;
++	for (const auto &c : corners) {
++		gx += (c.first.X > 0 ? 0.5f : -0.5f) * c.second;
++		gz += (c.first.Z > 0 ? 0.5f : -0.5f) * c.second;
++	}
++	if (std::fabs(gx) < 0.25f && std::fabs(gz) < 0.25f)
++		return v3s16(0, 0, 0);
++	return horizontalAxis(v3f(gx, 0, gz));
++}
++
++} // namespace
++
++// The texture of flowing liquid runs with the flow: along a channel fed from
++// one end, the surface texture of every flowing node runs downstream --
++// whichever way the channel runs.
++void TestMapblockMeshGenerator::testFlowingLiquidTextureRunsDownstream()
++{
++	const v3s16 flows[4] = {v3s16(1, 0, 0), v3s16(-1, 0, 0), v3s16(0, 0, 1), v3s16(0, 0, -1)};
++	for (const v3s16 &flow : flows) {
++		MeshGenScene scene;
++		LiquidChannel ch = buildChannel(scene, v3s16(8, 5, 8) - flow * 3, flow,
++				{6, 5, 4, 3, 2});
++		std::vector<Triangle> tris = scene.triangles(TEX_LIQUID_TOP);
++		for (const v3s16 &cell : ch.cells) {
++			v3s16 runs = surfaceTextureDirection(tris, cell);
++			UTEST(runs == flow,
++					"texture of flowing node %s runs towards %s, the channel flows towards %s",
++					describe(cell).c_str(), describe(runs).c_str(), describe(flow).c_str());
++		}
++	}
++}
++
++// Where flowing liquid shows its side (here through a glass wall), that side
++// reaches exactly up to the liquid's surface at both of its upper corners:
++// no gap and nothing sticking out above it -- whichever way the liquid flows.
++void TestMapblockMeshGenerator::testFlowingLiquidSideMeetsItsSurface()
++{
++	const v3s16 flows[4] = {v3s16(1, 0, 0), v3s16(-1, 0, 0), v3s16(0, 0, 1), v3s16(0, 0, -1)};
++	for (const v3s16 &flow : flows) {
++		MeshGenScene scene;
++		LiquidChannel ch = buildChannel(scene, v3s16(8, 5, 8) - flow * 3, flow,
++				{6, 5, 4, 3, 2}, "test:glass");
++		const v3s16 side(flow.Z, 0, flow.X); // the glass is on this side
++		std::vector<Triangle> top = scene.triangles(TEX_LIQUID_TOP);
++		std::vector<Triangle> sides = scene.triangles(TEX_LIQUID_SIDE);
++		for (const v3s16 &cell : ch.cells) {
++			const v3f o = intToFloat(cell, BS);
++			std::vector<std::pair<v3f, float>> corners;
++			UTEST(surfaceCorners(top, cell, &corners),
++					"flowing node %s has no proper surface", describe(cell).c_str());
++			int checked = 0;
++			for (const Triangle &t : sides) {
++				v3f centre = (t.v[0].Pos + t.v[1].Pos + t.v[2].Pos) / 3.0f - o;
++				float out = centre.X * side.X + centre.Z * side.Z;
++				float along = centre.X * flow.X + centre.Z * flow.Z;
++				if (std::fabs(out - BS / 2) > EPS || std::fabs(along) >= BS / 2)
++					continue;
++				for (const video::S3DVertex &v : t.v) {
++					v3f d = v.Pos - o;
++					if (d.Y < -BS / 2 + EPS)
++						continue; // the lower edge
++					bool found;
++					float h = cornerHeight(corners, d.X, d.Z, &found);
++					checked++;
++					UTEST(found && approx(d.Y, h),
++							"side of flowing node %s (flow %s) ends at height %.2f at corner "
++							"(%.1f, %.1f), its surface is at %.2f there",
++							describe(cell).c_str(), describe(flow).c_str(), d.Y / BS,
++							d.X / BS, d.Z / BS, h / BS);
++				}
++			}
++			UTEST(checked >= 2, "flowing node %s (flow %s) shows no side towards the glass",
++					describe(cell).c_str(), describe(flow).c_str());
++		}
++	}
++}
++
++namespace {
++
++// Is a face of node p drawn on the plane through `at` (node-relative) that is
++// perpendicular to `axis`, covering the point `at`?
++bool faceDrawnAt(const std::vector<Triangle> &tris, v3s16 p, v3f at, int axis)
++{
++	const v3f a = intToFloat(p, BS) + at;
++	for (const Triangle &t : tris) {
++		bool on_plane = true;
++		for (const video::S3DVertex &v : t.v)
++			on_plane = on_plane && std::fabs(v.Pos[axis] - a[axis]) < EPS;
++		if (!on_plane)
++			continue;
++		aabb3f tb(t.v[0].Pos);
++		tb.addInternalPoint(t.v[1].Pos);
++		tb.addInternalPoint(t.v[2].Pos);
++		bool inside = true;
++		for (int k = 0; k < 3; k++)
++			if (k != axis)
++				inside = inside && a[k] >= tb.MinEdge[k] - EPS && a[k] <= tb.MaxEdge[k] + EPS;
++		if (inside)
++			return true;
++	}
++	return false;
++}
++
++struct SlabFace {
++	const char *name;
++	v3s16 towards; // where the face looks
++	v3f centre;    // node-relative, in nodes
++	int axis;
++};
++
++const SlabFace SLAB_FACES[6] = {
++	{"top",    v3s16( 0,  1,  0), v3f( 0.0f,  0.00f,  0.0f), 1},
++	{"bottom", v3s16( 0, -1,  0), v3f( 0.0f, -0.50f,  0.0f), 1},
++	{"+X",     v3s16( 1,  0,  0), v3f( 0.5f, -0.25f,  0.0f), 0},
++	{"-X",     v3s16(-1,  0,  0), v3f(-0.5f, -0.25f,  0.0f), 0},
++	{"+Z",     v3s16( 0,  0,  1), v3f( 0.0f, -0.25f,  0.5f), 2},
++	{"-Z",     v3s16( 0,  0, -1), v3f( 0.0f, -0.25f, -0.5f), 2},
++};
++
++} // namespace
++
++// The surface of a node box is drawn wherever it is open to the air: a slab
++// next to a full block, and rows of slabs and of stairs along either axis,
++// show every face that looks into the open (faces against a neighbour may be
++// left out, faces open to the air may not).
++void TestMapblockMeshGenerator::testNodeboxFacesTowardsAirAreDrawn()
++{
++	const v3s16 p(8, 4, 8);
++	const v3s16 dirs[4] = {v3s16(1, 0, 0), v3s16(-1, 0, 0), v3s16(0, 0, 1), v3s16(0, 0, -1)};
++	for (const v3s16 &d : dirs) {
++		MeshGenScene scene;
++		scene.place(p, "test:slab");
++		scene.place(p + d, "test:stone");
++		std::vector<Triangle> tris = scene.triangles(TEX_SLAB);
++		for (const SlabFace &face : SLAB_FACES) {
++			if (face.towards == d)
++				continue;
++			UTEST(faceDrawnAt(tris, p, face.centre * BS, face.axis),
++					"slab with a full block on its %s side has no %s face",
++					describe(d).c_str(), face.name);
++		}
++	}
++	for (const v3s16 &d : {v3s16(1, 0, 0), v3s16(0, 0, 1)}) {
++		MeshGenScene scene;
++		for (s16 i = -1; i <= 1; i++)
++			scene.place(p + d * i, "test:slab");
++		std::vector<Triangle> tris = scene.triangles(TEX_SLAB);
++		for (s16 i = -1; i <= 1; i++) {
++			const v3s16 c = p + d * i;
++			for (const SlabFace &face : SLAB_FACES) {
++				bool towards_row = (face.towards == d && i < 1) ||
++						(face.towards == d * -1 && i > -1);
++				if (towards_row)
++					continue;
++				UTEST(faceDrawnAt(tris, c, face.centre * BS, face.axis),
++						"slab %d of a row along %s has no %s face", i + 1,
++						describe(d).c_str(), face.name);
++			}
++		}
++	}
++	for (u8 facedir : {0, 1, 2, 3}) {
++		// a flight of three stairs side by side, turned with facedir
++		MeshGenScene scene;
++		std::vector<aabb3f> boxes;
++		MapNode(scene.id("test:stair"), 0, facedir).getNodeBoxes(scene.ndef(), &boxes);
++		UASSERT(boxes.size() == 2);
++		// the lower step's front looks away from the upper step
++		v3f up = boxes[1].getCenter();
++		v3s16 front = horizontalAxis(up) * -1;
++		v3s16 along(front.Z, 0, front.X);
++		for (s16 i = -1; i <= 1; i++)
++			scene.place(p + along * i, "test:stair", facedir);
++		std::vector<Triangle> tris = scene.triangles(TEX_STAIR);
++		const int axis = front.X != 0 ? 0 : 2;
++		const v3f lower_front = v3f(front.X * 0.5f, -0.25f, front.Z * 0.5f) * BS;
++		const v3f riser = v3f(0.f, 0.25f, 0.f) * BS;
++		for (s16 i = -1; i <= 1; i++) {
++			const v3s16 c = p + along * i;
++			UTEST(faceDrawnAt(tris, c, lower_front, axis),
++					"stair %d of a flight turned with facedir %d has no front on its lower step",
++					i + 1, facedir);
++			UTEST(faceDrawnAt(tris, c, riser, axis),
++					"stair %d of a flight turned with facedir %d has no riser", i + 1, facedir);
++		}
++	}
++}
++
++namespace {
++
++// One face of a plant: where its middle is and how it lies.
++struct PlantFace {
++	v3f centre;      // node-relative
++	v3f top_centre;  // middle of its upper edge, node-relative
++	v3f bottom_centre;
++	bool along_x;    // runs along X (else along Z)
++	float length;    // horizontal length
++};
++
++std::vector<PlantFace> plantFaces(MeshGenScene &scene, v3s16 p, u32 tex)
++{
++	std::vector<video::S3DVertex> verts;
++	scene.generate(tex, &verts);
++	std::vector<PlantFace> faces;
++	const v3f o = intToFloat(p, BS);
++	for (size_t i = 0; i + 4 <= verts.size(); i += 4) {
++		PlantFace face;
++		v3f lo(0, 0, 0), hi(0, 0, 0), sum(0, 0, 0);
++		float min_y = std::numeric_limits<float>::max();
++		for (size_t k = 0; k < 4; k++)
++			min_y = std::min(min_y, verts[i + k].Pos.Y);
++		int nlo = 0, nhi = 0;
++		aabb3f box(verts[i].Pos - o);
++		for (size_t k = 0; k < 4; k++) {
++			v3f v = verts[i + k].Pos - o;
++			box.addInternalPoint(v);
++			sum += v;
++			if (verts[i + k].Pos.Y < min_y + EPS) {
++				lo += v;
++				nlo++;
++			} else {
++				hi += v;
++				nhi++;
++			}
++		}
++		face.centre = sum / 4.0f;
++		face.bottom_centre = nlo ? lo / (float)nlo : v3f(0, 0, 0);
++		face.top_centre = nhi ? hi / (float)nhi : v3f(0, 0, 0);
++		v3f ext = box.getExtent();
++		face.along_x = ext.X >= ext.Z;
++		face.length = std::max(ext.X, ext.Z);
++		faces.push_back(face);
++	}
++	return faces;
++}
++
++const float PLANT_TOL = 0.03f * BS;
++
++bool nearly(float a, float b) { return std::fabs(a - b) < PLANT_TOL; }
++
++} // namespace
++
++// A plant laid out as a hash (#, param2 3: four faces, two along each axis,
++// each a quarter node away from the middle) keeps all four faces inside its
++// own node around its middle, one face on each side of it.
++void TestMapblockMeshGenerator::testHashStylePlantFacesSurroundItsCentre()
++{
++	const v3s16 p(5, 3, 5);
++	{
++		MeshGenScene scene;
++		scene.place(p, "test:plant_options", 3);
++		std::vector<PlantFace> faces = plantFaces(scene, p, TEX_PLANT_OPTIONS);
++		UTEST(faces.size() == 4, "hash-style plant has %zu faces", faces.size());
++		int seen[4] = {0, 0, 0, 0}; // along X at -z, +z; along Z at -x, +x
++		for (const PlantFace &f : faces) {
++			bool ok = f.length > 0.9f * BS && f.length < 1.1f * BS;
++			if (f.along_x && nearly(f.centre.X, 0) && nearly(std::fabs(f.centre.Z), BS / 4))
++				seen[f.centre.Z > 0 ? 1 : 0] += ok;
++			else if (!f.along_x && nearly(f.centre.Z, 0) && nearly(std::fabs(f.centre.X), BS / 4))
++				seen[f.centre.X > 0 ? 3 : 2] += ok;
++			UTEST(ok && std::fabs(f.centre.X) <= BS / 2 && std::fabs(f.centre.Z) <= BS / 2,
++					"hash-style plant face centred at (%.2f, %.2f) with length %.2f",
++					f.centre.X / BS, f.centre.Z / BS, f.length / BS);
++		}
++		UTEST(seen[0] == 1 && seen[1] == 1 && seen[2] == 1 && seen[3] == 1,
++				"hash-style plant faces are not one on each side of its middle: "
++				"%d %d %d %d", seen[0], seen[1], seen[2], seen[3]);
++	}
++}
++
++// Plants laid out as a cross (param2 0: x, param2 1: +) have all their faces
++// meeting in the middle of the node.
++void TestMapblockMeshGenerator::testCrossStylePlantFacesMeetAtItsCentre()
++{
++	const v3s16 p(5, 3, 5);
++	for (u8 style : {0, 1}) {
++		MeshGenScene scene;
++		scene.place(p, "test:plant_options", style);
++		std::vector<PlantFace> faces = plantFaces(scene, p, TEX_PLANT_OPTIONS);
++		UTEST(faces.size() == 2, "cross-style plant %d has %zu faces", style, faces.size());
++		for (const PlantFace &f : faces)
++			UTEST(nearly(f.centre.X, 0) && nearly(f.centre.Z, 0),
++					"cross-style plant %d face centred at (%.2f, %.2f)", style,
++					f.centre.X / BS, f.centre.Z / BS);
++	}
++}
++
++namespace {
++
++v3s16 axisVector(int axis, s16 sign)
++{
++	v3s16 v(0, 0, 0);
++	if (axis == 0) v.X = sign;
++	if (axis == 1) v.Y = sign;
++	if (axis == 2) v.Z = sign;
++	return v;
++}
++
++// How a turned node is turned, read off its own node box: the box of
++// "test:pointer" sits at (0.1, 0.2, 0.3) nodes from the middle, so where each
++// of those three distances ends up gives the turn as a signed permutation.
++struct Turn {
++	bool ok = true;
++	s16 m[3][3] = {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}};
++
++	v3s16 apply(v3s16 v) const
++	{
++		s16 in[3] = {v.X, v.Y, v.Z};
++		s16 out[3] = {0, 0, 0};
++		for (int i = 0; i < 3; i++)
++			for (int k = 0; k < 3; k++)
++				out[i] += m[i][k] * in[k];
++		return v3s16(out[0], out[1], out[2]);
++	}
++};
++
++Turn turnOf(const MeshGenScene &scene, u8 facedir)
++{
++	Turn turn;
++	std::vector<aabb3f> boxes;
++	MapNode(scene.id("test:pointer"), 0, facedir).getNodeBoxes(scene.ndef(), &boxes);
++	if (boxes.size() != 1) {
++		turn.ok = false;
++		return turn;
++	}
++	v3f c = boxes[0].getCenter() / BS;
++	float comp[3] = {c.X, c.Y, c.Z};
++	for (int i = 0; i < 3; i++) {
++		int k = (int)std::lround(std::fabs(comp[i]) * 10) - 1;
++		if (k < 0 || k > 2) {
++			turn.ok = false;
++			continue;
++		}
++		turn.m[i][k] = comp[i] > 0 ? 1 : -1;
++	}
++	return turn;
++}
++
++// One face of a block as drawn: which way it looks, and the directions in
++// which its texture's U (left to right) and V (top to bottom) grow.
++struct DrawnFace {
++	bool found = false;
++	v3s16 normal, u_dir, v_dir;
++};
++
++DrawnFace drawnFace(const std::vector<Triangle> &tris, v3f o)
++{
++	DrawnFace face;
++	std::vector<video::S3DVertex> verts;
++	for (const Triangle &t : tris)
++		for (const video::S3DVertex &v : t.v)
++			verts.push_back(v);
++	if (verts.empty())
++		return face;
++	int normal_axis = -1;
++	for (int ax = 0; ax < 3; ax++) {
++		float first = verts[0].Pos[ax] - o[ax];
++		bool flat = std::fabs(std::fabs(first) - BS / 2) < EPS;
++		for (const video::S3DVertex &v : verts)
++			flat = flat && std::fabs(v.Pos[ax] - o[ax] - first) < EPS;
++		if (flat)
++			normal_axis = ax;
++	}
++	if (normal_axis < 0)
++		return face;
++	face.normal = axisVector(normal_axis, verts[0].Pos[normal_axis] > o[normal_axis] ? 1 : -1);
++	for (int which = 0; which < 2; which++) {
++		s16 g[3] = {0, 0, 0};
++		for (int ax = 0; ax < 3; ax++) {
++			if (ax == normal_axis)
++				continue;
++			for (const video::S3DVertex &a : verts)
++			for (const video::S3DVertex &b : verts) {
++				float d = b.Pos[ax] - a.Pos[ax];
++				if (std::fabs(d) < BS / 2)
++					continue;
++				bool only_along = true;
++				for (int k = 0; k < 3; k++)
++					if (k != ax && std::fabs(b.Pos[k] - a.Pos[k]) > EPS)
++						only_along = false;
++				if (!only_along)
++					continue;
++				float dt = which == 0 ? b.TCoords.X - a.TCoords.X : b.TCoords.Y - a.TCoords.Y;
++				float rate = dt / d * BS;
++				if (rate > 0.5f)
++					g[ax] = 1;
++				else if (rate < -0.5f)
++					g[ax] = -1;
++			}
++		}
++		(which == 0 ? face.u_dir : face.v_dir) = v3s16(g[0], g[1], g[2]);
++	}
++	face.found = true;
++	return face;
++}
++
++} // namespace
++
++// A turned block shows each of its faces turned with it: the face that is on
++// top of the unturned block, with its texture the same way round, ends up
++// exactly where the turn takes the block's top -- and likewise for the other
++// five faces, for all 24 ways a block can be turned (facedir), the same turn
++// its node box makes.
++void TestMapblockMeshGenerator::testTurnedNodeTexturesTurnWithIt()
++{
++	const v3s16 p(6, 5, 9);
++	const v3f o = intToFloat(p, BS);
++	DrawnFace ref[6];
++	{
++		MeshGenScene scene;
++		scene.place(p, "test:cube", 0);
++		auto tris = scene.trianglesByTexture();
++		for (int t = 0; t < 6; t++)
++			ref[t] = drawnFace(tris[TEX_CUBE + t], o);
++	}
++	for (u8 facedir = 1; facedir < 24; facedir++) {
++		MeshGenScene scene;
++		scene.place(p, "test:cube", facedir);
++		Turn turn = turnOf(scene, facedir);
++		UASSERT(turn.ok);
++		auto tris = scene.trianglesByTexture();
++		for (int t = 0; t < 6; t++) {
++			DrawnFace got = drawnFace(tris[TEX_CUBE + t], o);
++			v3s16 want_n = turn.apply(ref[t].normal);
++			v3s16 want_u = turn.apply(ref[t].u_dir);
++			v3s16 want_v = turn.apply(ref[t].v_dir);
++			UTEST(ref[t].found && got.found && got.normal == want_n &&
++					got.u_dir == want_u && got.v_dir == want_v,
++					"block turned with facedir %d: face %d looks towards %s (texture U %s, "
++					"V %s), its node box turns it towards %s (U %s, V %s)", facedir, t,
++					describe(got.normal).c_str(), describe(got.u_dir).c_str(),
++					describe(got.v_dir).c_str(), describe(want_n).c_str(),
++					describe(want_u).c_str(), describe(want_v).c_str());
++		}
++	}
++}
++
++// An unturned block shows its six faces where they were defined: top, bottom,
++// right (+X), left (-X), back (+Z) and front (-Z).
++void TestMapblockMeshGenerator::testUnturnedNodeTexturesKeepTheirFaces()
++{
++	const v3s16 p(6, 5, 9);
++	const v3s16 normals[6] = {v3s16(0, 1, 0), v3s16(0, -1, 0), v3s16(1, 0, 0),
++		v3s16(-1, 0, 0), v3s16(0, 0, 1), v3s16(0, 0, -1)};
++	MeshGenScene scene;
++	scene.place(p, "test:cube", 0);
++	auto tris = scene.trianglesByTexture();
++	for (int t = 0; t < 6; t++) {
++		DrawnFace got = drawnFace(tris[TEX_CUBE + t], intToFloat(p, BS));
++		UTEST(got.found && got.normal == normals[t], "unturned block: face %d looks towards %s",
++				t, describe(got.normal).c_str());
++	}
++}
++
++// The way the node box of a turned node is turned (facedir 0..23) stays as it
++// is: this pins down which turn each facedir means.
++void TestMapblockMeshGenerator::testTurnedNodeBoxKeepsItsFacedir()
++{
++	static const float want[24][3] = {
++		{ 0.1f,  0.2f,  0.3f}, { 0.3f,  0.2f, -0.1f}, {-0.1f,  0.2f, -0.3f}, {-0.3f,  0.2f,  0.1f},
++		{ 0.1f, -0.3f,  0.2f}, { 0.3f,  0.1f,  0.2f}, {-0.1f,  0.3f,  0.2f}, {-0.3f, -0.1f,  0.2f},
++		{ 0.1f,  0.3f, -0.2f}, { 0.3f, -0.1f, -0.2f}, {-0.1f, -0.3f, -0.2f}, {-0.3f,  0.1f, -0.2f},
++		{ 0.2f, -0.1f,  0.3f}, { 0.2f, -0.3f, -0.1f}, { 0.2f,  0.1f, -0.3f}, { 0.2f,  0.3f,  0.1f},
++		{-0.2f,  0.1f,  0.3f}, {-0.2f,  0.3f, -0.1f}, {-0.2f, -0.1f, -0.3f}, {-0.2f, -0.3f,  0.1f},
++		{-0.1f, -0.2f,  0.3f}, {-0.3f, -0.2f, -0.1f}, { 0.1f, -0.2f, -0.3f}, { 0.3f, -0.2f,  0.1f},
++	};
++	MeshGenScene scene;
++	for (u8 facedir = 0; facedir < 24; facedir++) {
++		std::vector<aabb3f> boxes;
++		MapNode(scene.id("test:pointer"), 0, facedir).getNodeBoxes(scene.ndef(), &boxes);
++		UASSERT(boxes.size() == 1);
++		v3f c = boxes[0].getCenter() / BS;
++		UTEST(std::fabs(c.X - want[facedir][0]) < 0.01f && std::fabs(c.Y - want[facedir][1]) < 0.01f &&
++				std::fabs(c.Z - want[facedir][2]) < 0.01f,
++				"node box turned with facedir %d sits at (%.2f, %.2f, %.2f)", facedir,
++				c.X, c.Y, c.Z);
++	}
 +}

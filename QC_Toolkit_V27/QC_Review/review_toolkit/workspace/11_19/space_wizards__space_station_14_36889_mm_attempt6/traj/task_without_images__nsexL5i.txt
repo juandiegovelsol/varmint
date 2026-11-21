@@ -1,0 +1,605 @@
+### step 1 [user] 2026-11-19T15:30:27.448Z
+### step 2 [agent] 2026-11-19T15:30:32.628Z
+CALL Bash: cd /app; git ls-files | head -50; ffprobe -v error -show_entries format=duration -of csv /app/.harbor_assets/recording.mp4
+OBS: Exit code 1
+.envrc
+.gitattributes
+.github/CODEOWNERS
+.github/ISSUE_TEMPLATE/01_report_issue.yml
+.github/ISSUE_TEMPLATE/02_mapping_issue.yml
+.github/ISSUE_TEMPLATE/config.yml
+.github/ISSUE_TEMPLATE/heisentest_template.md
+.github/PULL_REQUEST_TEMPLATE.md
+.github/labeler.yml
+.github/rsi-schema.json
+.github/workflows/build-map-renderer.yml
+.github/workflows/build-test-debug.yml
+.github/workflows/check-crlf.yml
+.github/workflows/close-master-pr.yml
+.github/workflows/heisendetector.yml
+.github/workflows/labeler-conflict.yml
+.github/workflows/labeler-needsreview.yml
+.github/workflows/labeler-pr.yml
+.github/workflows/labeler-review.yml
+.github/workflows/labeler-size.yml
+.github/workflows/labeler-sta ...[+1024 chars]
+### step 3 [agent] 2026-11-19T15:30:36.284Z
+CALL Bash: cd /app; ls -la .harbor_assets 2>&1; find / -name "recording.mp4" 2>/dev/null | head; cat .noai
+OBS: total 8
+drwxr-xr-x 2 root root 4096 Nov 19 06:49 .
+drwxr-xr-x 1 root root 4096 Nov 19 06:49 ..
+
+[stdout]
+total 8
+drwxr-xr-x 2 root root 4096 Nov 19 06:49 .
+drwxr-xr-x 1 root root 4096 Nov 19 06:49 ..
+[metadata] {"noOutputExpected": false}
+### step 4 [agent] 2026-11-19T15:30:40.384Z
+MSG: The video file isn't present, so I'll work from the code. This is SS14; the "elements" are almost certainly firelocks.
+CALL Bash: cd /app; grep -rli firelock --include=*.cs Content.* | head -30
+OBS: Content.Client/Doors/FirelockSystem.cs
+Content.Server/StationEvents/Events/GreytideVirusRule.cs
+Content.Server/Doors/Systems/FirelockSystem.cs
+Content.Server/Mapping/StructureAlignCommand.cs
+Content.Server/Atmos/Monitor/Components/AtmosAlarmableComponent.cs
+Content.Server/Atmos/EntitySystems/AtmosphereSystem.Monstermos.cs
+Content.Server/Atmos/EntitySystems/AtmosphereSystem.cs
+Content.Server/Construction/Commands/FixRotationsCommand.cs
+Content.Shared/Doors/Systems/SharedFirelockSystem.cs
+Content.Shared/Doors/Systems/SharedDoorSystem.cs
+Content.Shared/Doors/Components/FirelockComponent.cs
+Content.Shared/Mapping/SharedStructureAlignerSystem.cs
+Content.Shared/Whitelist/EntityWhitelist.cs
+Content ...[+816 chars]
+### step 5 [agent] 2026-11-19T15:30:43.494Z
+CALL Bash: cd /app; cat Content.Client/Doors/FirelockSystem.cs Content.Server/Doors/Systems/FirelockSystem.cs Content.Shared/Doors/Systems/SharedFirelockSystem.cs Content.Shared/Doors/Components/FirelockComponent.cs
+CALL Bash: cd /app; ls Resources/Prototypes/Entities/Structures/Doors/Firelocks/; cat Resources/Prototypes/Entities/Structures/Doors/Firelocks/firelock.yml
+OBS: using Content.Client.Wires.Visualizers;
+using Content.Shared.Doors.Components;
+using Content.Shared.Doors.Systems;
+using Robust.Client.Animations;
+using Robust.Client.GameObjects;
+
+namespace Content.Client.Doors;
+
+// TODO: Consolidate redundant code from the AirlockSystem.
+
+/// <inheritdoc/>
+public sealed partial class FirelockSystem : SharedFirelockSystem
+{
+    [Dependency] private SpriteSystem _sprite = default!;
+
+    [Dependency] private EntityQuery<DoorComponent> _doorQuery;
+
+    /// <inheritdoc/>
+    protected override void OnComponentStartup(Entity<FirelockComponent> ent, ref ComponentStartup args)
+    {
+        base.OnComponentStartup(ent, ref args);
+        if (!_doorQuery.TryComp(en ...[+47158 chars]
+OBS: firelock.yml
+frame.yml
+- type: entity
+  abstract: true
+  parent: [ BaseStructure, StructureHealthDoor ]
+  id: BaseFirelock
+  name: firelock
+  description: Apply crowbar.
+  components:
+  - type: Anchorable
+    flags:
+    - Anchorable
+  - type: Rotatable
+  - type: AtmosAlarmable
+    syncWith:
+    - FireAlarm
+    - AirAlarm
+  - type: ApcPowerReceiver
+  - type: ExtensionCableReceiver
+  - type: DeviceNetwork
+    deviceNetId: AtmosDevices
+    receiveFrequencyId: AtmosMonitor
+  - type: DeviceNetworkRequiresPower
+  - type: InteractionOutline
+  - type: RCDDeconstructable
+    cost: 4
+    delay: 6
+    fx: EffectRCDDeconstruct6
+  - type: Damageable
+    damageModifierSet: PlasteelStaticMod
+  - type: Dest ...[+14922 chars]
+### step 6 [agent] 2026-11-19T15:30:57.721Z
+CALL Bash: cd /app/Resources/Textures/Structures/Doors; for d in Airlocks/Standard/firelock-base.rsi Airlocks/Glass/firelock-base.rsi Airlocks/Effects/airlock-effects-firelock.rsi Airlocks/Effects/airlock-effects.rsi Misc/edge_door_hazard.rsi; do echo "== $d"; ls $d; cat $d/meta.json; echo; done
+OBS: == Airlocks/Standard/firelock-base.rsi
+assembly.png
+closed.png
+closing.png
+meta.json
+open.png
+opening.png
+{
+    "version": 1,
+    "license": "CC-BY-SA-4.0",
+    "copyright": "By AftrLite",
+    "size": {
+        "x": 32,
+        "y": 32
+    },
+    "states": [
+        {
+            "name": "assembly",
+            "directions": 4
+        },
+        {
+            "name": "opening",
+            "directions": 4,
+            "delays": [
+                [
+                    0.1,
+                    0.05,
+                    0.05,
+                    0.01,
+                    0.01,
+                    0.01,
+                    0.01,
+                    0.01,
+                    0.01,
+                ...[+56824 chars]
+### step 7 [agent] 2026-11-19T15:31:02.572Z
+CALL Bash: cd /app/Resources/Textures/Structures/Doors/Misc/edge_door_hazard.rsi; python3 -c "
+import struct,glob
+for f in sorted(glob.glob('*.png')):
+    d=open(f,'rb').read(24); print(f, struct.unpack('>II',d[16:24]))
+"; cd /app; grep -rn "edge_door_hazard" Resources --include=*.yml | head
+OBS: closed.png (32, 32)
+closing.png (96, 96)
+open.png (32, 32)
+opening.png (96, 96)
+panel_closing.png (96, 96)
+panel_open.png (32, 32)
+panel_opening.png (96, 96)
+pressure_unlit.png (32, 32)
+temperature_unlit.png (32, 32)
+welded.png (32, 32)
+welded_open.png (32, 32)
+Resources/Prototypes/Entities/Structures/Doors/Firelocks/firelock.yml:231:      sprite: Structures/Doors/Misc/edge_door_hazard.rsi
+
+[stdout]
+closed.png (32, 32)
+closing.png (96, 96)
+open.png (32, 32)
+opening.png (96, 96)
+panel_closing.png (96, 96)
+panel_open.png (32, 32)
+panel_opening.png (96, 96)
+pressure_unlit.png (32, 32)
+temperature_unlit.png (32, 32)
+welded.png (32, 32)
+welded_open.png (32, 32)
+Resources/Prototypes/Entities/Struc ...[+134 chars]
+### step 8 [agent] 2026-11-19T15:31:06.703Z
+CALL Bash: cd /app/Resources/Textures/Structures/Doors; python3 -c "
+from PIL import Image
+import glob
+for f in sorted(glob.glob('Airlocks/*/firelock-base.rsi/*.png')+glob.glob('Airlocks/Effects/airlock-effects-firelock.rsi/*.png')+glob.glob('Misc/edge_door_hazard.rsi/*.png')):
+    im=Image.open(f).convert('RGBA'); print(f, im.size, im.getbbox())
+"
+OBS: Exit code 1
+Traceback (most recent call last):
+  File "<string>", line 2, in <module>
+ModuleNotFoundError: No module named 'PIL'
+
+[error] tool reported failure
+### step 9 [agent] 2026-11-19T15:31:11.167Z
+CALL Bash: pip install -q pillow 2>&1 | tail -1; cd /app/Resources/Textures/Structures/Doors; python3 -c "
+from PIL import Image
+import glob
+for f in sorted(glob.glob('Airlocks/*/firelock-base.rsi/*.png')+glob.glob('Airlocks/Effects/airlock-effects-firelock.rsi/*.png')+glob.glob('Misc/edge_door_hazard.rsi/*.png')):
+    im=Image.open(f).convert('RGBA'); print(f, im.size, im.getbbox())
+"
+OBS: Exit code 1
+/bin/bash: line 6: pip: command not found
+Traceback (most recent call last):
+  File "<string>", line 2, in <module>
+ModuleNotFoundError: No module named 'PIL'
+
+[error] tool reported failure
+### step 10 [agent] 2026-11-19T15:31:15.251Z
+CALL Bash: cd /app/Resources/Textures/Structures/Doors; mkdir -p /tmp/v; for f in Airlocks/Standard/firelock-base.rsi/closed.png Airlocks/Glass/firelock-base.rsi/closed.png Airlocks/Effects/airlock-effects-firelock.rsi/{closed_unlit,pressure_unlit,temperature_unlit,bolted_unlit,welded}.png Misc/edge_door_hazard.rsi/{closed,pressure_unlit,temperature_unlit,welded,panel_open}.png; do n=$(echo $f | tr / _); ffmpeg -v error -y -i $f -vf "scale=iw*6:ih*6:flags=neighbor" /tmp/v/$n; done; ls /tmp/v
+OBS: Airlocks_Effects_airlock-effects-firelock.rsi_bolted_unlit.png
+Airlocks_Effects_airlock-effects-firelock.rsi_closed_unlit.png
+Airlocks_Effects_airlock-effects-firelock.rsi_pressure_unlit.png
+Airlocks_Effects_airlock-effects-firelock.rsi_temperature_unlit.png
+Airlocks_Effects_airlock-effects-firelock.rsi_welded.png
+Airlocks_Glass_firelock-base.rsi_closed.png
+Airlocks_Standard_firelock-base.rsi_closed.png
+Misc_edge_door_hazard.rsi_closed.png
+Misc_edge_door_hazard.rsi_panel_open.png
+Misc_edge_door_hazard.rsi_pressure_unlit.png
+Misc_edge_door_hazard.rsi_temperature_unlit.png
+Misc_edge_door_hazard.rsi_welded.png
+
+[stdout]
+Airlocks_Effects_airlock-effects-firelock.rsi_bolted_unlit.png
+Airlocks_Eff ...[+578 chars]
+### step 11 [agent] 2026-11-19T15:31:20.113Z
+CALL Bash: mkdir -p /tmp/tools; cat > /tmp/tools/bbox.py <<'EOF'
+import sys,zlib,struct
+def load(p):
+    d=open(p,'rb').read(); i=8; idat=b''
+    while i<len(d):
+        l,t=struct.unpack('>I4s',d[i:i+8]); c=d[i+8:i+8+l]; i+=12+l
+        if t==b'IHDR': w,h,bd,ct=struct.unpack('>IIBB',c[:10])
+        elif t==b'IDAT': idat+=c
+        elif t==b'PLTE': pal=c
+        elif t==b'tRNS': trns=c
+    assert bd==8, (p,bd,ct)
+    bpp={6:4,2:3,0:1,4:2,3:1}[ct]
+    raw=zlib.decompress(idat); s=w*bpp; rows=[]; prev=bytearray(s); k=0
+    for y in range(h):
+        f=raw[k]; line=bytearray(raw[k+1:k+1+s]); k+=1+s
+        for x in range(s):
+            a=line[x-bpp] if x>=bpp else 0; b=prev[x]; c=prev[x-bpp] if x>=bpp else 0
+            if f==1: line[x]=(line[x]+a)&255
+            elif f==2: line[x]=(line[x]+b)&255
+            elif f==3: line[x]=(line[x]+(a+b)//2)&255
+            elif f==4:
+                pp=a+b-c; pa,pb,pc=abs(pp-a),abs(pp-b),abs(pp-c)
+                line[x]=(line[x]+(a if pa<=pb and pa<=pc else b if pb<=pc else c))&255
+        rows.append(line); prev=line
+    def alpha(x,y):
+        r=rows[y]
+        if ct==6: return r[x*4+3]
+        if ct==4: return r[x*2+1]
+        if ct==3:
+            idx=r[x]; return trns[idx] if 'trns' in dir() and idx<len(trns) else 255
+        return 255
+    return w,h,alpha
+for p in sys.argv[1:]:
+    w,h,al=load(p); out=[]
+    for fy in range(0,h,32):
+        for fx in range(0,w,32):
+            pts=[(x,y) for y in range(fy,fy+32) for x in range(fx,fx+32) if al(x,y)>0]
+            if pts: out.append((min(a for a,_ in pts)-fx,min(b for _,b in pts)-fy,max(a for a,_ in pts)-fx,max(b for _,b in pts)-fy))
+            else: out.append(None)
+    print(p,(w,h),out[:4])
+EOF
+python3 /tmp/tools/bbox.py Airlocks/Standard/firelock-base.rsi/{closed,open}.png Airlocks/Glass/firelock-base.rsi/{closed,open}.png Airlocks/Effects/airlock-effects-firelock.rsi/*.png Airlocks/Effects/airlock-effects.rsi/panel_open.png Misc/edge_door_hazard.rsi/*.png
+OBS: Exit code 1
+Airlocks/Standard/firelock-base.rsi/closed.png (64, 64) [(0, 0, 31, 31), (0, 0, 31, 31), (0, 0, 31, 31), (0, 0, 31, 31)]
+Airlocks/Standard/firelock-base.rsi/open.png (64, 64) [(0, 0, 31, 31), (0, 0, 31, 31), (0, 0, 31, 31), (0, 0, 31, 31)]
+Airlocks/Glass/firelock-base.rsi/closed.png (64, 64) [(0, 0, 31, 31), (0, 0, 31, 31), (0, 0, 31, 31), (0, 0, 31, 31)]
+Airlocks/Glass/firelock-base.rsi/open.png (64, 64) [(0, 0, 31, 31), (0, 0, 31, 31), (0, 0, 31, 31), (0, 0, 31, 31)]
+Airlocks/Effects/airlock-effects-firelock.rsi/bolted_unlit.png (64, 64) [(5, 7, 25, 16), (5, 7, 25, 16), (11, 6, 20, 26), (11, 6, 20, 26)]
+Airlocks/Effects/airlock-effects-firelock.rsi/closed_unlit.png (64, 64) [No ...[+1836 chars]
+### step 12 [agent] 2026-11-19T15:31:31.904Z
+CALL Bash: cd /app/Resources/Textures/Structures/Doors; sed -i 's/print(p,(w,h),out\[:4\])/n=int(sys.argv[0:1] and 1); step=len(out)\/\/4; print(p,(w,h),[out[i*step] for i in range(4)] if len(out)>=4 else out)/' /tmp/tools/bbox.py; python3 /tmp/tools/bbox.py Airlocks/Effects/airlock-effects-firelock.rsi/*.png Airlocks/Effects/airlock-effects.rsi/panel_open.png 2>&1
+OBS: Airlocks/Effects/airlock-effects-firelock.rsi/bolted_unlit.png (64, 64) [(5, 7, 25, 16), (5, 7, 25, 16), (11, 6, 20, 26), (11, 6, 20, 26)]
+Airlocks/Effects/airlock-effects-firelock.rsi/closed_unlit.png (64, 64) [None, None, None, None]
+Airlocks/Effects/airlock-effects-firelock.rsi/closing_unlit.png (480, 128) [None, None, None, None]
+Airlocks/Effects/airlock-effects-firelock.rsi/deny_unlit.png (128, 128) [(5, 7, 25, 16), (5, 7, 25, 16), (11, 6, 20, 26), (11, 6, 20, 26)]
+Airlocks/Effects/airlock-effects-firelock.rsi/emergency_unlit.png (128, 128) [(5, 7, 25, 16), (5, 7, 25, 16), (11, 6, 20, 26), (11, 6, 20, 26)]
+Airlocks/Effects/airlock-effects-firelock.rsi/open_unlit.png (64, 64) [None, None ...[+2440 chars]
+### step 13 [agent] 2026-11-19T15:31:36.808Z
+CALL Bash: cd /tmp/tools; python3 - <<'EOF'
+s=open('bbox.py').read()
+s=s.replace("    assert bd==8, (p,bd,ct)\n    bpp={6:4,2:3,0:1,4:2,3:1}[ct]\n    raw=zlib.decompress(idat); s=w*bpp;",
+"    bpp={6:4,2:3,0:1,4:2,3:1}[ct] if bd==8 else 1\n    raw=zlib.decompress(idat); s=w*bpp if bd==8 else (w*bd+7)//8;")
+s=s.replace("idx=r[x]; return trns[idx] if 'trns' in dir() and idx<len(trns) else 255",
+"idx=r[x] if bd==8 else (r[x*bd//8]>>(8-bd-(x*bd)%8))&((1<<bd)-1); return T[idx] if idx<len(T) else 255")
+s=s.replace("    def alpha(x,y):","    T=locals().get('trns',b'')\n    def alpha(x,y):")
+open('bbox.py','w').write(s)
+EOF
+cd /app/Resources/Textures/Structures/Doors; python3 /tmp/tools/bbox.py Misc/edge_door_hazard.rsi/*.png
+OBS: Misc/edge_door_hazard.rsi/closed.png (32, 32) [(0, 23, 31, 31)]
+Misc/edge_door_hazard.rsi/closing.png (96, 96) [(0, 23, 31, 31), (0, 23, 31, 31), (0, 23, 31, 31), (0, 23, 31, 31)]
+Misc/edge_door_hazard.rsi/open.png (32, 32) [(0, 23, 31, 31)]
+Misc/edge_door_hazard.rsi/opening.png (96, 96) [(0, 23, 31, 31), (0, 23, 31, 31), (0, 23, 31, 31), (0, 23, 31, 31)]
+Misc/edge_door_hazard.rsi/panel_closing.png (96, 96) [None, None, (3, 25, 28, 28), (4, 25, 27, 28)]
+Misc/edge_door_hazard.rsi/panel_open.png (32, 32) [(7, 25, 24, 28)]
+Misc/edge_door_hazard.rsi/panel_opening.png (96, 96) [(7, 25, 24, 28), (4, 25, 27, 28), (3, 25, 28, 28), None]
+Misc/edge_door_hazard.rsi/pressure_unlit.png (32, 32) [(0, 24,  ...[+1184 chars]
+### step 14 [agent] 2026-11-19T15:31:44.122Z
+CALL Bash: cd /tmp/tools; cat > cmp.py <<'EOF'
+import sys; sys.argv=[sys.argv[0]]
+exec(open('/tmp/tools/bbox.py').read().split('for p in sys.argv')[0])
+import os
+os.chdir('/app/Resources/Textures/Structures/Doors')
+def frames(p):
+    w,h,al=load(p)
+    return w,h,al
+# Directly compare closing last frame vs closed per dir, via alpha masks
+def mask(p,fx,fy):
+    w,h,al=load(p); return tuple(al(x,y)>0 for y in range(fy,fy+32) for x in range(fx,fx+32))
+for kind in ['Standard','Glass']:
+    b=f'Airlocks/{kind}/firelock-base.rsi/'
+    w,h,_=load(b+'closing.png'); print(kind,'closing',w,h)
+EOF
+python3 cmp.py
+OBS: Standard closing 480 128
+Glass closing 480 128
+Shell cwd was reset to /app
+
+[stdout]
+Standard closing 480 128
+Glass closing 480 128
+[stderr]
+
+Shell cwd was reset to /app
+[metadata] {"noOutputExpected": false}
+### step 15 [agent] 2026-11-19T15:31:49.531Z
+CALL Bash: cd /app/Resources/Textures/Structures/Doors/Airlocks; for k in Standard Glass; do for s in closing opening closed open; do ffmpeg -v error -y -i $k/firelock-base.rsi/$s.png -vf "scale=iw*3:ih*3:flags=neighbor" /tmp/v/${k}_$s.png; done; done; ffmpeg -v error -y -i /tmp/v/Standard_closing.png -i /tmp/v/Glass_closing.png -filter_complex vstack /tmp/v/cmp_closing.png
+CALL Read: /tmp/v/cmp_closing.png
+OBS: (Bash completed with no output)
+
+[metadata] {"noOutputExpected": false}
+OBS: <image>
+### step 16 [agent] 2026-11-19T15:32:00.620Z
+CALL Bash: cd /app/Resources/Textures/Structures/Doors/Airlocks; E=Effects/airlock-effects-firelock.rsi; ffmpeg -v error -y -i Standard/firelock-base.rsi/closed.png -i $E/welded.png -i $E/bolted_unlit.png -i ../Airlocks/Effects/airlock-effects.rsi/panel_open.png -filter_complex "[0][1]overlay[a];[a][2]overlay[b];[b][3]overlay,scale=iw*8:ih*8:flags=neighbor" /tmp/v/ov.png; ffmpeg -v error -y -i Standard/firelock-base.rsi/closed.png -vf scale=iw*8:ih*8:flags=neighbor /tmp/v/cl.png; ffmpeg -v error -y -i /tmp/v/cl.png -i /tmp/v/ov.png -filter_complex hstack /tmp/v/ov2.png
+CALL Read: /tmp/v/ov2.png
+OBS: (Bash completed with no output)
+
+[metadata] {"noOutputExpected": false}
+OBS: <image>
+### step 17 [agent] 2026-11-19T15:32:07.707Z
+CALL Bash: cd /app; ls Content.Client/Doors/; grep -rn "Offset\|Rotation\|DirectionOverride\|NoRotation" Content.Client/Doors/ Content.Client/Wires/Visualizers/ Content.Shared/Doors/ | head -30
+CALL Bash: cd /app; cat Content.Client/Doors/DoorSystem.cs
+OBS: AirlockSystem.cs
+DoorSystem.cs
+Electronics
+FirelockSystem.cs
+TurnstileSystem.cs
+Content.Shared/Doors/Systems/SharedTurnstileSystem.cs:117:        var (pos, rot) = _transform.GetWorldPositionRotation(xform);
+Content.Shared/Doors/Components/TurnstileComponent.cs:27:    [DataField(customTypeSerializer: typeof(TimeOffsetSerializer)), AutoNetworkedField, AutoPausedField]
+
+[stdout]
+AirlockSystem.cs
+DoorSystem.cs
+Electronics
+FirelockSystem.cs
+TurnstileSystem.cs
+Content.Shared/Doors/Systems/SharedTurnstileSystem.cs:117:        var (pos, rot) = _transform.GetWorldPositionRotation(xform);
+Content.Shared/Doors/Components/TurnstileComponent.cs:27:    [DataField(customTypeSerializer: typeof(TimeOffsetSer ...[+86 chars]
+OBS: using Content.Shared.Doors.Components;
+using Content.Shared.Doors.Systems;
+using Content.Shared.SprayPainter.Prototypes;
+using Robust.Client.Animations;
+using Robust.Client.GameObjects;
+
+namespace Content.Client.Doors;
+
+/// <inheritdoc/>
+public sealed partial class DoorSystem : SharedDoorSystem
+{
+    [Dependency] private AnimationPlayerSystem _animationSystem = default!;
+    [Dependency] private SpriteSystem _sprite = default!;
+
+    /// <inheritdoc/>
+    protected override void OnComponentInit(Entity<DoorComponent> ent, ref ComponentInit args)
+    {
+        // Base call deferred until end of function.
+        var comp = ent.Comp;
+        comp.OpenSpriteStates = new(2);
+        comp.ClosedSpr ...[+15394 chars]
+### step 18 [agent] 2026-11-19T15:32:19.658Z
+CALL Bash: cd /app; grep -n -i "airtight\|AirBlock\|Firelock" Content.Shared/Doors/Systems/SharedDoorSystem.cs Content.Server/Doors/Systems/*.cs Content.Server/Atmos/EntitySystems/AtmosphereSystem.Monstermos.cs Content.Server/Atmos/EntitySystems/AirtightSystem.cs | head -40
+OBS: Content.Shared/Doors/Systems/SharedDoorSystem.cs:693:        // Anyone can click to open firelocks
+Content.Shared/Doors/Systems/SharedDoorSystem.cs:695:            TryComp<FirelockComponent>(uid, out var firelock))
+Content.Server/Doors/Systems/DoorSystem.cs:13:    [Dependency] private AirtightSystem _airtightSystem = default!;
+Content.Server/Doors/Systems/DoorSystem.cs:32:        if (door.ChangeAirtight && TryComp(uid, out AirtightComponent? airtight))
+Content.Server/Doors/Systems/DoorSystem.cs:33:            _airtightSystem.SetAirblocked((uid, airtight), collidable);
+Content.Server/Atmos/EntitySystems/AirtightSystem.cs:10:    public sealed partial class AirtightSystem : EntitySystem
+Content ...[+9854 chars]
+### step 19 [agent] 2026-11-19T15:32:24.727Z
+CALL Bash: cd /app; grep -rn "DoorStateChangedEvent" Content.* | head
+OBS: Content.Server/Radiation/Systems/RadiationSystem.Blockers.cs:18:        SubscribeLocalEvent<RadiationBlockerComponent, DoorStateChangedEvent>(OnDoorChanged);
+Content.Server/Radiation/Systems/RadiationSystem.Blockers.cs:58:    private void OnDoorChanged(EntityUid uid, RadiationBlockerComponent component, DoorStateChangedEvent args)
+Content.Server/DeviceLinking/Systems/DoorSignalControlSystem.cs:22:            SubscribeLocalEvent<DoorSignalControlComponent, DoorStateChangedEvent>(OnStateChanged);
+Content.Server/DeviceLinking/Systems/DoorSignalControlSystem.cs:119:        private void OnStateChanged(EntityUid uid, DoorSignalControlComponent door, DoorStateChangedEvent args)
+Content.Shared/Doors ...[+2122 chars]
+### step 20 [agent] 2026-11-19T15:32:31.319Z
+CALL Bash: cd /app; python3 - <<'EOF'
+import re
+p='Content.Client/Doors/DoorSystem.cs'; s=open(p).read()
+old="""                    _animationSystem.Stop(entity, null, DoorComponent.OpenKey);
+                    _animationSystem.Play(entity, (Animation)entity.Comp.OpeningAnimation, DoorComponent.CloseKey);"""
+assert old in s
+s=s.replace(old,"""                    _animationSystem.Stop(entity, null, DoorComponent.OpenKey);
+                    _animationSystem.Play(entity, (Animation)entity.Comp.ClosingAnimation, DoorComponent.CloseKey);""")
+open(p,'w').write(s)
+
+p='Resources/Prototypes/Entities/Structures/Doors/Firelocks/firelock.yml'; s=open(p).read()
+old="""      airBlockedDirection:
+        - North"""
+assert old in s; s=s.replace(old,"""      airBlockedDirection:
+        - South""")
+old="""      - state: panel_open
+        sprite: Structures/Doors/Airlocks/Effects/airlock-effects.rsi
+        map: ["enum.WiresVisualLayers.MaintenancePanel"]
+    - type: Occluder"""
+assert old in s
+s=s.replace(old,"""      - state: panel_open
+        sprite: Structures/Doors/Airlocks/Effects/airlock-effects.rsi
+        map: ["enum.WiresVisualLayers.MaintenancePanel"]
+      - state: pressure_unlit
+        visible: false
+        shader: unshaded
+        sprite: Structures/Doors/Airlocks/Effects/airlock-effects-firelock.rsi
+        map: ["enum.FirelockVisualLayersPressure.Base"]
+      - state: temperature_unlit
+        visible: false
+        shader: unshaded
+        sprite: Structures/Doors/Airlocks/Effects/airlock-effects-firelock.rsi
+        map: ["enum.FirelockVisualLayersTemperature.Base"]
+    - type: Occluder""")
+open(p,'w').write(s)
+
+p='Resources/Textures/Structures/Doors/Airlocks/Standard/firelock-base.rsi/meta.json'; s=open(p).read()
+i=s.index('"name": "closing"'); head,tail=s[:i],s[i:]
+tail=tail.replace('0.001,','0.01,').replace('0.005,','0.05,').replace('0.01,\n','0.1,\n',0)
+# careful replacements of whole numbers
+import json
+open(p,'w').write(head+tail)
+EOF
+python3 - <<'EOF'
+import json
+p='/app/Resources/Textures/Structures/Doors/Airlocks/Standard/firelock-base.rsi/meta.json'
+m=json.load(open(p))
+for st in m['states']:
+    if 'delays' in st: print(st['name'], st['delays'][0], sum(st['delays'][0]))
+EOF
+OBS: opening [0.1, 0.05, 0.05, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.05, 0.05, 0.1] 0.49000000000000005
+closing [0.01, 0.05, 0.05, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.05, 0.05, 0.01] 0.31
+
+[stdout]
+opening [0.1, 0.05, 0.05, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.05, 0.05, 0.1] 0.49000000000000005
+closing [0.01, 0.05, 0.05, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.05, 0.05, 0.01] 0.31
+[metadata] {"noOutputExpected": false, "bashEditDiff": {"files": [{"filePath": "/app/Content.Client/Doors/DoorSystem.cs", "hunks": [{"oldStart": 154, "oldLines": 7, "newStart": 154, "newLines": 7, "lines": ["                 if (_animationSystem.Ha ...[+5770 chars]
+### step 21 [agent] 2026-11-19T15:32:41.009Z
+CALL Bash: cd /app; git checkout Resources/Textures/Structures/Doors/Airlocks/Standard/firelock-base.rsi/meta.json; python3 - <<'EOF'
+p='/app/Resources/Textures/Structures/Doors/Airlocks/Standard/firelock-base.rsi/meta.json'
+s=open(p).read()
+op=s.index('"name": "opening"'); od=s.index('"delays"',op); oe=s.index('\n            ]\n',od)
+cl=s.index('"name": "closing"'); cd=s.index('"delays"',cl); ce=s.index('\n            ]\n',cd)
+s=s[:cd]+s[od:oe]+s[ce:]
+open(p,'w').write(s)
+import json
+for st in json.load(open(p))['states']:
+    if 'delays' in st: print(st['name'], len(st['delays']), sum(st['delays'][3]))
+EOF
+git diff --stat
+OBS: Updated 1 path from the index
+opening 4 0.49000000000000005
+closing 4 0.49000000000000005
+ Content.Client/Doors/DoorSystem.cs                 |   2 +-
+ .../Structures/Doors/Firelocks/firelock.yml        |  12 ++-
+ .../Airlocks/Standard/firelock-base.rsi/meta.json  | 112 ++++++++++-----------
+ 3 files changed, 68 insertions(+), 58 deletions(-)
+
+[stdout]
+Updated 1 path from the index
+opening 4 0.49000000000000005
+closing 4 0.49000000000000005
+ Content.Client/Doors/DoorSystem.cs                 |   2 +-
+ .../Structures/Doors/Firelocks/firelock.yml        |  12 ++-
+ .../Airlocks/Standard/firelock-base.rsi/meta.json  | 112 ++++++++++-----------
+ 3 files changed, 68 insertions(+), 58 deletions(-)
+ ...[+2155 chars]
+### step 22 [agent] 2026-11-19T15:32:45.538Z
+MSG: Now the warning-clearing in the shared and server firelock systems.
+CALL Bash: cd /app; python3 - <<'EOF'
+p='/app/Content.Shared/Doors/Systems/SharedFirelockSystem.cs'; s=open(p).read()
+old="""        SubscribeLocalEvent<FirelockComponent, ComponentStartup>(OnComponentStartup);
+"""
+s=s.replace(old, old+"""        SubscribeLocalEvent<FirelockComponent, DoorStateChangedEvent>(OnDoorStateChanged);
+""")
+old="""    private void UpdateVisuals(EntityUid uid, FirelockComponent component, EntityEventArgs args) => UpdateVisuals(uid, component);
+"""
+s=s.replace(old, old+"""
+    private void OnDoorStateChanged(Entity<FirelockComponent> ent, ref DoorStateChangedEvent args)
+    {
+        UpdateVisuals(ent.Owner, ent.Comp);
+    }
+
+    /// <summary>
+    /// Called when the firelock is no longer shut, so any warnings it was showing should be hidden.
+    /// </summary>
+    protected virtual void ClearWarnings(EntityUid uid)
+    {
+    }
+""")
+old="""            _appearance.SetData(uid, DoorVisuals.ClosedLights, false, appearance);
+            return;"""
+assert old in s
+s=s.replace(old,"""            _appearance.SetData(uid, DoorVisuals.ClosedLights, false, appearance);
+            _appearance.SetData(uid, FirelockVisuals.PressureWarning, false, appearance);
+            _appearance.SetData(uid, FirelockVisuals.TemperatureWarning, false, appearance);
+            ClearWarnings(uid);
+            return;""")
+open(p,'w').write(s)
+
+p='/app/Content.Server/Doors/Systems/FirelockSystem.cs'; s=open(p).read()
+old="""        private void OnAtmosAlarm("""
+s=s.replace(old,"""        protected override void ClearWarnings(EntityUid uid)
+        {
+            if (_pointLightQuery.TryComp(uid, out var pointLight))
+                _pointLight.SetEnabled(uid, false, pointLight);
+        }
+
+"""+old,1)
+open(p,'w').write(s)
+EOF
+sed -n 1,10p Content.Shared/Doors/DoorEvents.cs; grep -n "ByRefEvent" -B2 Content.Shared/Doors/DoorEvents.cs | head
+OBS: using Content.Shared.Doors.Components;
+
+namespace Content.Shared.Doors
+{
+    /// <summary>
+    /// Raised when the door's State variable is changed to a new variable that it was not equal to before.
+    /// </summary>
+    public sealed class DoorStateChangedEvent : EntityEventArgs
+    {
+        public readonly DoorState State;
+
+[stdout]
+using Content.Shared.Doors.Components;
+
+namespace Content.Shared.Doors
+{
+    /// <summary>
+    /// Raised when the door's State variable is changed to a new variable that it was not equal to before.
+    /// </summary>
+    public sealed class DoorStateChangedEvent : EntityEventArgs
+    {
+        public readonly DoorState State;
+[metadata] {"noOutputExpected":  ...[+2606 chars]
+### step 23 [agent] 2026-11-19T15:32:54.392Z
+CALL Bash: cd /app; sed -i 's/OnDoorStateChanged(Entity<FirelockComponent> ent, ref DoorStateChangedEvent args)/OnDoorStateChanged(Entity<FirelockComponent> ent, DoorStateChangedEvent args)/' Content.Shared/Doors/Systems/SharedFirelockSystem.cs; grep -rn "Entity<.*>.*, [A-Z][a-zA-Z]*Event args)" Content.Shared/Doors | head -3; timeout 1200 dotnet build Content.Server/Content.Server.csproj -v q 2>&1 | grep -E "error|Warn.*Firelock|Build succeeded" | head -20
+OBS: Content.Shared/Doors/Systems/SharedFirelockSystem.cs:116:    private void OnDoorStateChanged(Entity<FirelockComponent> ent, DoorStateChangedEvent args)
+/app/RobustToolbox/Robust.Shared/Serialization/Manager/SerializationManager.cs(25,30): warning RA0051: Field '_net' is a [Dependency] but is readonly. This will be an error in the future. [/app/RobustToolbox/Robust.Shared/Robust.Shared.csproj]
+/app/RobustToolbox/Robust.Shared/Serialization/Manager/SerializationManager.cs(26,30): warning RA0051: Field '_reflectionManager' is a [Dependency] but is readonly. This will be an error in the future. [/app/RobustToolbox/Robust.Shared/Robust.Shared.csproj]
+/app/RobustToolbox/Robust.Shared/Serialization ...[+5730 chars]
+### step 24 [agent] 2026-11-19T15:35:20.449Z
+CALL Bash: cd /app; sed -i 's/OnDoorStateChanged(Entity<FirelockComponent> ent, DoorStateChangedEvent args)/OnDoorStateChanged(EntityUid uid, FirelockComponent component, DoorStateChangedEvent args)/; s/        UpdateVisuals(ent.Owner, ent.Comp);/        UpdateVisuals(uid, component);/' Content.Shared/Doors/Systems/SharedFirelockSystem.cs; timeout 1200 dotnet build Content.Server/Content.Server.csproj -v q 2>&1 | grep -E " error |Build succeeded" | sort -u | head; timeout 1200 dotnet build Content.Client/Content.Client.csproj -v q 2>&1 | grep -E " error |Build succeeded" | sort -u | head
+OBS: Build succeeded.
+/app/RobustToolbox/Robust.Client/Light/LightLevelOverlay .cs(30,30): warning RA0051: Field '_deps' is a [Dependency] but is readonly. This will be an error in the future. [/app/RobustToolbox/Robust.Client/Robust.Client.csproj]
+/app/RobustToolbox/Robust.Client/Light/LightLevelOverlay .cs(31,30): warning RA0051: Field '_overlay' is a [Dependency] but is readonly. This will be an error in the future. [/app/RobustToolbox/Robust.Client/Robust.Client.csproj]
+Build succeeded.
+
+[stdout]
+Build succeeded.
+/app/RobustToolbox/Robust.Client/Light/LightLevelOverlay .cs(30,30): warning RA0051: Field '_deps' is a [Dependency] but is readonly. This will be an error in the future. [/app/Robus ...[+1111 chars]
+### step 25 [agent] 2026-11-19T15:38:45.458Z
+MSG: Both builds pass. Now I'll look for related tests.
+CALL Bash: cd /app; grep -rli "firelock" Content.IntegrationTests Content.Tests 2>/dev/null | head; git diff Content.Shared Content.Server
+OBS: diff --git a/Content.Server/Doors/Systems/FirelockSystem.cs b/Content.Server/Doors/Systems/FirelockSystem.cs
+index 16ebaca..862e762 100644
+--- a/Content.Server/Doors/Systems/FirelockSystem.cs
++++ b/Content.Server/Doors/Systems/FirelockSystem.cs
+@@ -92,6 +92,12 @@ public override void Update(float frameTime)
+             }
+         }
+ 
++        protected override void ClearWarnings(EntityUid uid)
++        {
++            if (_pointLightQuery.TryComp(uid, out var pointLight))
++                _pointLight.SetEnabled(uid, false, pointLight);
++        }
++
+         private void OnAtmosAlarm(EntityUid uid, FirelockComponent component, AtmosAlarmEvent args)
+         {
+             if (!this.IsPowered ...[+4640 chars]
+### step 26 [agent] 2026-11-19T15:38:56.107Z
+MSG: I couldn't watch the video: `/app/.harbor_assets/` is empty and there's no `recording.mp4` anywhere on the system. So I worked out what goes wrong from the firelock code and sprite assets, guided by the issue description. I found and fixed five problems. The server and client both build; there are no firelock tests in the repo, and I haven't run the game to see the result.
+
+**What ends up on each side**
+- **Edge firelock blocked air on the wrong side.** Its sprite and collision box are both on the south edge of the tile, but it blocked air to the North. So when shut it let gas through on the side it looks shut and sealed the side that looks open. It now blocks South (`firelock.yml`).
+
+**Warning lights**
+- **Warnings stayed on after the firelock opened.** The pressure and temperature lights (and the red glow) were only updated while the firelock was shut, so opening it left them showing. The shared firelock system now responds to every door state change: when the firelock isn't shut it turns off the general warning light, both hazard lights, and the glow (`SharedFirelockSystem.cs`, `Server/.../FirelockSystem.cs`).
+- **The glass firelock had no pressure or temperature lights**, so it couldn't show which danger it was holding back. I added the same two layers the standard firelock has.
+
+**How it moves / alignment**
+- **The standard firelock slammed shut.** Its closing animation steps were 10× too short (0.049s in total instead of 0.49s), so the door finished almost instantly while its lights and panel layers took the full 0.49s. That left the parts of the firelock out of step with each other. I set the timings to match its opening animation and the glass firelock (`Standard/firelock-base.rsi/meta.json`).
+- **A door forced shut while still opening played the opening animation.** I changed it to play the closing animation (`Content.Client/Doors/DoorSystem.cs`). This fix applies to all doors, not just firelocks.
+
+I also checked where each sprite layer sits within the tile (lights, weld, bolts, panel, edge-door layers) and found no position offsets. That's why I think the misalignment in the clip is the timing mismatch above. If the video shows a part visibly out of place, though, that's something I couldn't check without it.

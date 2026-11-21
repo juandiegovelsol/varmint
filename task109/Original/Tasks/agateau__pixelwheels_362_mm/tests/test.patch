@@ -1,0 +1,388 @@
+diff --git a/core-tests/build.gradle b/core-tests/build.gradle
+index 63f49e8e..ae464cce 100644
+--- a/core-tests/build.gradle
++++ b/core-tests/build.gradle
+@@ -8,6 +8,11 @@ dependencies {
+     implementation "com.badlogicgames.gdx:gdx-box2d-platform:$gdxVersion:natives-desktop"
+     implementation "junit:junit:4.12"
+     implementation "org.mockito:mockito-core:3.12.4"
++
++    // Used by MissileZOrderTest: GameRenderer needs a real, working OpenGL context (it eagerly
++    // creates a ShapeRenderer and a FrameBuffer), so the test opens a real (off-screen) desktop
++    // window, the same way the game itself renders on desktop.
++    implementation "com.badlogicgames.gdx:gdx-backend-lwjgl3:$gdxVersion"
+ }
+ 
+ sourceCompatibility = JavaVersion.VERSION_1_8
+diff --git a/core-tests/src/com/agateau/pixelwheels/racescreen/MissileZOrderTest.java b/core-tests/src/com/agateau/pixelwheels/racescreen/MissileZOrderTest.java
+new file mode 100644
+index 00000000..327f9bef
+--- /dev/null
++++ b/core-tests/src/com/agateau/pixelwheels/racescreen/MissileZOrderTest.java
+@@ -0,0 +1,366 @@
++/*
++ * This is a test for https://github.com/agateau/pixelwheels/issues/362 and
++ * https://github.com/agateau/pixelwheels/issues/58 ("the rocket weapon is shown on top of the
++ * race map elements").
++ *
++ * It drives the real GameRenderer rendering loop with a real (but code-built, not loaded from an
++ * asset file) track made of one background layer and one foreground layer, and a real Missile
++ * game object. It checks that the missile is drawn *before* the foreground layer, which is what
++ * makes it appear underneath foreground map elements (bridges, huts, trees, towers) instead of on
++ * top of them.
++ *
++ * GameRenderer eagerly creates a ShapeRenderer and a CellFrameBufferManager (which allocates a
++ * real FrameBuffer) in its constructor, so this test needs a real, working OpenGL context. It
++ * gets one the same way the game itself does on desktop: a (headless, off-screen) Lwjgl3
++ * application window.
++ */
++package com.agateau.pixelwheels.racescreen;
++
++import static org.junit.Assert.assertTrue;
++import static org.mockito.ArgumentMatchers.any;
++import static org.mockito.ArgumentMatchers.anyBoolean;
++import static org.mockito.ArgumentMatchers.anyFloat;
++import static org.mockito.ArgumentMatchers.anyInt;
++import static org.mockito.ArgumentMatchers.eq;
++import static org.mockito.Mockito.clearInvocations;
++import static org.mockito.Mockito.inOrder;
++import static org.mockito.Mockito.mock;
++import static org.mockito.Mockito.when;
++
++import com.agateau.pixelwheels.Assets;
++import com.agateau.pixelwheels.GamePlay;
++import com.agateau.pixelwheels.GameWorld;
++import com.agateau.pixelwheels.bonus.Missile;
++import com.agateau.pixelwheels.gameobject.GameObject;
++import com.agateau.pixelwheels.map.Track;
++import com.badlogic.gdx.ApplicationAdapter;
++import com.badlogic.gdx.Gdx;
++import com.badlogic.gdx.backends.lwjgl3.Lwjgl3Application;
++import com.badlogic.gdx.backends.lwjgl3.Lwjgl3ApplicationConfiguration;
++import com.badlogic.gdx.graphics.Color;
++import com.badlogic.gdx.graphics.Texture;
++import com.badlogic.gdx.graphics.g2d.Batch;
++import com.badlogic.gdx.graphics.g2d.TextureRegion;
++import com.badlogic.gdx.graphics.glutils.FrameBuffer;
++import com.badlogic.gdx.maps.tiled.TiledMap;
++import com.badlogic.gdx.maps.tiled.TiledMapTileLayer;
++import com.badlogic.gdx.maps.tiled.tiles.StaticTiledMapTile;
++import com.badlogic.gdx.math.Matrix4;
++import com.badlogic.gdx.math.Vector2;
++import com.badlogic.gdx.physics.box2d.Body;
++import com.badlogic.gdx.physics.box2d.BodyDef;
++import com.badlogic.gdx.physics.box2d.World;
++import com.badlogic.gdx.utils.Array;
++import java.lang.reflect.Field;
++import org.junit.Test;
++import org.junit.runner.RunWith;
++import org.junit.runners.JUnit4;
++import org.mockito.InOrder;
++
++@RunWith(JUnit4.class)
++public class MissileZOrderTest {
++    private static final int TILE_PX = 20;
++    private static final int MAP_TILES = 64;
++    // World-space position (after Constants.UNIT_FOR_PIXEL scaling) of both the missile and the
++    // foreground tile that should hide it. Matches the middle of the viewport set up below.
++    private static final float POSITION = 30f;
++
++    private Throwable mFailure;
++    private boolean mMissileDrawnBeforeForeground;
++    private boolean mHelicopterDrawnAfterForeground;
++
++    @Test(timeout = 60000)
++    public void missileIsDrawnBeforeForegroundLayer() {
++        Lwjgl3ApplicationConfiguration config = new Lwjgl3ApplicationConfiguration();
++        config.setWindowedMode(64, 64);
++        config.setInitialVisible(false);
++        config.disableAudio(true);
++
++        new Lwjgl3Application(
++                new ApplicationAdapter() {
++                    @Override
++                    public void create() {
++                        try {
++                            runScenario();
++                        } catch (Throwable t) {
++                            mFailure = t;
++                        } finally {
++                            Gdx.app.exit();
++                        }
++                    }
++                },
++                config);
++
++        if (mFailure != null) {
++            throw new AssertionError("Scenario failed: " + mFailure, mFailure);
++        }
++        assertTrue(
++                "The missile should be drawn before the foreground layer, so that it appears "
++                        + "underneath it instead of over it",
++                mMissileDrawnBeforeForeground);
++    }
++
++    private void runScenario() throws Exception {
++        GamePlay.instance.freeCamera = true;
++
++        Texture fgTexture = mock(Texture.class);
++        Texture missileTexture = mock(Texture.class);
++        TextureRegion missileRegion = new TextureRegion(missileTexture, TILE_PX, TILE_PX / 2);
++
++        TiledMap map = buildMap(fgTexture);
++
++        FakeTrack track = new FakeTrack(map);
++
++        World box2DWorld = new World(new Vector2(0, 0), true);
++        Missile missile = buildMissile(box2DWorld, missileRegion);
++
++        GameWorld gameWorld = mock(GameWorld.class);
++        when(gameWorld.getTrack()).thenReturn(track);
++        when(gameWorld.getBox2DWorld()).thenReturn(box2DWorld);
++        Array<GameObject> gameObjects = new Array<>();
++        gameObjects.add(missile);
++        when(gameWorld.getActiveGameObjects()).thenReturn(gameObjects);
++
++        Batch batch = mock(Batch.class);
++        when(batch.getProjectionMatrix()).thenReturn(new Matrix4());
++        when(batch.getColor()).thenReturn(new Color(1, 1, 1, 1));
++
++        com.badlogic.gdx.utils.PerformanceCounters counters =
++                new com.badlogic.gdx.utils.PerformanceCounters();
++        GameRenderer renderer = new GameRenderer(gameWorld, /* racer= */ null, batch, counters);
++        renderer.setScreenRect(0, 0, 60, 60);
++        renderer.onAboutToStart();
++
++        // Render once so the free camera settles on the track, then reset the batch's recorded
++        // invocations and render exactly one more frame: checking draw order across more than one
++        // frame would let a later frame's foreground-layer draw satisfy the "missile before
++        // foreground" check even when, within a single frame, the order is actually wrong.
++        renderer.render(0f);
++        clearInvocations(batch);
++        renderer.render(0f);
++
++        // The missile sprite is drawn through the TextureRegion overload of Batch.draw() (it goes
++        // through BodyRegionDrawer), while the foreground tile layer is drawn through the raw
++        // Texture + vertices overload (PwTiledMapRenderer draws tiles itself). Checking that the
++        // first happens before the second is exactly the report's complaint: the missile should
++        // end up underneath the foreground map art, which painter's-algorithm-wise means it must
++        // be drawn *before* the foreground layer.
++        InOrder inOrder = inOrder(batch);
++        inOrder.verify(batch)
++                .draw(
++                        eq(missileRegion),
++                        anyFloat(),
++                        anyFloat(),
++                        anyFloat(),
++                        anyFloat(),
++                        anyFloat(),
++                        anyFloat(),
++                        anyFloat(),
++                        anyFloat(),
++                        anyFloat());
++        inOrder.verify(batch).draw(eq(fgTexture), any(float[].class), anyInt(), anyInt());
++        mMissileDrawnBeforeForeground = true;
++    }
++
++    // Guard: the rescue helicopter (and a vehicle it is carrying) must keep flying *above* the
++    // foreground layer, the same way it already does at the base commit. A fix for the missile
++    // report that made every flying object draw before the foreground layer (instead of giving
++    // missiles their own, lower level) would make this fail even though it would also make
++    // missileIsDrawnBeforeForegroundLayer() above pass.
++    @Test(timeout = 60000)
++    public void helicopterIsDrawnAfterForegroundLayer() {
++        Lwjgl3ApplicationConfiguration config = new Lwjgl3ApplicationConfiguration();
++        config.setWindowedMode(64, 64);
++        config.setInitialVisible(false);
++        config.disableAudio(true);
++
++        new Lwjgl3Application(
++                new ApplicationAdapter() {
++                    @Override
++                    public void create() {
++                        try {
++                            runHelicopterScenario();
++                        } catch (Throwable t) {
++                            mFailure = t;
++                        } finally {
++                            Gdx.app.exit();
++                        }
++                    }
++                },
++                config);
++
++        if (mFailure != null) {
++            throw new AssertionError("Scenario failed: " + mFailure, mFailure);
++        }
++        assertTrue(
++                "The rescue helicopter should keep being drawn over the foreground layer",
++                mHelicopterDrawnAfterForeground);
++    }
++
++    private void runHelicopterScenario() throws Exception {
++        GamePlay.instance.freeCamera = true;
++
++        Texture fgTexture = mock(Texture.class);
++        Texture helicopterTexture = mock(Texture.class);
++
++        TiledMap map = buildMap(fgTexture);
++        FakeTrack track = new FakeTrack(map);
++
++        Helicopter helicopter = buildHelicopter(helicopterTexture);
++
++        GameWorld gameWorld = mock(GameWorld.class);
++        when(gameWorld.getTrack()).thenReturn(track);
++        when(gameWorld.getBox2DWorld()).thenReturn(new World(new Vector2(0, 0), true));
++        Array<GameObject> gameObjects = new Array<>();
++        gameObjects.add(helicopter);
++        when(gameWorld.getActiveGameObjects()).thenReturn(gameObjects);
++
++        Batch batch = mock(Batch.class);
++        when(batch.getProjectionMatrix()).thenReturn(new Matrix4());
++        when(batch.getColor()).thenReturn(new Color(1, 1, 1, 1));
++
++        com.badlogic.gdx.utils.PerformanceCounters counters =
++                new com.badlogic.gdx.utils.PerformanceCounters();
++        GameRenderer renderer = new GameRenderer(gameWorld, /* racer= */ null, batch, counters);
++        renderer.setScreenRect(0, 0, 60, 60);
++        renderer.onAboutToStart();
++
++        renderer.render(0f);
++        clearInvocations(batch);
++        renderer.render(0f);
++
++        // The helicopter draws its (off-screen-rendered) frame buffer through the plain Texture
++        // overload of Batch.draw() that takes explicit position/origin/size/rotation/src-rect/flip
++        // arguments; the foreground tile layer draws through the raw Texture + vertices overload.
++        // Checking the foreground layer first, then the helicopter, matches how the helicopter
++        // already renders on top of foreground map art today (it must keep doing so).
++        InOrder inOrder = inOrder(batch);
++        inOrder.verify(batch).draw(eq(fgTexture), any(float[].class), anyInt(), anyInt());
++        inOrder.verify(batch)
++                .draw(
++                        eq(helicopterTexture),
++                        anyFloat(),
++                        anyFloat(),
++                        anyFloat(),
++                        anyFloat(),
++                        anyFloat(),
++                        anyFloat(),
++                        anyFloat(),
++                        anyFloat(),
++                        anyFloat(),
++                        anyInt(),
++                        anyInt(),
++                        anyInt(),
++                        anyInt(),
++                        anyBoolean(),
++                        anyBoolean());
++        mHelicopterDrawnAfterForeground = true;
++    }
++
++    private static Helicopter buildHelicopter(Texture frameBufferTexture) throws Exception {
++        Helicopter helicopter = Helicopter.class.getDeclaredConstructor().newInstance();
++
++        FrameBuffer frameBuffer = mock(FrameBuffer.class);
++        when(frameBuffer.getWidth()).thenReturn(TILE_PX);
++        when(frameBuffer.getHeight()).thenReturn(TILE_PX);
++        when(frameBuffer.getColorBufferTexture()).thenReturn(frameBufferTexture);
++        setField(helicopter, Helicopter.class, "mFrameBuffer", frameBuffer);
++
++        // mFrameBufferRadiusU is only used to cull off-screen helicopters; a few world units are
++        // plenty to keep it comfortably inside the viewBounds set up around POSITION below.
++        setField(helicopter, Helicopter.class, "mFrameBufferRadiusU", 5f);
++
++        Field positionField = Helicopter.class.getDeclaredField("mPosition");
++        positionField.setAccessible(true);
++        ((Vector2) positionField.get(helicopter)).set(POSITION, POSITION);
++
++        return helicopter;
++    }
++
++    private static TiledMap buildMap(Texture fgTexture) {
++        TiledMap map = new TiledMap();
++
++        TiledMapTileLayer bgLayer = new TiledMapTileLayer(MAP_TILES, MAP_TILES, TILE_PX, TILE_PX);
++        bgLayer.setName("bg");
++        map.getLayers().add(bgLayer);
++
++        TiledMapTileLayer fgLayer = new TiledMapTileLayer(MAP_TILES, MAP_TILES, TILE_PX, TILE_PX);
++        fgLayer.setName("fg");
++        TextureRegion fgRegion = new TextureRegion(fgTexture, TILE_PX, TILE_PX);
++        StaticTiledMapTile fgTile = new StaticTiledMapTile(fgRegion);
++        // TILE_PX pixels per tile, scaled by Constants.UNIT_FOR_PIXEL (1/20) gives exactly 1 world
++        // unit per tile, so the tile coordinate matching a world position is the position itself.
++        int tileCoord = (int) POSITION;
++        TiledMapTileLayer.Cell cell = new TiledMapTileLayer.Cell();
++        cell.setTile(fgTile);
++        fgLayer.setCell(tileCoord, tileCoord, cell);
++        map.getLayers().add(fgLayer);
++
++        return map;
++    }
++
++    private static Missile buildMissile(World box2DWorld, TextureRegion missileRegion)
++            throws Exception {
++        BodyDef bodyDef = new BodyDef();
++        bodyDef.type = BodyDef.BodyType.DynamicBody;
++        bodyDef.position.set(POSITION, POSITION);
++        Body body = box2DWorld.createBody(bodyDef);
++
++        Assets assets = mock(Assets.class);
++        setField(assets, Assets.class, "missile", missileRegion);
++
++        Missile missile = new Missile();
++        setField(missile, Missile.class, "mBody", body);
++        setField(missile, Missile.class, "mAssets", assets);
++
++        Class<?> statusClass = Class.forName("com.agateau.pixelwheels.bonus.Missile$Status");
++        // The first declared constant is WAITING: it is the status that makes Missile.draw() skip
++        // the reactor flame animation, which this test does not set up.
++        Object waiting = statusClass.getEnumConstants()[0];
++        setField(missile, Missile.class, "mStatus", waiting);
++
++        return missile;
++    }
++
++    private static void setField(Object target, Class<?> declaringClass, String name, Object value)
++            throws Exception {
++        Field field = declaringClass.getDeclaredField(name);
++        field.setAccessible(true);
++        field.set(target, value);
++    }
++
++    /** A Track that doesn't load anything from disk: it is built entirely in memory. */
++    private static class FakeTrack extends Track {
++        private final TiledMap mMap;
++
++        FakeTrack(TiledMap map) {
++            super(null, "test-track", "Test track");
++            mMap = map;
++        }
++
++        @Override
++        public TiledMap getMap() {
++            return mMap;
++        }
++
++        @Override
++        public int[] getExtraBackgroundLayerIndexes() {
++            return new int[0];
++        }
++
++        @Override
++        public int[] getForegroundLayerIndexes() {
++            return new int[] {1};
++        }
++
++        @Override
++        public float getMapWidth() {
++            return 2000;
++        }
++
++        @Override
++        public float getMapHeight() {
++            return 2000;
++        }
++    }
++}

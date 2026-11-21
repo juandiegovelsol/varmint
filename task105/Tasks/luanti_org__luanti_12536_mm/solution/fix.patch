@@ -1,5 +1,5 @@
 diff --git a/src/client/content_mapblock.cpp b/src/client/content_mapblock.cpp
-index 7d73b1926..613fe00a2 100644
+index 596c3e5..0bac5e8 100644
 --- a/src/client/content_mapblock.cpp
 +++ b/src/client/content_mapblock.cpp
 @@ -377,10 +377,6 @@ void MapblockMeshGenerator::drawAutoLightedCuboid(aabb3f box, const f32 *txc,
@@ -13,7 +13,7 @@ index 7d73b1926..613fe00a2 100644
  	if (scale) {
  		if (!txc) { // generate texture coords before scaling
  			generateCuboidTextureCoords(box, texture_coord_buf);
-@@ -389,6 +385,8 @@ void MapblockMeshGenerator::drawAutoLightedCuboid(aabb3f box, const f32 *txc,
+@@ -389,11 +385,12 @@ void MapblockMeshGenerator::drawAutoLightedCuboid(aabb3f box, const f32 *txc,
  		box.MinEdge *= f->visual_scale;
  		box.MaxEdge *= f->visual_scale;
  	}
@@ -22,36 +22,151 @@ index 7d73b1926..613fe00a2 100644
  	if (!txc) {
  		generateCuboidTextureCoords(box, texture_coord_buf);
  		txc = texture_coord_buf;
-@@ -538,7 +536,7 @@ f32 MapblockMeshGenerator::getCornerLevel(int i, int k)
- 	int air_count = 0;
- 	for (int dk = 0; dk < 2; dk++)
- 	for (int di = 0; di < 2; di++) {
--		NeighborData &neighbor_data = liquid_neighbors[i + di][k + dk];
-+		NeighborData &neighbor_data = liquid_neighbors[k + dk][i + di];
- 		content_t content = neighbor_data.content;
+ 	}
+-
+ 	if (!tiles) {
+ 		tiles = &tile;
+ 		tile_count = 1;
+@@ -528,7 +525,7 @@ void MapblockMeshGenerator::calculateCornerLevels()
+ {
+ 	for (int k = 0; k < 2; k++)
+ 	for (int i = 0; i < 2; i++)
+-		corner_levels[i][k] = getCornerLevel(i, k);
++		corner_levels[k][i] = getCornerLevel(i, k);
+ }
  
- 		// If top is liquid, draw starting from top of node
-@@ -827,7 +825,7 @@ void MapblockMeshGenerator::drawGlasslikeFramedNode()
+ f32 MapblockMeshGenerator::getCornerLevel(int i, int k)
+@@ -650,7 +647,7 @@ void MapblockMeshGenerator::drawLiquidTop()
+ 	for (int i = 0; i < 4; i++) {
+ 		int u = corner_resolve[i][0];
+ 		int w = corner_resolve[i][1];
+-		vertices[i].Pos.Y += corner_levels[u][w];
++		vertices[i].Pos.Y += corner_levels[w][u];
+ 		if (data->m_smooth_lighting)
+ 			vertices[i].Color = blendLightColor(vertices[i].Pos);
+ 		vertices[i].Pos += origin;
+@@ -994,15 +991,15 @@ void MapblockMeshGenerator::drawPlantlikeQuad(float rotation, float quad_offset,
+ 		PseudoRandom yrng(face_num++ | p.X << 16 | p.Z << 8 | p.Y << 24);
+ 		offset.Y = -BS * ((yrng.next() % 16 / 16.0) * 0.125);
+ 	}
++	int offset_count = offset_top_only ? 2 : 4;
++	for (int i = 0; i < offset_count; i++)
++		vertices[i].Z += quad_offset;
++
+ 	for (v3f &vertex : vertices) {
+ 		vertex.rotateXZBy(rotation + rotate_degree);
+ 		vertex += offset;
+ 	}
  
- 	static const u8 nb_triplet[FRAMED_EDGE_COUNT][3] = {
- 		{1, 2,  7}, {1, 5,  6}, {4, 2, 15}, {4, 5, 14},
--		{2, 0, 11}, {2, 4, 13}, {5, 0, 10}, {5, 3, 12},
-+		{2, 0, 11}, {2, 3, 13}, {5, 0, 10}, {5, 3, 12},
- 		{0, 1,  8}, {0, 4, 16}, {3, 4, 17}, {3, 1,  9},
- 	};
- 
-@@ -1297,8 +1295,8 @@ namespace {
- 	static const v3s16 rail_direction[4] = {
- 		v3s16( 0, 0,  1),
- 		v3s16( 0, 0, -1),
--		v3s16( 1, 0,  0),
+-	int offset_count = offset_top_only ? 2 : 4;
+-	for (int i = 0; i < offset_count; i++)
+-		vertices[i].Z += quad_offset;
+-
+ 	u8 wall = n.getWallMounted(nodedef);
+ 	if (wall != DWM_YN) {
+ 		for (v3f &vertex : vertices) {
+@@ -1300,7 +1297,7 @@ namespace {
  		v3s16(-1, 0,  0),
-+		v3s16( 1, 0,  0),
+ 		v3s16( 1, 0,  0),
  	};
- 	static const int rail_slope_angle[4] = {0, 180, 90, -90};
+-	static const int rail_slope_angle[4] = {180, 0, -90, 90};
++	static const int rail_slope_angle[4] = {0, 180, 90, -90};
  
+ 	enum RailTile {
+ 		straight,
+@@ -1367,10 +1364,10 @@ void MapblockMeshGenerator::drawRaillikeNode()
+ 	static const float size   = BS / 2;
+ 	float y2 = sloped ? size : -size;
+ 	v3f vertices[4] = {
+-		v3f( size,    y2 + offset, -size),
+-		v3f(-size,    y2 + offset, -size),
+-		v3f(-size, -size + offset,  size),
+-		v3f( size, -size + offset,  size),
++		v3f(-size,    y2 + offset,  size),
++		v3f( size,    y2 + offset,  size),
++		v3f( size, -size + offset, -size),
++		v3f(-size, -size + offset, -size),
+ 	};
+ 	if (angle)
+ 		for (v3f &vertex : vertices)
+@@ -1422,7 +1419,7 @@ void MapblockMeshGenerator::drawNodeboxNode()
+ 	u8 sametype_neighbors = 0;
+ 	for (int dir = 0; dir != 6; dir++) {
+ 		u8 flag = 1 << dir;
+-		v3s16 p2 = blockpos_nodes + p + nodebox_connection_dirs[dir];
++		v3s16 p2 = blockpos_nodes + p + nodebox_tile_dirs[dir];
+ 		MapNode n2 = data->m_vmanip.getNodeNoEx(p2);
+ 
+ 		// mark neighbors that are the same node type
+@@ -1436,9 +1433,12 @@ void MapblockMeshGenerator::drawNodeboxNode()
+ 		if (nodedef->get(n2).drawtype == NDT_NORMAL)
+ 			solid_neighbors |= flag;
+ 
+-		if (f->node_box.type == NODEBOX_CONNECTED &&
+-				nodedef->nodeboxConnects(n, n2, flag))
+-			neighbors_set |= flag;
++		if (f->node_box.type == NODEBOX_CONNECTED) {
++			p2 = blockpos_nodes + p + nodebox_connection_dirs[dir];
++			n2 = data->m_vmanip.getNodeNoEx(p2);
++			if (nodedef->nodeboxConnects(n, n2, flag))
++				neighbors_set |= flag;
++		}
+ 	}
+ 
+ 	std::vector<aabb3f> boxes;
+diff --git a/src/client/mapblock_mesh.cpp b/src/client/mapblock_mesh.cpp
+index 600371b..d8a8c25 100644
+--- a/src/client/mapblock_mesh.cpp
++++ b/src/client/mapblock_mesh.cpp
+@@ -729,34 +729,34 @@ void getNodeTile(MapNode mn, const v3s16 &p, const v3s16 &dir, MeshMakeData *dat
+ 	{
+ 		// 0     +X    +Y    +Z           -Z    -Y    -X   ->   value=tile,rotation
+ 		   0,0,  2,0 , 0,0 , 4,0 ,  0,0,  5,0 , 1,0 , 3,0 ,  // rotate around y+ 0 - 3
+-		   0,0,  5,0 , 0,1 , 2,0 ,  0,0,  3,0 , 1,3 , 4,0 ,
+-		   0,0,  3,0 , 0,2 , 5,0 ,  0,0,  4,0 , 1,2 , 2,0 ,
+ 		   0,0,  4,0 , 0,3 , 3,0 ,  0,0,  2,0 , 1,1 , 5,0 ,
++		   0,0,  3,0 , 0,2 , 5,0 ,  0,0,  4,0 , 1,2 , 2,0 ,
++		   0,0,  5,0 , 0,1 , 2,0 ,  0,0,  3,0 , 1,3 , 4,0 ,
+ 
+ 		   0,0,  2,3 , 5,0 , 0,2 ,  0,0,  1,0 , 4,2 , 3,1 ,  // rotate around z+ 4 - 7
+-		   0,0,  5,3 , 3,0 , 0,3 ,  0,0,  1,3 , 2,2 , 4,1 ,
+-		   0,0,  3,3 , 4,0 , 0,0 ,  0,0,  1,2 , 5,2 , 2,1 ,
+ 		   0,0,  4,3 , 2,0 , 0,1 ,  0,0,  1,1 , 3,2 , 5,1 ,
++		   0,0,  3,3 , 4,0 , 0,0 ,  0,0,  1,2 , 5,2 , 2,1 ,
++		   0,0,  5,3 , 3,0 , 0,3 ,  0,0,  1,3 , 2,2 , 4,1 ,
+ 
+ 		   0,0,  2,1 , 4,2 , 1,2 ,  0,0,  0,0 , 5,0 , 3,3 ,  // rotate around z- 8 - 11
+-		   0,0,  5,1 , 2,2 , 1,1 ,  0,0,  0,1 , 3,0 , 4,3 ,
+-		   0,0,  3,1 , 5,2 , 1,0 ,  0,0,  0,2 , 4,0 , 2,3 ,
+ 		   0,0,  4,1 , 3,2 , 1,3 ,  0,0,  0,3 , 2,0 , 5,3 ,
++		   0,0,  3,1 , 5,2 , 1,0 ,  0,0,  0,2 , 4,0 , 2,3 ,
++		   0,0,  5,1 , 2,2 , 1,1 ,  0,0,  0,1 , 3,0 , 4,3 ,
+ 
+ 		   0,0,  0,3 , 3,3 , 4,1 ,  0,0,  5,3 , 2,3 , 1,3 ,  // rotate around x+ 12 - 15
+-		   0,0,  0,0 , 4,3 , 2,1 ,  0,0,  3,3 , 5,3 , 1,2 ,
+-		   0,0,  0,1 , 2,3 , 5,1 ,  0,0,  4,3 , 3,3 , 1,1 ,
+ 		   0,0,  0,2 , 5,3 , 3,1 ,  0,0,  2,3 , 4,3 , 1,0 ,
++		   0,0,  0,1 , 2,3 , 5,1 ,  0,0,  4,3 , 3,3 , 1,1 ,
++		   0,0,  0,0 , 4,3 , 2,1 ,  0,0,  3,3 , 5,3 , 1,2 ,
+ 
+ 		   0,0,  1,1 , 2,1 , 4,3 ,  0,0,  5,1 , 3,1 , 0,1 ,  // rotate around x- 16 - 19
+-		   0,0,  1,0 , 5,1 , 2,3 ,  0,0,  3,1 , 4,1 , 0,2 ,
+-		   0,0,  1,3 , 3,1 , 5,3 ,  0,0,  4,1 , 2,1 , 0,3 ,
+ 		   0,0,  1,2 , 4,1 , 3,3 ,  0,0,  2,1 , 5,1 , 0,0 ,
++		   0,0,  1,3 , 3,1 , 5,3 ,  0,0,  4,1 , 2,1 , 0,3 ,
++		   0,0,  1,0 , 5,1 , 2,3 ,  0,0,  3,1 , 4,1 , 0,2 ,
+ 
+ 		   0,0,  3,2 , 1,2 , 4,2 ,  0,0,  5,2 , 0,2 , 2,2 ,  // rotate around y- 20 - 23
+-		   0,0,  4,2 , 1,1 , 2,2 ,  0,0,  3,2 , 0,3 , 5,2 ,
++		   0,0,  5,2 , 1,3 , 3,2 ,  0,0,  2,2 , 0,1 , 4,2 ,
+ 		   0,0,  2,2 , 1,0 , 5,2 ,  0,0,  4,2 , 0,0 , 3,2 ,
+-		   0,0,  5,2 , 1,3 , 3,2 ,  0,0,  2,2 , 0,1 , 4,2
++		   0,0,  4,2 , 1,1 , 2,2 ,  0,0,  3,2 , 0,3 , 5,2
+ 
+ 	};
+ 	u16 tile_index = facedir * 16 + dir_i;
 diff --git a/src/client/mesh.cpp b/src/client/mesh.cpp
-index 0aa6678c5..4bf07effa 100644
+index 0aa6678..4bf07ef 100644
 --- a/src/client/mesh.cpp
 +++ b/src/client/mesh.cpp
 @@ -299,6 +299,11 @@ void rotateMeshBy6dFacedir(scene::IMesh *mesh, int facedir)
@@ -78,70 +193,17 @@ index 0aa6678c5..4bf07effa 100644
  }
  
  void recalculateBoundingBox(scene::IMesh *src_mesh)
-diff --git a/src/mapnode.cpp b/src/mapnode.cpp
-index 82baaaba6..42f020e71 100644
---- a/src/mapnode.cpp
-+++ b/src/mapnode.cpp
-@@ -162,6 +162,7 @@ u8 MapNode::getWallMounted(const NodeDefManager *nodemgr) const
- 			f.param_type_2 == CPT2_COLORED_WALLMOUNTED) {
- 		return getParam2() & 0x07;
- 	} else if (f.drawtype == NDT_SIGNLIKE || f.drawtype == NDT_TORCHLIKE ||
-+			f.drawtype == NDT_PLANTLIKE ||
- 			f.drawtype == NDT_PLANTLIKE_ROOTED) {
- 		return 1;
- 	}
 diff --git a/src/nodedef.cpp b/src/nodedef.cpp
-index ff75c73c3..4022ac835 100644
+index 39c22bb..4022ac8 100644
 --- a/src/nodedef.cpp
 +++ b/src/nodedef.cpp
-@@ -1694,30 +1694,28 @@ bool NodeDefManager::nodeboxConnects(MapNode from, MapNode to,
- 		// ignores actually looking if back connection exists
+@@ -1695,8 +1695,7 @@ bool NodeDefManager::nodeboxConnects(MapNode from, MapNode to,
  		return CONTAINS(f2.connects_to_ids, from.param0);
  
--	// a rotated target: bring the face into the target's own frame first
--	if ((f2.param_type_2 == CPT2_FACEDIR ||
--			f2.param_type_2 == CPT2_COLORED_FACEDIR)
--			&& (connect_face >= 4)) {
--		static const u8 rot[33 * 4] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
--			0, 0, 0, 0, 4, 32, 16, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
--			0, // 4 - back
--			8, 4, 32, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
--			0, // 8 - right
--			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16, 8, 4, 32, 0,
--			0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
--			0, // 16 - front
--			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
--			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
--			0, 0, 0, 0, 0, 0, 32, 16, 8, 4 // 32 - left
--			};
--		return (f2.connect_sides
--			& rot[(connect_face * 4) + (to.param2 & 0x1F)]);
--	}
--
  	// does to node declare usable faces?
--	if (f2.connect_sides > 0)
+-	if (f2.connect_sides > 0 || f2.param_type_2 == CPT2_FACEDIR ||
+-			f2.param_type_2 == CPT2_COLORED_FACEDIR) {
 +	if (f2.connect_sides > 0) {
-+		if ((f2.param_type_2 == CPT2_FACEDIR ||
-+				f2.param_type_2 == CPT2_COLORED_FACEDIR)
-+				&& (connect_face >= 4)) {
-+			static const u8 rot[33 * 4] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-+				0, 0, 0, 0, 4, 32, 16, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-+				0, // 4 - back
-+				8, 4, 32, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-+				0, // 8 - right
-+				0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16, 8, 4, 32, 0,
-+				0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-+				0, // 16 - front
-+				0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-+				0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-+				0, 0, 0, 0, 0, 0, 32, 16, 8, 4 // 32 - left
-+				};
-+			return (f2.connect_sides
-+				& rot[(connect_face * 4) + (to.param2 & 0x1F)]);
-+		}
- 		return (f2.connect_sides & connect_face);
--
-+	}
- 	// the target is just a regular node, so connect no matter back connection
- 	return true;
- }
+ 		if ((f2.param_type_2 == CPT2_FACEDIR ||
+ 				f2.param_type_2 == CPT2_COLORED_FACEDIR)
+ 				&& (connect_face >= 4)) {

@@ -1,0 +1,50 @@
+diff --git a/Content.Client/Doors/FirelockSystem.cs b/Content.Client/Doors/FirelockSystem.cs
+index 911d40b15c..dec91d1234 100644
+--- a/Content.Client/Doors/FirelockSystem.cs
++++ b/Content.Client/Doors/FirelockSystem.cs
+@@ -85,5 +85,24 @@ private void OnAppearanceChange(Entity<FirelockComponent> ent, ref AppearanceCha
+ 
+         if (_sprite.LayerMapTryGet((ent, args.Sprite), DoorVisualLayers.BaseBolted, out var boltedLayer, logMissing: false))
+             _sprite.LayerSetVisible((ent, args.Sprite), boltedLayer, boltedVisible);
++
++        var warningLightsVisible =
++            state == DoorState.Closed
++            || state == DoorState.Welded
++            || state == DoorState.Denying;
++
++        if (_sprite.LayerMapTryGet((ent, args.Sprite), FirelockVisualLayersPressure.Base, out var pressureLayerIndex, logMissing: false))
++        {
++            if (!args.TryGetData<bool>(FirelockVisuals.PressureWarning, out var pressure))
++                pressure = false;
++            _sprite.LayerSetVisible((ent, args.Sprite), pressureLayerIndex, pressure && warningLightsVisible);
++        }
++
++        if (_sprite.LayerMapTryGet((ent, args.Sprite), FirelockVisualLayersTemperature.Base, out var tempLayerIndex, logMissing: false))
++        {
++            if (!args.TryGetData<bool>(FirelockVisuals.TemperatureWarning, out var temp))
++                temp = false;
++            _sprite.LayerSetVisible((ent, args.Sprite), tempLayerIndex, temp && warningLightsVisible);
++        }
+     }
+ }
+diff --git a/Resources/Prototypes/Entities/Structures/Doors/Firelocks/firelock.yml b/Resources/Prototypes/Entities/Structures/Doors/Firelocks/firelock.yml
+index 838fa6151c..eb67ec4447 100644
+--- a/Resources/Prototypes/Entities/Structures/Doors/Firelocks/firelock.yml
++++ b/Resources/Prototypes/Entities/Structures/Doors/Firelocks/firelock.yml
+@@ -67,16 +67,6 @@
+       shader: unshaded
+       sprite: Structures/Doors/Airlocks/Effects/airlock-effects-firelock.rsi
+       map: ["enum.FirelockVisualLayersTemperature.Base"]
+-  - type: GenericVisualizer
+-    visuals:
+-      enum.FirelockVisuals.PressureWarning:
+-        enum.FirelockVisualLayersPressure.Base:
+-          True: { visible: true }
+-          False: { visible: false }
+-      enum.FirelockVisuals.TemperatureWarning:
+-        enum.FirelockVisualLayersTemperature.Base:
+-          True: { visible: true }
+-          False: { visible: false }
+   - type: AnimationPlayer
+   - type: Fixtures
+     fixtures:

@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "checks": {
+        "behavior_in_task_description": {
+          "explanation": "instruction.md's 'Expected' bullets map onto every f2p category: shaped blocks (stairs/slabs) facing the way they were placed covers the facedir/node-box-side tests; 'a block that links up with its neighbours links correctly' (with the track named as an example) covers the glass-frame, rail-curve and fence tests; 'nothing disappears ... nothing is drawn even slightly nearer than the surface it belongs to (this matters for blocks that have a second picture painted over their main one)' covers the three polygon-offset/overlay tests precisely, including the overlay-only caveat; and 'the block the player points at is marked by one closed box ... also for a ladder or a sign fixed to a wall' covers the wallmounted selection-box tests. Per task.toml's difficulty_explanation this is intentionally a hard visual-regression task that deliberately withholds which specific instance/axis is wrong (that must be read off the video), but the categories of expected behavior that the hidden tests check are all named.",
+          "outcome": "pass"
+        },
+        "behavior_in_tests": {
+          "explanation": "Every behavior named in instruction.md has a corresponding test: node-box/stair facing (test_node_drawing.cpp facedir tests), neighbour linking (framed glass, rail curves, fence pairs), nothing-nearer-than-surface for overlaid tiles (test_tile_polygon_offset.cpp, plus the no-overlay-no-offset test matching 'blocks without one are fine as they are'), and the single-closed-box outline for wall-mounted nodes. The generic 'everything else should keep looking as it does now' is backed by the p2p list, which tests the unaffected counterpart of each fixed behavior (other axis/other directions) so regressions there would be caught too.",
+          "outcome": "pass"
+        },
+        "informative_test_structure": {
+          "explanation": "Both added test files are organized into clearly commented sections (e.g. '---- framed glass ----', '---- turned node boxes ----', '---- node box sides ----', '---- rails ----', '---- fences ----', '---- wall-mounted outlines ----'), each with a short explanatory comment, descriptive TEST_CASE names that double as behavior specifications, and small focused helper functions (render, covered, hasFace, sameBoxes) that make the geometric assertions legible.",
+          "outcome": "pass"
+        },
+        "anti_cheating_measures": {
+          "explanation": "The injected bug patches are applied, then deleted in the same Dockerfile RUN layer before the harbor_base commit/tag is created, so no diff or history reveals the defects. Only assets/recording.mp4 is copied into the image (explicitly not the whole assets/ folder, since ASSET_MANIFEST.json spells out the bugs in words). tests/ and solution/ are never copied into the image (test.patch and fix.patch only exist in the task repo, applied at grading time via test.sh). The agent runs with network_mode = 'no-network', preventing it from fetching the real upstream fix commit from GitHub. test.sh resets any path test.patch touches from the immutable harbor_base tag before applying hidden tests, preventing tampering with the harness.",
+          "outcome": "pass"
+        },
+        "structured_data_schema": {
+          "explanation": "This is a C++ source-code bug-fix task graded by compiling and running Catch2 unit tests against the existing engine source; it does not require the agent to produce or conform to any structured output schema (JSON/CSV/API/DB).",
+          "outcome": "not_applicable"
+        },
+        "pinned_dependencies": {
+          "explanation": "The core dependency — the Luanti repository itself — is pinned to a full 40-character commit SHA (LUANTI_BASE_SHA/base_commit) for reproducible checkout. apt packages are unpinned but that is acceptable per guidance. No pip/npm packages are used by the test harness (verifier.py and judge.py rely only on the Python standard library).",
+          "outcome": "pass"
+        },
+        "typos": {
+          "explanation": "Checked instruction.md, README.md, task.toml, tests/*, solution/*, and the Dockerfile for misspellings, mismatched filenames/paths, and malformed hashes (the base/fix commit SHAs and the asset SHA-256 all have the correct character counts and match the referenced file). No typos were found that would cause failures or confusion.",
+          "outcome": "pass"
+        },
+        "tests_or_solution_in_image": {
+          "explanation": "environment/Dockerfile only COPYs bugs/ (deleted within the same RUN before the harbor_base commit) and assets/recording.mp4. Neither tests/ nor solution/ is copied into the built image; test.patch and fix.patch are only referenced from /tests and /solution at grading/solve time, outside the image build.",
+          "outcome": "pass"
+        },
+        "test_deps_in_image": {
+          "explanation": "The hidden tests are additional Catch2 TEST_CASE files that plug into Luanti's existing --run-unittests client harness, which is already built generically as part of the normal engine build (BUILD_UNITTESTS=TRUE is a standard, bug-agnostic build flag, not something added to leak test-specific information). No extra test-only packages are installed in the Dockerfile; test.sh only runs 'cmake --build' to pick up the newly added test .cpp files and CMakeLists.txt entry.",
+          "outcome": "pass"
+        },
+        "hardcoded_solution": {
+          "explanation": "solution/solve.sh applies solution/fix.patch, a real unified diff touching 5 source files (content_mapblock.cpp, tile.cpp, tile.h, mapnode.cpp, nodedef.cpp) that reverts the 6 injected bug patches and additionally fixes the pre-existing overlay polygon-offset bug from the base commit, i.e. it performs the actual code fix rather than printing/echoing an answer.",
+          "outcome": "pass"
+        },
+        "file_reference_mentioned": {
+          "explanation": "The task requires editing existing engine source files in place (as confirmed by task.toml's files_edited list) rather than producing new named output artifacts for the tests to locate, so there is no output filename that instruction.md would need to state.",
+          "outcome": "not_applicable"
+        }
+      },
+      "cost_usd": 0.36501160000000005,
+      "task_name": "luanti_org__luanti_15821_mm",
+      "error": null
+    }
+  ]
+}

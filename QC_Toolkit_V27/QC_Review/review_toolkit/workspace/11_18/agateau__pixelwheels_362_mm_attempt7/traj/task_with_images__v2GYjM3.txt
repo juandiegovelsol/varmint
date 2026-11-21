@@ -1,0 +1,667 @@
+### 1 USER PROMPT (len 1066)
+### 2 CALL Bash: cd /app; git ls-files | head -100; git ls-files | wc -l; ls .harbor_assets; ffprobe .harbor_assets/recording.mp4 2>&1 | tail -5
+### 2 OBS: .changes/0.22.0.md
+.changes/0.23.0.md
+.changes/0.24.0.md
+.changes/0.24.1.md
+.changes/0.24.2.md
+.changes/header.tpl.md
+.changes/unreleased/.gitkeep
+.changes/unreleased/Added-20230215-090241.yaml
+.changes/unreleased/Added-20230509-084407.yaml
+.changes/unreleased/Added-20230601-093308.yaml
+.changes/unreleased/Added-20230723-223347.yaml
+.changes/unreleased/Changed-20230415-203039.yaml
+.changes/unreleased/Changed-20230426-203023.yaml
+.changes/unreleased/Fixed-20230217-082645.yaml
+.changes/unreleased/Fixed-20230522-183938.yaml
+.changes/unreleased/Fixed-20230522-191115.yaml
+.changes/unreleased/Fixed-20230529-090945.yaml
+.changes/unreleased/Fixed-20230529-191931.yaml
+.changes/unreleased/Fixed-20230616-184222.yaml
+.changes/unreleased/Fixed-20230722-201350.yaml
+.changes/unreleased/Fixed-20230724-223013.yaml
+.changes/unreleased/Fixed-20230726-231254.yaml
+.changie.yaml
+.dockerignore
+.github/ISSUE_TEMPLATE/bug_report.md
+.github/workflows/changelog-check.yml
+.github/workflows/main.yml
+.gitignore
+.markdownlint.yml
+.pre-commit-config.yaml
+CHANGELOG.md
+Dockerfile
+LICENSE.Apache-2.0
+LICENSE.CC-BY-SA
+LICENSE.GPL-3
+Makefile
+README.md
+android/.gitignore
+android/AndroidManifest.xml
+android/assets/champi
+### 3 CALL Bash: cd /app; mkdir -p /tmp/fr; ffmpeg -loglevel error -i .harbor_assets/recording.mp4 -vf fps=2,scale=960:-1 /tmp/fr/f%02d.png; ls /tmp/fr | wc -l; git ls-files core/src | grep -iE 'render|bonus|camera|shadow|vehicle|gun|missile|mine|turbo' 
+### 3 OBS: 23
+core/src/com/agateau/pixelwheels/Renderer.java
+core/src/com/agateau/pixelwheels/bonus/Bonus.java
+core/src/com/agateau/pixelwheels/bonus/BonusAdapter.java
+core/src/com/agateau/pixelwheels/bonus/BonusPool.java
+core/src/com/agateau/pixelwheels/bonus/BonusSpot.java
+core/src/com/agateau/pixelwheels/bonus/Bullet.java
+core/src/com/agateau/pixelwheels/bonus/ClosestRacerFinder.java
+core/src/com/agateau/pixelwheels/bonus/GunBonus.java
+core/src/com/agateau/pixelwheels/bonus/Mine.java
+core/src/com/agateau/pixelwheels/bonus/MineBonus.java
+core/src/com/agateau/pixelwheels/bonus/Missile.java
+core/src/com/agateau/pixelwheels/bonus/MissileBonus.java
+core/src/com/agateau/pixelwheels/bonus/MissileGuidingSystem.java
+core/src/com/agateau/pixelwheels/bonus/TurboBonus.java
+core/src/com/agateau/pixelwheels/racer/BonusSpotHitComponent.java
+core/src/com/agateau/pixelwheels/racer/SkidmarksRenderer.java
+core/src/com/agateau/pixelwheels/racer/Vehicle.java
+core/src/com/agateau/pixelwheels/racer/VehicleRenderer.java
+core/src/com/agateau/pixelwheels/racescreen/CameraUpdater.java
+core/src/com/agateau/pixelwheels/racescreen/FreeCameraUpdater.java
+core/src/com/agateau/pixelwheels/racescreen/GameRenderer.java
+core
+### 4 CALL Bash: cd /app/core/src/com/agateau/pixelwheels; cat racescreen/RacerCameraUpdater.java | sed -n 20,200p
+### 4 CALL Read: /tmp/fr/f06.png
+### 4 OBS: import com.agateau.pixelwheels.Constants;
+import com.agateau.pixelwheels.GamePlay;
+import com.agateau.pixelwheels.GameWorld;
+import com.agateau.pixelwheels.racer.Racer;
+import com.agateau.pixelwheels.racer.Vehicle;
+import com.badlogic.gdx.math.MathUtils;
+import com.badlogic.gdx.math.Vector2;
+
+/** A CameraUpdater tracking a racer */
+class RacerCameraUpdater extends CameraUpdater {
+    private static final float MAX_ZOOM_SPEED = 75f;
+    private static final float MIN_ZOOM = 0.6f;
+    private static final float MAX_ZOOM = 2.1f;
+
+    private final Vector2 sDelta = new Vector2();
+    private final Racer mRacer;
+
+    RacerCameraUpdater(GameWorld world, Racer racer) {
+        super(world);
+        mRacer = racer;
+    }
+
+    @Override
+    public void update(float delta) {
+        boolean immediate = delta < 0;
+        Vehicle vehicle = mRacer.getVehicle();
+
+        // Compute viewport size
+        mNextCameraInfo.zoom =
+                MathUtils.lerp(MIN_ZOOM, MAX_ZOOM, vehicle.getSpeed() / MAX_ZOOM_SPEED);
+        limitZoomChange(delta);
+        float viewportWidth = GamePlay.instance.viewportWidth * mNextCameraInfo.zoom;
+        float viewportHeight = viewportWidth * mScreenHeight / mSc
+### 4 OBS: {"type": "image", "source": {"type": "base64", "data": "iVBORw0KGgoAAAANSUhEUgAAA8AAAAIcCAIAAAC2P1AsAAAACXBIWXMAAAAAAAAAAQCEeRdzAAAQAElEQVR4nNS9+W/bTJ7/Of/F/rDAznQ3nn4Sw7YkSCIJnuAJkpKgE/IFW7bhE74RxwmS2IZP+ISdA4mdINeD52p0T8+gv9/9X/a33R92gQHmakwfg9npY9/FomhalyU/Sc9s8AJD0cViHZ+qelexqvhXwoHdEjMMt6fXXPkLIx3Z4qHV9K8H9q3B7fKxk3ndn7oo4xH8vtF+ZAMfWoREONRTl0X3omA8S//XpmE94pGB4Nkvs6WvhvgDTTr+dD57KWk+z6RflxB9+cRqkX1NwqbLJ+QoHRud3tsmyGj1zCl+HCIRP7wh0zsNg3buZt6U4TkSAQYWXJdCNLuXPdaBcGzwR7qyZwItBL0i7xOkg07xzHI/JR+k9TO776sh7dSWjwzl2AyDK+KBJuyrACf4CaRDHeftYD1Lp17lC+/61ROL3kh9CMCV+ouiB3dqMsd68oDA7TpA3EkBaccG4q4JuD0Cu0/g9616UIMhv+pwpCNXPsoC/lAufOyzXmS4fQWG2sgxAdUOQPYBnCBr4BgEJtEQ7SydezvI7mrUZTNnzZA9lINPxKHuYRAOHHnfVo7k0vui/TTF70gyMvdmdNDaYgWvilZOXOt5vv+bcf08o56m8JPW22Ga27wGYPAwe/nQAcpBKkA+JAhHV1Qr2M7sX9w33BcF8zyjnbhIZPz8IW1HGPhmP8sV3w/A7G0UeVStezr8F/etOnDR4A9UwB0YhH2XcGAIR5Z4bEsnDjU57YigHzqa53/r9K+BGmoAzSD3VSn7ZoBWzjQ7apy1T/hZCKr5LOe8LAKco15tvw1lj2zAH9rcgYUU43c1ac+Clcr7LpAOCPzhFc3yvWk6HOmAOZalZ2bmq2LySMCDAGoJ1CFBjUHPqfIJ22p9ZOvNHnFHec+/GzKeZkmMqgW/JS5hLw9oHFFIUdakfY89h7DrynvE7JWjNCquGlCb3SThrtGsRPjhObL4Q5NaI42y+ImAV6gHMm8H8Ijkrsru63gQzik0ndV9gh4CP9HG0QLb2giR+PaLAq1taC3dKbirddXUkL/qSEAD6EsEsaNnfBJos+q8
+### 5 CALL Bash: cd /app/core/src/com/agateau/pixelwheels; sed -n 20,200p racescreen/CameraUpdater.java; grep -rn "getCameraAngle" --include=*.java . | head; grep -n "CAMERA" Constants.java
+### 5 OBS: import com.agateau.pixelwheels.GameWorld;
+import com.agateau.pixelwheels.map.Track;
+import com.badlogic.gdx.graphics.OrthographicCamera;
+import com.badlogic.gdx.math.MathUtils;
+import com.badlogic.gdx.math.Vector2;
+
+abstract class CameraUpdater {
+    static final float IMMEDIATE = -1;
+    private static final float MAX_ZOOM_DELTA = 0.6f;
+    static final float MAX_CAMERA_DELTA = 180;
+
+    final GameWorld mWorld;
+    private OrthographicCamera mCamera;
+    int mScreenWidth;
+    int mScreenHeight;
+
+    static class CameraInfo {
+        float viewportWidth;
+        float viewportHeight;
+        Vector2 position = new Vector2();
+        float zoom = 1;
+
+        void clampPositionToTrack(Track track) {
+            float minWidth = viewportWidth / 2;
+            float minHeight = viewportHeight / 2;
+            float maxWidth = track.getMapWidth() - viewportWidth / 2;
+            float maxHeight = track.getMapHeight() - viewportHeight / 2;
+            if (minWidth < maxWidth) {
+                position.x = MathUtils.clamp(position.x, minWidth, maxWidth);
+            } else {
+                position.x = track.getMapWidth() / 2;
+            }
+            if (minHeight < maxHeight) {
+     
+### 6 CALL Bash: cd /app/core/src/com/agateau/pixelwheels; cat racer/VehicleRenderer.java | sed -n 19,400p
+### 6 OBS: package com.agateau.pixelwheels.racer;
+
+import com.agateau.pixelwheels.Assets;
+import com.agateau.pixelwheels.Constants;
+import com.agateau.pixelwheels.Renderer;
+import com.agateau.pixelwheels.ZLevel;
+import com.agateau.pixelwheels.gameobject.CellFrameBufferManager;
+import com.agateau.pixelwheels.gameobject.CellFrameBufferUser;
+import com.agateau.pixelwheels.utils.BodyRegionDrawer;
+import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.graphics.Color;
+import com.badlogic.gdx.graphics.g2d.Animation;
+import com.badlogic.gdx.graphics.g2d.Batch;
+import com.badlogic.gdx.graphics.g2d.TextureRegion;
+import com.badlogic.gdx.math.MathUtils;
+import com.badlogic.gdx.math.Rectangle;
+import com.badlogic.gdx.math.Vector2;
+import com.badlogic.gdx.physics.box2d.Body;
+import com.badlogic.gdx.utils.Array;
+
+/** Renders a vehicle */
+public class VehicleRenderer implements CellFrameBufferUser {
+    private static final int CELL_SIZE = 200;
+
+    private final Assets mAssets;
+    private final Vehicle mVehicle;
+    private final Array<Renderer> mRenderers = new Array<>();
+    private final SkidmarksRenderer mSkidmarksRenderer;
+    private float mTime = 0;
+    private final BodyRegionDrawer mBodyRegionDrawe
+### 7 AGENT MSG: Found one bug: the race camera points its "look ahead" offset the wrong way (`rotate(90 - angle)` mirrors the direction). Next I'm checking how shadows and carried items are drawn.
+### 7 CALL Bash: cd /app/core/src/com/agateau/pixelwheels; sed -n 19,200p utils/BodyRegionDrawer.java; grep -rn "computeShadowOffset\|SHADOW_ALPHA\|drawShadow" --include=*.java /app/core/src
+### 7 OBS: package com.agateau.pixelwheels.utils;
+
+import com.agateau.pixelwheels.Constants;
+import com.badlogic.gdx.graphics.g2d.Batch;
+import com.badlogic.gdx.graphics.g2d.TextureRegion;
+import com.badlogic.gdx.math.MathUtils;
+import com.badlogic.gdx.math.Vector2;
+import com.badlogic.gdx.physics.box2d.Body;
+
+/** Helper class to draw a TextureRegion for a Box2D Body */
+public class BodyRegionDrawer {
+    public static final float SHADOW_ALPHA = 0.35f;
+    public static final float SHADOW_OFFSET_PX = 3;
+    private static final int Z_MAX_SHADOW_OFFSET_PX = 30;
+    private static final int SCALE_MAX_SHADOW_OFFSET_PX = 30;
+    private Batch mBatch;
+    private float mZ = 0;
+    private float mScale = 1;
+    private float mOffsetX = 0;
+    private float mOffsetY = 0;
+
+    public void setBatch(Batch batch) {
+        mBatch = batch;
+    }
+
+    /**
+     * Defines the default Z value for a body.
+     *
+     * <p>0 for a ground object, 1 for flying object.
+     *
+     * <p>Only affects the offset of the shadow.
+     */
+    public void setZ(float z) {
+        mZ = z;
+    }
+
+    /**
+     * Defines the scale of the body.
+     *
+     * <p>1 by default, bigger for bigger objects.
+     *
+     * <p>Affects 
+### 8 CALL Bash: cd /app/core/src/com/agateau/pixelwheels; sed -n 135,160p screens/VehicleDrawer.java; sed -n 235,265p racescreen/Helicopter.java; sed -n 80,95p screens/ChampionshipFinishedScreen.java
+### 8 OBS: // Draw mFrameBuffer on screen
+        batch.setProjectionMatrix(sOldMatrix);
+        batch.setTransformMatrix(sOldTransformMatrix);
+        batch.begin();
+        drawFrameBuffer(batch);
+
+        // Draw vehicle to screen
+        drawInternal(batch, region, mCenter);
+    }
+
+    private void drawFrameBuffer(Batch batch) {
+        float oldColor = batch.getPackedColor();
+        batch.setColor(0, 0, 0, BodyRegionDrawer.SHADOW_ALPHA);
+        batch.draw(
+                mFrameBuffer.getColorBufferTexture(),
+                // dst
+                mCenter.x - FB_WIDTH / 2f + BodyRegionDrawer.SHADOW_OFFSET_PX,
+                mCenter.y - FB_HEIGHT / 2f - BodyRegionDrawer.SHADOW_OFFSET_PX,
+                // dst size
+                FB_WIDTH,
+                FB_HEIGHT,
+                // src
+                0,
+                0,
+                FB_WIDTH,
+                FB_HEIGHT,
+        mDelta.limit(delta * speed * Constants.UNIT_FOR_PIXEL);
+        mPosition.add(mDelta);
+        mAngle = MathUtils.lerp(mStartAngle, mEndAngle, progress);
+    }
+
+    @Override
+    public void draw(Batch batch, ZLevel zLevel, Rectangle viewBounds) {
+        if (!AgcMathUtils.rectangleContains(viewBounds, 
+### 9 AGENT MSG: Convention is +x, −y for shadows. The vehicle shadow uses the opposite sign, and `drawShadow` treats a radian angle as degrees. Fixing those, then the camera.
+### 9 CALL Bash: cd /app/core/src/com/agateau/pixelwheels; python3 - <<'EOF'
+import re
+p='racer/VehicleRenderer.java'; s=open(p).read()
+s=s.replace("mVehicle.getX() - offset, mVehicle.getY() + offset","mVehicle.getX() + offset, mVehicle.getY() - offset"); open(p,'w').write(s)
+p='utils/BodyRegionDrawer.java'; s=open(p).read()
+s=s.replace("""                1, 1, // scale
+                angle);""","""                mScale, mScale, // scale
+                angle * MathUtils.radDeg);"""); open(p,'w').write(s)
+p='racescreen/RacerCameraUpdater.java'; s=open(p).read()
+s=s.replace("""        sDelta.set(0, advance)
+                .rotate(90 - mRacer.getCameraAngle())""","""        sDelta.set(advance, 0)
+                .rotate(mRacer.getCameraAngle())""")
+s=s.replace("""        mNextCameraInfo.position.set(mCameraInfo.position).add(sDelta);
+        if (!immediate) {
+            sDelta.limit(MAX_CAMERA_DELTA * delta);
+        }
+        limitZoomChange(delta);
+""","""        if (!immediate) {
+            sDelta.limit(MAX_CAMERA_DELTA * delta);
+        }
+        mNextCameraInfo.position.set(mCameraInfo.position).add(sDelta);
+"""); open(p,'w').write(s)
+EOF
+git diff --stat; sed -n 200,215p racer/Racer.java
+### 9 OBS: core/src/com/agateau/pixelwheels/racer/VehicleRenderer.java        | 2 +-
+ .../src/com/agateau/pixelwheels/racescreen/RacerCameraUpdater.java | 7 +++----
+ core/src/com/agateau/pixelwheels/utils/BodyRegionDrawer.java       | 4 ++--
+ 3 files changed, 6 insertions(+), 7 deletions(-)
+
+    /**
+     * Returns the angle the camera should use to follow the vehicle.
+     *
+     * <p>This is the same as Vehicle.getAngle() except when spinning, in which case we return the
+     * original angle, to avoid too much camera shaking, especially when "rotate screen" option is
+     * off.
+     */
+    public float getCameraAngle() {
+        if (mSpinningComponent.isActive()) {
+            return mSpinningComponent.getOriginalAngle();
+        } else {
+            return mVehicle.getAngle();
+        }
+    }
+
+[stdout]
+ core/src/com/agateau/pixelwheels/racer/VehicleRenderer.java        | 2 +-
+ .../src/com/agateau/pixelwheels/racescreen/RacerCameraUpdater.java | 7 +++----
+ core/src/com/agateau/pixelwheels/utils/BodyRegionDrawer.java       | 4 ++--
+ 3 files changed, 6 insertions(+), 7 deletions(-)
+
+    /**
+     * Returns the angle the camera should use to follow the vehicle.
+     *
+     * <p>This is the sam
+### 10 CALL Bash: cd /app/core/src/com/agateau/pixelwheels; grep -rn "setScale\|setZ(" --include=*.java . | grep -v "^./screens\|ui/" | head; sed -n 140,330p bonus/Mine.java
+### 10 OBS: racer/Vehicle.java:301:    public void setZ(float z) {
+obstacles/TiledObstacleCreator.java:160:            sPolygon.setScale(hk, vk);
+racer/HoleHandlerComponent.java:122:        mVehicle.setZ(-mTime / MAX_FALL_DURATION / 10);
+racer/HoleHandlerComponent.java:144:        mVehicle.setZ(-mTime / MAX_FALL_DURATION / 10);
+racer/HoleHandlerComponent.java:162:        mVehicle.setZ(Interpolation.pow2.apply(mTime / LIFT_DROP_DURATION));
+racer/HoleHandlerComponent.java:212:        mVehicle.setZ(Interpolation.bounceOut.apply(1, 0, mTime / LIFT_DROP_DURATION));
+racer/HoleHandlerComponent.java:220:        mVehicle.setZ(0);
+bonus/Mine.java:187:            mBodyRegionDrawer.setZ(z);
+utils/BodyRegionDrawer.java:51:    public void setZ(float z) {
+utils/BodyRegionDrawer.java:62:    public void setScale(float scale) {
+        mJointDef.localAnchorB.set(mBody.getLocalCenter());
+        mJoint = mGameWorld.getBox2DWorld().createJoint(mJointDef);
+    }
+
+    @Override
+    public void reset() {
+        mGameWorld.getBox2DWorld().destroyBody(mBody);
+        mBody = null;
+    }
+
+    @Override
+    public void dispose() {
+        sPool.free(this);
+    }
+
+    @Override
+    public void act(float delta) {
+       
+### 11 CALL Bash: cd /app/core/src/com/agateau/pixelwheels; sed -n 19,80p ZLevel.java; sed -n 230,330p bonus/Missile.java
+### 11 OBS: package com.agateau.pixelwheels;
+
+/** The drawing layers, ordered from bottom to top */
+public enum ZLevel {
+    GROUND,
+    VEHICLES,
+    SHADOWS,
+    OBSTACLES,
+    FLYING
+}
+
+    private void actShot(float delta) {
+        findTarget();
+        if (mTarget != null) {
+            mStatus = Status.LOCKED;
+        }
+        mGuidingSystem.act(null);
+        consumeTime(delta);
+    }
+
+    private void actLocked(float delta) {
+        mGuidingSystem.act(mTarget.getPosition());
+        consumeTime(delta);
+    }
+
+    private void consumeTime(float delta) {
+        mTime += delta;
+        if (mTime >= DURATION) {
+            explode();
+        }
+    }
+
+    private void findTarget() {
+        World world = mGameWorld.getBox2DWorld();
+        mTarget =
+                mRacerFinder.find(
+                        world, mBody.getWorldCenter(), mBody.getAngle() * MathUtils.radDeg);
+    }
+
+    @Override
+    public void draw(Batch batch, ZLevel zLevel, Rectangle viewBounds) {
+        if (zLevel == ZLevel.FLYING) {
+            // Draw the shadow at Z_FLYING so that the shadow is drawn *over* its vehicle
+            drawShadow(batch);
+            drawMissile(batch);
+            drawTarget(batch);
+
+### 12 CALL Bash: cd /tmp/fr; ffmpeg -loglevel error -y -i /app/.harbor_assets/recording.mp4 -vf "fps=2,scale=480:-1,tile=4x6" /tmp/sheet.png
+### 12 CALL Read: /tmp/sheet.png
+### 12 OBS: Shell cwd was reset to /app
+
+[stderr]
+
+Shell cwd was reset to /app
+[metadata] {"noOutputExpected": false}
+### 12 OBS: {"type": "image", "source": {"type": "base64", "data": "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAUEBAQEAwUEBAQGBQUGCA0ICAcHCBALDAkNExAUExIQEhIUFx0ZFBYcFhISGiMaHB4fISEhFBkkJyQgJh0gISD/2wBDAQUGBggHCA8ICA8gFRIVICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICD/wAARCAZUB4ADASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDgdEdXvNQZOmY8/Xbz+ua6CSHZCsnmKSeqg81yemzrYajdRctE2xiTyRkZ/rXSKQyh1OVPQivHxSanfpZfkfN5kmsVNvuPy7YXcT6DNORzDId0YLDIwe3amqzIcqcGh3aRiznJPeuU84TNPfywF8tieOcjHNOS2neIyLGxHGOOvOOPWoiCCQRgii9wDNPjSSaQIDk+56CiGGSdisYyR+VI8bxsFcYOM4ov0EzAvlYa2hKkABucf7LU2JiqWbDqJCR+YqjqsmpN4ghRifsyHKgNnPB61oRyR+Rax+WCd5zzznIr0ZRslbU+jzG1
+### 13 CALL Bash: cd /tmp; mkdir -p z; ffmpeg -loglevel error -y -ss 8.0 -t 2.5 -i /app/.harbor_assets/recording.mp4 -vf "fps=6,crop=700:400:700:400,tile=3x5" /tmp/z/b.png
+### 13 CALL Read: /tmp/z/b.png
+### 13 OBS: Shell cwd was reset to /app
+
+[stderr]
+
+Shell cwd was reset to /app
+[metadata] {"noOutputExpected": false}
+### 13 OBS: {"type": "image", "source": {"type": "base64", "data": "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMDAsKCwsNDhIQDQ4RDgsLEBYQERMUFRUVDA8XGBYUGBIUFRT/2wBDAQMEBAUEBQkFBQkUDQsNFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBT/wAARCAdUB7IDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD5cpVbac0lFfZnlDnfec4A+lNoooAKKKKAFBI6cUlFFABT3heIL5ilCwyAetIrFGDDgg5FEkjSyM7sWY9STQA2iiigCaGdYYnGwNIej5+7UWPQcUlLQAlFFFABR1GKKKACpbe2kupRHGMse56D6moqkSaSJWVWKhhggdxQAwgqSD1FJRRQAUUVPbxxSgq7mORuFY42j60AQikp0ieXIyZDYOMjkGm0ASwOkcmZIxIuDwTiosYpQM0lABRRRQAUUUUAFS20qwyhmUOvcGoqKAHO5dix702iigAopccUlABRRRQAoBJwBk0+eBrd
+### 14 USER MSG: [Image: original 2100x2000, displayed at 1970x1876. Multiply coordinates by 1.07 to map to original image.]
+### 15 CALL Bash: cd /app/core/src/com/agateau/pixelwheels; grep -n "mOwner\|mStatus\b\|Status\.\|WIDTH\|isFlying" bonus/Missile.java | head -40; grep -n "isFlying\|getVehicleRenderer" racer/Vehicle.java racer/Racer.java; sed -n 60,140p bonus/GunBonus.java | grep -n "draw\|ZLevel" 
+### 15 OBS: 66:    private static final float WIDTH = 44;
+118:    private Status mStatus;
+126:                WIDTH * Constants.UNIT_FOR_PIXEL / 2, HEIGHT * Constants.UNIT_FOR_PIXEL / 2);
+152:        object.mStatus = Status.WAITING;
+186:        mStatus = Status.SHOT;
+214:        switch (mStatus) {
+234:            mStatus = Status.LOCKED;
+266:            if (mStatus != Status.WAITING) {
+276:        batch.setColor(mStatus == Status.LOCKED ? LOCKED_COLOR : TARGETED_COLOR);
+295:        float refH = Constants.UNIT_FOR_PIXEL * -WIDTH / 2;
+362:        if (mStatus == Status.WAITING) {
+racer/Vehicle.java:289:    public boolean isFlying() {
+racer/Vehicle.java:315:        if (!isFlying()) {
+racer/Racer.java:363:    public VehicleRenderer getVehicleRenderer() {
+
+[stdout]
+66:    private static final float WIDTH = 44;
+118:    private Status mStatus;
+126:                WIDTH * Constants.UNIT_FOR_PIXEL / 2, HEIGHT * Constants.UNIT_FOR_PIXEL / 2);
+152:        object.mStatus = Status.WAITING;
+186:        mStatus = Status.SHOT;
+214:        switch (mStatus) {
+234:            mStatus = Status.LOCKED;
+266:            if (mStatus != Status.WAITING) {
+276:        batch.setColor(mStatus == Status.LOCKED ? LOCKED_COLO
+### 16 CALL Bash: cd /app/core/src/com/agateau/pixelwheels; sed -n 60,215p bonus/Missile.java; sed -n 350,380p bonus/Missile.java; sed -n 280,300p racer/Vehicle.java
+### 16 OBS: /** A player bullet */
+public class Missile extends GameObjectAdapter
+        implements Collidable, Pool.Poolable, Disposable, Explosable {
+    private static final ReflectionPool<Missile> sPool = new ReflectionPool<>(Missile.class);
+
+    private static final float WIDTH = 44;
+    private static final float HEIGHT = 13;
+    private static final float DURATION = 3;
+
+    private static final float LOCK_DISTANCE = 40;
+    private static final float LOCK_ARC = 120;
+    private static final float WAITING_DENSITY = 0.0000001f;
+    private static final float SHOT_DENSITY = 0.0001f;
+    private static final Color TARGETED_COLOR = new Color(1, 1, 1, 0.7f);
+    private static final Color LOCKED_COLOR = new Color(1, 0.3f, 0.3f, 0.9f);
+    private SoundPlayer mSoundPlayer;
+
+    enum Status {
+        WAITING,
+        SHOT,
+        LOCKED
+    }
+
+    // Init-once fields
+    private final BodyDef mBodyDef = new BodyDef();
+    private final WeldJointDef mJointDef = new WeldJointDef();
+    private final PolygonShape mShape = new PolygonShape();
+    private final BodyRegionDrawer mDrawer = new BodyRegionDrawer();
+    private final ClosestRacerFinder mRacerFinder = new ClosestRacerFinder(LOCK_DISTANC
+### 17 CALL Bash: cd /tmp; ffmpeg -loglevel error -y -ss 9.6 -t 1.2 -i /app/.harbor_assets/recording.mp4 -vf "fps=5,crop=900:500:0:580,tile=2x3" /tmp/z/m.png
+### 17 CALL Read: /tmp/z/m.png
+### 17 OBS: Shell cwd was reset to /app
+
+[stderr]
+
+Shell cwd was reset to /app
+[metadata] {"noOutputExpected": false}
+### 17 OBS: {"type": "image", "source": {"type": "base64", "data": "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMDAsKCwsNDhIQDQ4RDgsLEBYQERMUFRUVDA8XGBYUGBIUFRT/2wBDAQMEBAUEBQkFBQkUDQsNFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBT/wAARCAXcBwgDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD5cooor7M8oKKKKAHrC7xvIBlF6n0plWbK9exkZkCtlcbXGRVagAopeKSgAooooAKKKKACiiigAoopcGgBKKKKACpIYWnYqgLEDOBUdSW872syyRsVYfrQAwjBxSVNczm5kMhUKx67RgZqGgAooooAKKKKAClCljgDJpKlt5jbyrIBkqcjNADZYngkKSDa46imVJLKZXLsSWPUmo6ACiiigAooooAKKKKACiiigAooooAKKKKACvpP/gnv/wAnKaV/15XP/oFfNlfSn/BPj/k5bSB62N1/6BXPX/hS9DSmveP1hHSlpFpa+UPR
+### 18 AGENT MSG: The recording also shows the missile's exhaust flame off to the side of the missile instead of at its tail. Fixing the flame position and the missile's draw layer now:
+### 18 CALL Bash: cd /app/core/src/com/agateau/pixelwheels; python3 - <<'EOF'
+p='bonus/Missile.java'; s=open(p).read()
+s=s.replace("mReactorPos.set(0, refH).rotateRad(angle).add(center);","mReactorPos.set(refH, 0).rotateRad(angle).add(center);")
+old="""        if (zLevel == ZLevel.FLYING) {
+            // Draw the shadow at Z_FLYING so that the shadow is drawn *over* its vehicle
+            drawShadow(batch);
+            drawMissile(batch);
+            drawTarget(batch);
+            if (mStatus != Status.WAITING) {
+                drawReactorFire(batch);
+            }
+        }
+    }
+"""
+new="""        if (mStatus == Status.WAITING) {
+            // While carried, the missile is drawn at the same level as its vehicle, so that it
+            // gets hidden with it (for example under a bridge) and uses the same color
+            Vehicle vehicle = mShooter.getVehicle();
+            ZLevel vehicleZLevel = vehicle.isFlying() ? ZLevel.FLYING : ZLevel.VEHICLES;
+            if (zLevel != vehicleZLevel) {
+                return;
+            }
+            batch.setColor(mShooter.getVehicleRenderer().getBatchColor());
+            // Draw the shadow at the vehicle level so that the shadow is drawn *over* its vehicle
+            drawShadow(batch);
+            drawMissile(batch);
+            batch.setColor(Color.WHITE);
+            drawTarget(batch);
+            return;
+        }
+        if (zLevel == ZLevel.FLYING) {
+            drawShadow(batch);
+            drawMissile(batch);
+            drawTarget(batc
+### 18 OBS: 31:import com.agateau.pixelwheels.racer.Vehicle;
+40:import com.badlogic.gdx.graphics.Color;
+63:    private Racer mOwner;
+bonus/Bullet.java:24:import com.agateau.pixelwheels.ZLevel;
+bonus/Bullet.java:135:    public void draw(Batch batch, ZLevel zLevel, Rectangle viewBounds) {
+bonus/Bullet.java:136:        if (zLevel != ZLevel.GROUND) {
+bonus/Bullet.java:144:        mDrawer.draw(mBody, mAssets.bullet);
+bonus/TurboBonus.java:38:                public void draw(Batch batch, float centerX, float centerY) {
+bonus/TurboBonus.java:48:                    batch.draw(
+bonus/GunBonus.java:52:                public void draw(Batch batch, float centerX, float centerY) {
+bonus/GunBonus.java:59:                    batch.draw(
+
+[stdout]
+31:import com.agateau.pixelwheels.racer.Vehicle;
+40:import com.badlogic.gdx.graphics.Color;
+63:    private Racer mOwner;
+bonus/Bullet.java:24:import com.agateau.pixelwheels.ZLevel;
+bonus/Bullet.java:135:    public void draw(Batch batch, ZLevel zLevel, Rectangle viewBounds) {
+bonus/Bullet.java:136:        if (zLevel != ZLevel.GROUND) {
+bonus/Bullet.java:144:        mDrawer.draw(mBody, mAssets.bullet);
+bonus/TurboBonus.java:38:                public void draw(Batch ba
+### 19 CALL Bash: cd /app/core/src/com/agateau/pixelwheels; sed -n 130,150p bonus/Bullet.java; sed -n 30,80p bonus/TurboBonus.java; sed -n 45,90p bonus/GunBonus.java
+### 19 OBS: @Override
+    public void act(float delta) {}
+
+    @Override
+    public void draw(Batch batch, ZLevel zLevel, Rectangle viewBounds) {
+        if (zLevel != ZLevel.GROUND) {
+            return;
+        }
+        float radius = mBody.getFixtureList().get(0).getShape().getRadius();
+        if (!AgcMathUtils.rectangleContains(viewBounds, getPosition(), radius)) {
+            return;
+        }
+        mDrawer.setBatch(batch);
+        mDrawer.draw(mBody, mAssets.bullet);
+    }
+
+    @Override
+    public void audioRender(AudioClipper clipper) {
+        if (mJustShot) {
+            mAudioManager.play(mAssets.soundAtlas.get("shoot"), clipper.clip(this));
+/** A turbo bonus */
+public class TurboBonus extends BonusAdapter implements Pool.Poolable {
+    private boolean mTriggered = false;
+    private float mAnimationTime;
+
+    private final Renderer mBonusRenderer =
+            new Renderer() {
+                @Override
+                public void draw(Batch batch, float centerX, float centerY) {
+                    TextureRegion region = mAssets.turbo.getKeyFrame(mAnimationTime, true);
+                    Vehicle vehicle = mRacer.getVehicle();
+                    Body body = vehicle.getBody();
+
+### 20 AGENT MSG: The other bonus renderers (gun, turbo, bullet) look correct. Compiling:
+### 20 CALL Bash: cd /app; ls; timeout 600 ./gradlew --offline -q :core:compileJava 2>&1 | tail -20
+### 20 OBS: android
+build.gradle
+CHANGELOG.md
+ci
+core
+core-tests
+desktop
+Dockerfile
+docs
+enginelab
+fastlane
+gradle
+gradle.properties
+gradlew
+gradlew.bat
+icon
+LICENSE.Apache-2.0
+LICENSE.CC-BY-SA
+LICENSE.GPL-3
+Makefile
+README.md
+requirements.txt
+settings.gradle
+tools
+uigallery
+version.properties
+Note: Some input files use or override a deprecated API.
+Note: Recompile with -Xlint:deprecation for details.
+Note: Some input files use unchecked or unsafe operations.
+Note: Recompile with -Xlint:unchecked for details.
+
+[stdout]
+android
+build.gradle
+CHANGELOG.md
+ci
+core
+core-tests
+desktop
+Dockerfile
+docs
+enginelab
+fastlane
+gradle
+gradle.properties
+gradlew
+gradlew.bat
+icon
+LICENSE.Apache-2.0
+LICENSE.CC-BY-SA
+LICENSE.GPL-3
+Makefile
+README.md
+requirements.txt
+settings.gradle
+tools
+uigallery
+version.properties
+Note: Some input files use or override a deprecated API.
+Note: Recompile with -Xlint:deprecation for details.
+Note: Some input files use unchecked or unsafe operations.
+Note: Recompile with -Xlint:unchecked for details.
+[metadata] {"noOutputExpected": false}
+### 21 CALL Bash: cd /app; git diff
+### 21 OBS: diff --git a/core/src/com/agateau/pixelwheels/bonus/Mine.java b/core/src/com/agateau/pixelwheels/bonus/Mine.java
+index 913f76d..a5752de 100644
+--- a/core/src/com/agateau/pixelwheels/bonus/Mine.java
++++ b/core/src/com/agateau/pixelwheels/bonus/Mine.java
+@@ -188,7 +188,11 @@ public class Mine extends GameObjectAdapter
+             TextureRegion region = mAssets.mine.getKeyFrame(mTime);
+             mBodyRegionDrawer.drawShadow(mBody, region);
+         }
+-        if (zLevel == ZLevel.VEHICLES) {
++        ZLevel wantedZLevel =
++                !hasBeenDropped && mOwner.getVehicle().isFlying()
++                        ? ZLevel.FLYING
++                        : ZLevel.VEHICLES;
++        if (zLevel == wantedZLevel) {
+             TextureRegion region = mAssets.mine.getKeyFrame(mTime);
+             mBodyRegionDrawer.draw(mBody, region);
+         }
+diff --git a/core/src/com/agateau/pixelwheels/bonus/Missile.java b/core/src/com/agateau/pixelwheels/bonus/Missile.java
+index e6a94a5..5873580 100644
+--- a/core/src/com/agateau/pixelwheels/bonus/Missile.java
++++ b/core/src/com/agateau/pixelwheels/bonus/Missile.java
+@@ -258,14 +258,27 @@ public class Missile extends GameObjectAdapter
+ 
+     @Overri
+### 22 CALL Bash: cd /app; timeout 600 ./gradlew --offline -q :core-tests:test 2>&1 | tail -15
+### 22 OBS: Note: Some input files use or override a deprecated API.
+Note: Recompile with -Xlint:deprecation for details.
+
+[stdout]
+Note: Some input files use or override a deprecated API.
+Note: Recompile with -Xlint:deprecation for details.
+[metadata] {"noOutputExpected": false}
+### 23 AGENT MSG: I fixed all three problems from the recording. The code compiles and the existing `core-tests` pass. I haven't run the game to make a new recording, so I haven't seen the result on screen yet.
+
+**Carried items (the bridge scene, ~8.5–10 s)**
+- **Missile drawn through the bridge** (`bonus/Missile.java`): a missile waiting on a car was always drawn in the topmost layer. That's why it stayed visible under the bridge while the car was hidden. A carried missile is now drawn in the same layer as its car, so the bridge hides both. It also takes the car's colour tint, so it darkens with the car when the car sinks into water. Once fired, it is drawn in the topmost layer as before.
+- **Missile exhaust flame to one side** (same file): the flame was offset across the missile instead of along it, so it appeared beside the missile. It now comes out of the tail, the same way the turbo flame sits behind a car.
+- **Mine** (`bonus/Mine.java`): a mine still attached to a car was always drawn at ground-vehicle level, even when the car was in the air. It now follows the car's layer. I didn't see this one in the clip; I changed it because it had the same flaw as the missile.
+
+**Shadows**
+- **Shadows not turning** (`utils/BodyRegionDrawer.java`): shadows for the missile, mines, bonus spots and obstacles were given an angle in radians where degrees were expected. So they didn't rotate with their object, which was visible on the fired missile. They now turn with what casts them.
+- **Car shadow falling the wrong way** (`racer/VehicleRenderer.java`): the car's shadow fell up and to the left, while every other shadow in the game falls down and to the right. It now falls down and to the right like the rest.
+
+**Camera** (`racescreen/RacerCameraUpdater.java`)
+- **Showing more road behind the car**: the camera's look-ahead used a mirrored angle, so on some headings it moved behind the car instead of in front. It now always moves ahead in the direction the car is travelling.
+- **Speed limit on camera movement**: the code computed this limit but applied it only after the camera had already moved, so it had no effect. It now takes effect. In normal driving the limit is well above how fast the camera moves, so it should only smooth out sudden jumps, but it is the one change that could alter the view slightly. I also removed a duplicate zoom-limit call, which changed nothing.
+
+I didn't touch the track layout or how the vehicles move.

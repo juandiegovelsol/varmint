@@ -1,0 +1,100 @@
+diff --git a/bokehjs/src/lib/core/layout/border.ts b/bokehjs/src/lib/core/layout/border.ts
+index 5b3df3f..c9a6bba 100644
+--- a/bokehjs/src/lib/core/layout/border.ts
++++ b/bokehjs/src/lib/core/layout/border.ts
+@@ -49,7 +49,7 @@ export class BorderLayout extends Layoutable {
+     const right = Math.max(Math.max(right_hint.width, this.min_border.right) + this.padding.right, this.align_border.right)
+ 
+     const top_hint = this.top_panel.measure({width: viewport.width, height: 0})
+-    const top = Math.max(top_hint.height, this.min_border.top) + this.padding.top
++    const top = Math.max(Math.max(top_hint.height, this.min_border.top) + this.padding.top, this.align_border.top)
+ 
+     const bottom_hint = this.bottom_panel.measure({width: viewport.width, height: 0})
+     const bottom = Math.max(Math.max(bottom_hint.height, this.min_border.bottom) + this.padding.bottom, this.align_border.bottom)
+diff --git a/bokehjs/src/lib/core/layout/side_panel.ts b/bokehjs/src/lib/core/layout/side_panel.ts
+index 14adf91..00eae0e 100644
+--- a/bokehjs/src/lib/core/layout/side_panel.ts
++++ b/bokehjs/src/lib/core/layout/side_panel.ts
+@@ -244,9 +244,9 @@ export class SideLayout extends ContentLayoutable {
+   override has_size_changed(): boolean {
+     const {width, height} = this._content_size()
+     if (this.panel.is_horizontal) {
+-      return this.bbox.height > height
++      return this.bbox.height != height
+     } else {
+-      return this.bbox.width > width
++      return this.bbox.width != width
+     }
+   }
+ }
+diff --git a/bokehjs/src/lib/models/layouts/alignments.ts b/bokehjs/src/lib/models/layouts/alignments.ts
+index fe526c7..0f16481 100644
+--- a/bokehjs/src/lib/models/layouts/alignments.ts
++++ b/bokehjs/src/lib/models/layouts/alignments.ts
+@@ -47,8 +47,8 @@ export class GridAlignmentLayout extends Layoutable {
+       // itself, matching which sides `_set_geometry` goes on to align.
+       const {aligns} = layout
+       layout.align_border = {
+-        left: aligns.left ? cols[c1].left : 0,
+-        right: aligns.right ? cols[c0].right : 0,
++        left: aligns.left ? cols[c0].left : 0,
++        right: aligns.right ? cols[c1].right : 0,
+         top: aligns.top ? rows[r0].top : 0,
+         bottom: aligns.bottom ? rows[r1].bottom : 0,
+       }
+diff --git a/bokehjs/src/lib/models/layouts/css_grid_box.ts b/bokehjs/src/lib/models/layouts/css_grid_box.ts
+index 65bd67c..18e2a18 100644
+--- a/bokehjs/src/lib/models/layouts/css_grid_box.ts
++++ b/bokehjs/src/lib/models/layouts/css_grid_box.ts
+@@ -29,13 +29,6 @@ export abstract class CSSGridBoxView extends LayoutDOMView {
+   protected abstract get _rows(): TracksSizing | null
+   protected abstract get _cols(): TracksSizing | null
+ 
+-  override measure_layout(): void {
+-    if (this.layout instanceof GridAlignmentLayout) {
+-      this.layout.align_borders()
+-    }
+-    super.measure_layout()
+-  }
+-
+   override _update_layout(): void {
+     super._update_layout()
+ 
+diff --git a/bokehjs/src/lib/models/layouts/layout_dom.ts b/bokehjs/src/lib/models/layouts/layout_dom.ts
+index dbc6157..25c50e9 100644
+--- a/bokehjs/src/lib/models/layouts/layout_dom.ts
++++ b/bokehjs/src/lib/models/layouts/layout_dom.ts
+@@ -14,6 +14,7 @@ import {build_views} from "core/build_views"
+ import type {DOMElementView} from "core/dom_view"
+ import type {Layoutable, Percent} from "core/layout"
+ import {SizingPolicy} from "core/layout"
++import {GridAlignmentLayout} from "./alignments"
+ import {CanvasLayer} from "core/util/canvas"
+ import {defer} from "core/util/defer"
+ 
+@@ -396,6 +397,12 @@ export abstract class LayoutDOMView extends PaneView {
+   protected _measure_layout(): void {}
+ 
+   measure_layout(): void {
++    // Borders imposed by aligning children must be known before any child
++    // measures its own CSS layout.
++    if (this.layout instanceof GridAlignmentLayout) {
++      this.layout.align_borders()
++    }
++
+     for (const child_view of this.layoutable_views) {
+       child_view.measure_layout()
+     }
+diff --git a/bokehjs/src/lib/models/plots/plot_canvas.ts b/bokehjs/src/lib/models/plots/plot_canvas.ts
+index e90949f..044e0b6 100644
+--- a/bokehjs/src/lib/models/plots/plot_canvas.ts
++++ b/bokehjs/src/lib/models/plots/plot_canvas.ts
+@@ -737,7 +737,7 @@ export class PlotView extends LayoutDOMView implements Paintable {
+ 
+     this.top_panel.shadow_el.append(...reversed(above_els))
+     this.bottom_panel.shadow_el.append(...below_els)
+-    this.left_panel.shadow_el.append(...left_els)
++    this.left_panel.shadow_el.append(...reversed(left_els))
+     this.right_panel.shadow_el.append(...right_els)
+ 
+     const inner_above_els = process(inner_above, "x")

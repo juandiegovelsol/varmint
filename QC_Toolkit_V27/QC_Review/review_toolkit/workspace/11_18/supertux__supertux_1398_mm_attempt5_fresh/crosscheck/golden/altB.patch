@@ -1,0 +1,71 @@
+diff --git a/src/badguy/badguy.cpp b/src/badguy/badguy.cpp
+index 2fb0795..bdef012 100644
+--- a/src/badguy/badguy.cpp
++++ b/src/badguy/badguy.cpp
+@@ -319,7 +319,7 @@ BadGuy::collision_tile(uint32_t tile_attributes)
+     if (tile_attributes & Tile::FIRE) {
+       if (is_flammable()) ignite();
+     }
+-    else if (is_freezable()) {
++    else if ((tile_attributes & Tile::ICE) && is_freezable()) {
+       freeze();
+     }
+     else {
+diff --git a/src/object/player.cpp b/src/object/player.cpp
+index a956b4b..47293ec 100644
+--- a/src/object/player.cpp
++++ b/src/object/player.cpp
+@@ -1132,7 +1132,7 @@ if (m_swimming) {
+         } else if (m_controller->hold(Control::DOWN)) {
+           m_grabbed_object->ungrab(*this, Direction::DOWN);
+         } else {
+-          m_grabbed_object->ungrab(*this, (dest_.get_left() > m_col.m_bbox.get_left()) ?
++          m_grabbed_object->ungrab(*this, (dest_.get_left() < m_col.m_bbox.get_left()) ?
+                                    Direction::LEFT : Direction::RIGHT);
+         }
+         m_grabbed_object = nullptr;
+@@ -1160,7 +1160,7 @@ Player::position_grabbed_object()
+       m_col.m_bbox.get_top() + m_col.m_bbox.get_height()*0.66666f);
+ 
+   // Adjust to find the grabbed object's upper-left corner
+-  pos.x -= object_bbox.get_width() * (m_dir == Direction::LEFT ? 0.0f : 1.0f);
++  pos.x -= object_bbox.get_width() * (m_dir == Direction::LEFT ? 1.0f : 0.0f);
+   pos.y -= object_bbox.get_height();
+ 
+   m_grabbed_object->grab(*this, pos, m_dir);
+@@ -1688,7 +1688,7 @@ bool
+ Player::collides(GameObject& other, const CollisionHit& hit) const
+ {
+   auto portable = dynamic_cast<Portable*>(&other);
+-  if (portable && portable->is_portable() && !portable->is_grabbed())
++  if (portable && portable->is_grabbed())
+     return false;
+ 
+   return MovingObject::collides(other, hit);
+diff --git a/src/object/rock.cpp b/src/object/rock.cpp
+index 4416edc..51e08d2 100644
+--- a/src/object/rock.cpp
++++ b/src/object/rock.cpp
+@@ -114,6 +114,12 @@ Rock::collision(GameObject& other, const CollisionHit& hit)
+     return ABORT_MOVE;
+   }
+ 
++  // Coins and other touchable objects are nothing a rock can land on.
++  auto touchable = dynamic_cast<MovingObject*> (&other);
++  if (touchable && touchable->get_group() == COLGROUP_TOUCHABLE) {
++    return ABORT_MOVE;
++  }
++
+   if (is_grabbed()) {
+     return ABORT_MOVE;
+   }
+@@ -169,8 +175,7 @@ Rock::ungrab(MovingObject& object, Direction dir)
+     physic.set_velocity(0, 0);
+   }
+ 
+-  if (physic.get_velocity_x() == 0.0f)
+-    set_group(COLGROUP_MOVING_STATIC);
++  set_group(COLGROUP_MOVING_STATIC);
+ 
+   if (!on_ungrab_script.empty()) {
+     Sector::get().run_script(on_ungrab_script, "Rock::on_ungrab");

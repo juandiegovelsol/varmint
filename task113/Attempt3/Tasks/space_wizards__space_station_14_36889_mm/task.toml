@@ -1,0 +1,69 @@
+version = "1.0"
+reward_type = "binary"
+
+[task]
+name = "scale-ai/space_wizards__space_station_14_36889_mm"
+
+[metadata]
+task_id = "space_wizards__space_station_14_36889_mm"
+title = "Doors on the test bench misbehave"
+repository_name = "space-wizards/space-station-14"
+repo_url = "https://github.com/space-wizards/space-station-14"
+issue_number = 36889
+pr_number = 46007
+base_commit = "58dae1ce4a0806fa3b928834789b2b508b47b0f3"
+fix_commit = "763186613f196824f010bba663d353e4cce8f3ea"
+task_type = "temporal_interaction"
+language = ""
+framework = "Space Station 14"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = """
+The clip is a firelock test bench recorded from the real client: six one-tile lanes, each firelock between a small room and a hazard (an exposed lattice open to space, dense gas, fire, fire behind a glass firelock, gas behind an edge firelock, and one firelock that starts open). The instruction names the doors only by type ('doors'), never the kind (firelock, glass firelock, edge firelock), the hazard, the lane or the direction, and it states no defect in words or how many there are. It names only the aspects that go wrong (the warning lights, the way a door moves, what ends up on each side of a shut door), adds one clip-only pointer ('some of them are already there in the first frame and never change', which covers the static lanes: the space lane's warning colour, the glass firelock with no warning, and the gas past the edge firelock's panel, without saying which lane, door or hazard), gives general expected rules (a shut door keeps each side apart and its warning says what kind of danger it holds back, the warning only shows while shut, a door shuts smoothly as a whole), and asks for every mismatch found in the clip to be fixed. Each Expected rule is enforced by f2p tests: 'keeps each side apart' -> ClosedFirelock_HoldsBackGasReleasedAfterClosing and EdgeFirelock_SealsAlongItsDoorEdge (the edge door's seal must sit on the edge its panel is drawn on, otherwise the hazard fills the door's own tile up to the room side of the panel, which the gas overlay shows); 'its warning says what kind of danger' -> WarningLights_SpaceBreachIsAPressureWarning and WarningLights_GlassFirelockShowsWarning; 'the warning only shows while shut' -> WarningLights_HideWhenDoorLeavesClosed; 'shuts smoothly, as a whole' -> ClosingAnimation_PlaysThroughBeforeTheDoorShuts ('smoothly': the panel plays through its closing frames instead of jumping shut in one frame; 'as a whole': the panel moves in step with its running lights instead of finishing while they are still sliding). Each of the six defects sits in a different place and most of them only reveal themselves in the clip:
+
+1. Warning lights ignore the door state (the upstream issue): the pressure/temperature layers are driven by a declarative GenericVisualizer that only reads the two warning booleans, so an opened or re-closing firelock keeps its brackets lit (covered by the 'warning only shows while shut' rule). The fix moves the layers into the client FirelockSystem's appearance handler (Closed/Welded/Denying only) and drops the visualizer.
+2. The closing animation is cut short: the frame timings of the standard firelock sprite's closing state (RSI meta.json) are ten times too short, so the panel jumps from open to shut in one frame and its green running lights then slide over an already-shut door (the opening in the same clip slides normally, and the opening state in the same meta.json is the reference). The prototype's animation times and the client door code are both correct, so only frame-stepping the clip points at it.
+3. The lattice/space lane shows the temperature warning instead of the pressure one: the firelock's temperature-difference threshold default was lowered so that space's ~2.7 K against a room at 293 K counts as a temperature hazard. The over-pressure lane next to it shows the pressure colour, the fire lanes the temperature colour.
+4. The glass firelock shows no warning at all while holding back fire (it still glows): its prototype overrides the sprite layer list and leaves out the two warning layers, so the old visualizer only reserves blank layers. Needs prototype-inheritance knowledge.
+5. The edge firelock seals the wrong edge of its tile: its airBlockedDirection was flipped, so gas fills the door's own tile past the hazard strip (its fixture and sprite sit on the other edge). Only the gas overlay in the clip shows it.
+6. A firelock shut during the round does not seal: AirtightSystem.SetAirblocked only re-validates the atmos tile when a door opens (a two-line conditional with no comment), so a door that closes later never blocks air and the gas released behind it flows straight through. Doors that were shut by monstermos or at map load are unaffected, which is why the other lanes hold.
+
+Without the clip the instruction does not say which kind of firelock, which hazard, which animation or which direction is wrong; with it, every defect except the open door's lights has a correct counterpart in another lane, and that one is covered by an expected rule. The fix touches five files: client visuals, shared component data, server atmos, three prototypes in one YAML file, and one sprite's frame metadata.
+"""
+files_edited = [
+  "Content.Client/Doors/FirelockSystem.cs",
+  "Content.Server/Atmos/EntitySystems/AirtightSystem.cs",
+  "Content.Shared/Doors/Components/FirelockComponent.cs",
+  "Resources/Prototypes/Entities/Structures/Doors/Firelocks/firelock.yml",
+  "Resources/Textures/Structures/Doors/Airlocks/Standard/firelock-base.rsi/meta.json",
+]
+f2p = [
+  "Content.IntegrationTests.Tests.Doors.FirelockWarningLightTest.WarningLights_HideWhenDoorLeavesClosed",
+  "Content.IntegrationTests.Tests.Doors.FirelockWarningLightTest.WarningLights_GlassFirelockShowsWarning",
+  "Content.IntegrationTests.Tests.Doors.FirelockWarningLightTest.WarningLights_SpaceBreachIsAPressureWarning",
+  "Content.IntegrationTests.Tests.Doors.FirelockSealTest.ClosedFirelock_HoldsBackGasReleasedAfterClosing",
+  "Content.IntegrationTests.Tests.Doors.FirelockSealTest.EdgeFirelock_SealsAlongItsDoorEdge",
+  "Content.IntegrationTests.Tests.Doors.FirelockAnimationTest.ClosingAnimation_PlaysThroughBeforeTheDoorShuts",
+]
+p2p = [
+  "Content.IntegrationTests.Tests.Doors.AirlockTest.OpenCloseDestroyTest",
+  "Content.IntegrationTests.Tests.Doors.FirelockWarningLightTest.WarningLights_MatchTheHazardKind",
+  "Content.IntegrationTests.Tests.Doors.FirelockWarningLightTest.WarningLights_StayOnWhileWelded",
+]
+tags = ["multimodal", "2d_video", "temporal_interaction", "beyond_browser", "space station 14", "robust-toolbox", "sprite", "doors", "atmospherics", "prototypes", "animation"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

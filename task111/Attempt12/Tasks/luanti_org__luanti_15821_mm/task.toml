@@ -1,0 +1,71 @@
+version = "1.0"
+reward_type = "binary"
+
+[task]
+name = "scale-ai/luanti_org__luanti_15821_mm"
+
+[metadata]
+task_id = "luanti_org__luanti_15821_mm"
+title = "Some blocks in the video are drawn wrong"
+repository_name = "luanti-org/luanti"
+repo_url = "https://github.com/luanti-org/luanti"
+issue_number = 15821
+pr_number = 15867
+base_commit = "c07499ccfc5622f7cdb08e69e63b61327d9242c1"
+fix_commit = "42ac5b2f406078a8f53d1b3f4335d7de94ca1b21"
+task_type = "visual_regression"
+language = "C++"
+framework = "Luanti"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = """
+The clip is required. The instruction names the affected elements by type (stairs, slabs and other shaped blocks; blocks that link up with their neighbours, with the track named once as an example of how blocks are put together; blocks that have a second picture painted over their main one; the box drawn around the pointed-at block, also for a ladder or a sign on a wall) and gives general rules of correct drawing, but it states no symptom. It does not say which instance is wrong, in which direction or along which axis: which linked blocks are affected (two of the track corners, one of the two windows, one leg of the fence), which stairs, which slab, which wall and what is wrong with each is only visible in the footage, where every defect has a correctly drawn counterpart of the same kind elsewhere in the clip (the track seen from above versus from far away, the other track corners, the other flight of steps, the other window, the other seat, the other leg of the fence, the ladder on the other wall).
+
+Seven independent defects across five files have to be found and fixed, none commented and each in a different code path: (1) the overlay layer of a tile is pulled toward the camera by a polygon offset, which hides the selection outline on overlaid nodes and makes the track lying on the grass vanish when seen from a distance (tile.cpp/tile.h/nodedef.cpp). Pushing every base layer back instead fixes the outline but still makes the distant track vanish, so the offset may only separate a tile from its own overlay, and keeping a smaller constant pull on the overlay is ruled out by the instruction (nothing is drawn even slightly nearer than the surface it belongs to); (2) the frame-edge neighbour table of connected glass reads the wrong neighbour for the +X vertical edges, so only rows running along X get a bar at a joint and lose their outer edge; (3) quarter turns 1 and 3 of facedir node boxes are swapped, so stairs facing east or west are built backwards, and their outline and collision follow the wrong box; (4) the X entries of the node-box direction table are swapped, so a slab or stair beside a full block on one X side loses its open opposite side; (5) two rows of the raillike curve table carry each other's angle, so two of the four kinds of curve bend the wrong way; (6) the fencelike Z check does not reset its probe position after the X check and looks at the diagonal node, so a fence running along Z stays unjoined while one along X is fine; (7) the wallmounted selection box turns the two Z walls the wrong way, so only the outline (not the drawn sign or ladder) of things on north or south walls floats on the far side of the node. Several are direction-dependent sign, table or copy-paste errors that look plausible in code and are only identifiable by comparing the affected and unaffected instances in the clip.
+"""
+files_edited = [
+  "src/client/content_mapblock.cpp",
+  "src/client/tile.cpp",
+  "src/client/tile.h",
+  "src/mapnode.cpp",
+  "src/nodedef.cpp",
+]
+f2p = [
+  "TileLayer::applyMaterialOptions does not push an overlay slot toward the camera just because it is layer 1",
+  "A node's overlay layer is not drawn closer to the camera than its geometry",
+  "A node without an overlay gets no depth offset on any of its tile layers",
+  "Framed glass in a row along X is framed only around the outside of the row",
+  "A node box turned a quarter turn ends up facing the side its facedir names",
+  "A node box next to a full block on its X sides still draws the open side opposite it",
+  "Rail curves joining +X with +Z and -X with -Z are drawn joining those sides",
+  "Two fence posts one node apart along Z are joined by bars only between them",
+  "The outline of a node mounted on a +Z or -Z wall lies against that wall",
+]
+p2p = [
+  "TileLayer::applyMaterialOptions configures basic material state from material_flags",
+  "TileLayer::applyMaterialOptions leaves a tile's own layer-0 polygon offset untouched",
+  "A node's overlay layer is never pushed behind its own base layer",
+  "Framed glass in a row along Z is framed only around the outside of the row",
+  "A node box with facedir 0 or 2 faces +Z or -Z",
+  "A node box next to a full block on its Z sides still draws the open side opposite it",
+  "Rail curves joining +X with -Z and -X with +Z are drawn joining those sides",
+  "Two fence posts one node apart along X are joined by bars only between them",
+  "The outline of a node mounted on an X wall or a floor or a ceiling lies against it",
+]
+tags = ["multimodal", "3d_video", "visual_regression", "recording", "luanti", "c++", "3d-rendering", "opengl", "z-fighting", "voxel-game", "mesh-generation", "selection-box"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

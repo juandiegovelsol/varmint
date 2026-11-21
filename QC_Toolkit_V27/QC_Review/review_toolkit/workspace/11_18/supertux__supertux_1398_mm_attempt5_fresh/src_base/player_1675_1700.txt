@@ -1,0 +1,26 @@
+  }
+
+  // crushed?
+  if (hit.crush) {
+    if (hit.left || hit.right) {
+      kill(true);
+    } else if (hit.top || hit.bottom) {
+      kill(false);
+    }
+  }
+}
+
+bool
+Player::collides(GameObject& other, const CollisionHit& hit) const
+{
+  auto portable = dynamic_cast<Portable*>(&other);
+  if (portable && portable->is_portable() && !portable->is_grabbed())
+    return false;
+
+  return MovingObject::collides(other, hit);
+}
+
+HitResponse
+Player::collision(GameObject& other, const CollisionHit& hit)
+{
+  auto bullet = dynamic_cast<Bullet*> (&other);

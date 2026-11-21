@@ -1,0 +1,46 @@
+{
+  "behavior_in_task_description": {
+    "outcome": "pass",
+    "explanation": "instruction.md's 'Expected' bullets (seal separates both sides and warning names the hazard; warning only while shut; controlled/smooth closing; every part of the element stays aligned; nothing else should change) map one-to-one onto the f2p tests per the task's own difficulty_explanation (seal tests, warning-light tests, animation test, edge-alignment test). The instruction deliberately withholds concrete specifics (which door, which hazard, which direction) by design (visual_essentiality=required, difficulty=hard), but explicitly directs the agent to the attached recording.mp4 as required evidence to fill in those specifics, which is a legitimate multimodal-task pattern rather than an omission."
+  },
+  "behavior_in_tests": {
+    "outcome": "pass",
+    "explanation": "Every expected-behavior bullet has corresponding coverage: sealing is tested by FirelockSealTest (standard and edge firelocks), warning-matches-hazard by WarningLights_SpaceBreachIsAPressureWarning/GlassFirelockShowsWarning, warning-only-while-shut by WarningLights_HideWhenDoorLeavesClosed, controlled closing by FirelockAnimationTest, and 'everything else unchanged' by the p2p regression guards (AirlockTest.OpenCloseDestroyTest, WarningLights_MatchTheHazardKind, WarningLights_StayOnWhileWelded)."
+  },
+  "informative_test_structure": {
+    "outcome": "pass",
+    "explanation": "Tests are split into clearly named classes by concern (FirelockWarningLightTest, FirelockSealTest, FirelockAnimationTest), each test has a [Description] explaining intent, a shared FirelockLane helper documents the test-bench geometry and is well commented, and test.sh itself is heavily commented explaining each stage (restore, hidden-test apply, filter, JUnit conversion, reward)."
+  },
+  "anti_cheating_measures": {
+    "outcome": "pass",
+    "explanation": "Injected bug patches are applied and then deleted within the same Docker layer so they never reach the built image; tests/ and solution/ are never COPYed into the image (only bugs/, which is removed, and the evidence video); the agent runs with network_mode=no-network so it cannot fetch the real upstream PR/fix commit (whose hash is only recorded in task.toml, which also never reaches the agent's container); the hidden test files are only materialized by test.sh via tests/test.patch at verification time, and PROTECTED_DIRS/whitelist logic in test.sh prevents the agent from tampering with test infrastructure."
+  },
+  "structured_data_schema": {
+    "outcome": "not_applicable",
+    "explanation": "The task is a source-code bug-fix evaluated by integration tests (dotnet/NUnit), not by structured output like JSON/CSV/API responses, so no output schema is required."
+  },
+  "pinned_dependencies": {
+    "outcome": "pass",
+    "explanation": "The repository and its submodule are checked out at exact pinned commit SHAs (base_commit/fix_commit, both valid 40-char hashes), and NuGet package versions come from the pinned commit's own lock/csproj files. apt packages are left unpinned, which is acceptable per guidance; the only soft spot is the floating 'dotnet/sdk:10.0' base image tag, which is a minor and common practice, not a functional pinning gap."
+  },
+  "typos": {
+    "outcome": "pass",
+    "explanation": "No typos found in filenames, paths, commands, or variable/identifier names; files_edited in task.toml exactly match the paths touched by solution/fix.patch and config.json's test_files match the paths added in tests/test.patch. instruction.md contains a grammatically rough line ('A element shuts controlled.') that reads as deliberate word-substitution obfuscation (avoiding the words 'door'/'smoothly') rather than a path/command/filename typo, so it does not affect correctness."
+  },
+  "tests_or_solution_in_image": {
+    "outcome": "pass",
+    "explanation": "environment/Dockerfile only COPYs bugs/ (deleted immediately after being applied) and assets/recording.mp4; it never references tests/ or solution/, so neither reaches the built image."
+  },
+  "test_deps_in_image": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile pre-restores and pre-builds Content.IntegrationTests.csproj, but this is the upstream repo's own pre-existing integration-test project (needed to compile Content.Client/Server/Shared together) built once for speed/offline-safety, not the hidden task-specific test files -- those (FirelockLane.cs, FirelockWarningLightTest.cs, etc.) are only added later via tests/test.patch inside test.sh at grading time."
+  },
+  "hardcoded_solution": {
+    "outcome": "pass",
+    "explanation": "solve.sh applies solution/fix.patch, the actual multi-file source diff (client visuals, shared component default, server atmos re-validation, three prototype edits, one sprite's frame timings) that fixes the five injected defects -- it demonstrates the real code change needed rather than printing/echoing a final answer value."
+  },
+  "file_reference_mentioned": {
+    "outcome": "not_applicable",
+    "explanation": "The task requires editing existing repository source files to fix behavior (verified via integration tests), not producing a new, specifically-named output file, so there is no output filename that instruction.md would need to state."
+  }
+}

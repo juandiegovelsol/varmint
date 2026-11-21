@@ -1,0 +1,72 @@
+version = "1.0"
+reward_type = "binary"
+
+[task]
+name = "scale-ai/agateau__pixelwheels_362_mm"
+
+[metadata]
+task_id = "agateau__pixelwheels_362_mm"
+title = "Several things look wrong in a race recording"
+repository_name = "agateau/pixelwheels"
+repo_url = "https://github.com/agateau/pixelwheels"
+issue_number = 362
+pr_number = 373
+base_commit = "8baa87705929292ea4f33f77cc34e6c06c15cb0b"
+fix_commit = "fca6a63255a15085eebe00cfc7be87122c265bde"
+task_type = "temporal_interaction"
+language = "Java"
+framework = "libGDX"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = """
+The instruction is a short player-style report. It states the symptoms in words, without saying which object or when: something a vehicle carries can show through what covers the vehicle instead of being hidden with it, and its effects can be off; some shadows don't fall or turn like the others; and the race view sometimes shows more of the road behind the vehicle it follows than ahead of it. Beyond that it only says that what a vehicle carries, or has carried, is drawn wrongly compared with that vehicle: that the rocket sits and flies across the car's heading, and which effect is off (the rocket's flame) and how, are shown only in the clip. It names no object (car, rocket, footbridge), no direction, no launch and no timestamp. The solver has to watch the clip to find which on-screen thing is wrong, and how, in each case. Each tested behavior also has an in-clip reference: the car is hidden by the footbridge but the rocket it carries is not; the rocket sits and flies across the car's heading; the car's boost flame (6.6-7.0 s) comes out of its back but the rocket's comes out of its side; the car's and the scenery's shadows match their shapes but the rocket's does not; the car's shadow falls opposite to the footbridge's and the trees'; the view shows the road ahead on the north/south stretches but the road behind on the east/west straights. Six independent defects, spread over seven source files, have to be fixed for the binary reward:
+
+1. Upstream issue #362 (PR #373): the carried rocket is drawn on top of the foreground map layer, so at 9.3-9.5 s it stays drawn over the wooden footbridge (with its shadow) while the car goes under it. The fix restructures the ZLevel draw order (FLYING split into FLYING_LOW for rockets and FLYING_HIGH for the helicopter / carried vehicles, new FG_LAYERS level) and moves every call site in lockstep (Missile, VehicleRenderer, GameRenderer, Helicopter, DropLocationDebugObject); a shallow fix that draws every flying object under the foreground breaks the rescue helicopter (p2p guard that passes at the base commit).
+2. The rocket is created with the car heading in degrees fed to Box2D as radians (hidden behind a plausible normalizeAnglePiRad call) and the weld joint keeps that relative angle: the rocket rides sideways across the car roof from the first frame and, once fired, flies off sideways into the fence instead of down the road.
+3. The exhaust anchor is computed along the sprite's local Y axis instead of its nose-to-tail X axis, so the flame comes out of the rocket's side (9.9-10.0 s).
+4. BodyRegionDrawer.drawShadow passes the body angle in radians where the batch expects degrees, so the rocket's shadow stays almost horizontal whatever the rocket's heading (visible as a dark horizontal silhouette across the upright rocket at 9.3-9.5 s and next to the flying rocket).
+5. VehicleRenderer offsets the car's own shadow up-left, opposite to every other shadow in the clip (footbridge, trees, rocket); visible on the zoomed-in car during the countdown.
+6. RacerCameraUpdater builds the look-ahead vector along +Y and rotates it by (90 - heading): it is correct heading north or south but mirrored heading east or west, so on the top and bottom straights the view shows the road behind the car instead of ahead of it.
+
+Without the video, a code audit can find the draw-order, shadow and camera defects from the text. The text also says that a carried thing's effects can be off, but not which thing or which effect, and it says nothing about direction: the rocket's creation angle hides a degrees-for-radians slip behind a plausible normalizeAnglePiRad call, the weld joint keeps that relative angle, and the exhaust anchor's axis swap looks like ordinary sprite maths, so without seeing what is wrong an audit has to spot defects 2 and 3 blind (three f2p tests). With the video, the solver still has to notice subtle, heading-dependent details (the rocket's orientation while carried and in flight, the exhaust position) on a fast pixel-art clip, map each to a different subsystem (render ordering, Box2D joint setup, sprite geometry, a shared drawing helper, vehicle cell rendering, camera maths) and fix all of them without breaking the helicopter's draw order. Alternative fixes (e.g. drawing rockets at the OBSTACLES level instead of restructuring ZLevel, zeroing the joint's reference angle instead of fixing the creation angle, or tinting a carried rocket with its vehicle's colour the way a carried mine is tinted) pass the same tests.
+"""
+files_edited = [
+  "core/src/com/agateau/pixelwheels/ZLevel.java",
+  "core/src/com/agateau/pixelwheels/bonus/Missile.java",
+  "core/src/com/agateau/pixelwheels/racer/VehicleRenderer.java",
+  "core/src/com/agateau/pixelwheels/racescreen/GameRenderer.java",
+  "core/src/com/agateau/pixelwheels/racescreen/Helicopter.java",
+  "core/src/com/agateau/pixelwheels/racescreen/RacerCameraUpdater.java",
+  "core/src/com/agateau/pixelwheels/racescreen/debug/DropLocationDebugObject.java",
+  "core/src/com/agateau/pixelwheels/utils/BodyRegionDrawer.java",
+]
+f2p = [
+  "com.agateau.pixelwheels.racescreen.MissileZOrderTest missileIsDrawnBeforeForegroundLayer",
+  "com.agateau.pixelwheels.bonus.RocketTest carriedRocketPointsWhereTheCarPoints",
+  "com.agateau.pixelwheels.bonus.RocketTest firedRocketFliesWhereTheCarPoints",
+  "com.agateau.pixelwheels.bonus.RocketTest rocketExhaustComesOutOfItsTail",
+  "com.agateau.pixelwheels.bonus.RocketTest rocketShadowHasTheRocketsOrientation",
+  "com.agateau.pixelwheels.racescreen.RacerCameraTest viewLooksAheadOfTheCarWhicheverWayItHeads",
+  "com.agateau.pixelwheels.racer.VehicleShadowTest vehicleShadowFallsLikeEveryOtherShadow",
+]
+p2p = [
+  "com.agateau.pixelwheels.racescreen.MissileZOrderTest helicopterIsDrawnAfterForegroundLayer",
+  "com.agateau.pixelwheels.racescreen.RacerCameraTest viewKeepsTheCarOnScreen",
+]
+tags = ["multimodal", "2d_video", "temporal_interaction", "beyond_browser", "libgdx", "java", "2d-games", "rendering", "z-order", "shadows", "camera", "box2d"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

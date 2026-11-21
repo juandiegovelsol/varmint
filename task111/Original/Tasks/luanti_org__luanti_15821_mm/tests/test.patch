@@ -1,0 +1,134 @@
+diff --git a/src/unittest/CMakeLists.txt b/src/unittest/CMakeLists.txt
+index 8a635c8e8..6da6c5b7c 100644
+--- a/src/unittest/CMakeLists.txt
++++ b/src/unittest/CMakeLists.txt
+@@ -58,4 +58,5 @@ set (UNITTEST_CLIENT_SRCS
+ 	${CMAKE_CURRENT_SOURCE_DIR}/test_irr_gltf_mesh_loader.cpp
+ 	${CMAKE_CURRENT_SOURCE_DIR}/test_mesh_compare.cpp
+ 	${CMAKE_CURRENT_SOURCE_DIR}/test_keycode.cpp
++	${CMAKE_CURRENT_SOURCE_DIR}/test_tile_polygon_offset.cpp
+ 	PARENT_SCOPE)
+diff --git a/src/unittest/test.cpp b/src/unittest/test.cpp
+index 8f0eaf855..4dd2640d7 100644
+--- a/src/unittest/test.cpp
++++ b/src/unittest/test.cpp
+@@ -15,6 +15,7 @@
+ #include "porting.h"
+ #include "debug.h"
+ 
++#include <cstdlib>
+ #include <iostream>
+ 
+ #include "catch.h"
+@@ -274,7 +275,20 @@ bool run_tests(const std::string &module_name)
+ 	if (!testmod) {
+ 		rawstream << "Did not find module, searching Catch tests: " << module_name << std::endl;
+ 		Catch::Session session;
+-		session.configData().testsOrTags.push_back(module_name);
++		auto &config = session.configData();
++		config.testsOrTags.push_back(module_name);
++		config.skipBenchmarks = true;
++		config.allowZeroTests = true;
++		// Harvest helper: allow writing a JUnit XML report when selecting
++		// Catch tests by name/tag via --test-module, so test runs can be
++		// consumed by external tooling without a GUI/console.
++		if (const char *junit_out = std::getenv("LUANTI_JUNIT_OUT")) {
++			config.reporterSpecifications.emplace_back(
++					"junit",
++					Catch::Optional<std::string>(std::string(junit_out)),
++					Catch::Optional<Catch::ColourMode>(),
++					std::map<std::string, std::string>{});
++		}
+ 		auto catch_test_failures = session.run();
+ 		return catch_test_failures == 0;
+ 	}
+diff --git a/src/unittest/test_tile_polygon_offset.cpp b/src/unittest/test_tile_polygon_offset.cpp
+new file mode 100644
+index 000000000..6b241ccaa
+--- /dev/null
++++ b/src/unittest/test_tile_polygon_offset.cpp
+@@ -0,0 +1,84 @@
++// Luanti
++// SPDX-License-Identifier: LGPL-2.1-or-later
++
++// Regression test for the "polygon offset" hack used to stop a node's
++// overlay layer (e.g. the grass overlay on dirt-with-grass) from Z-fighting
++// with its base layer. See issue #15821 / PR #15867 ("Mostly deal with
++// problems caused by polygon offset").
++//
++// The hack lives entirely in TileLayer::applyMaterialOptions(), which sets
++// video::SMaterial's polygon-offset fields. These tests exercise that public
++// method directly and check the resulting SMaterial, without depending on
++// any internal field names, so they build and run the same way before and
++// after the fix.
++
++#include "client/tile.h"
++
++#include <catch.h>
++
++TEST_CASE("TileLayer::applyMaterialOptions configures basic material state "
++		"from material_flags",
++		"[tile_polygon_offset]")
++{
++	TileLayer layer;
++	layer.material_flags = MATERIAL_FLAG_BACKFACE_CULLING;
++	// no horizontal/vertical tiling flags set -> both texture layers should
++	// be clamped to edge.
++
++	video::SMaterial material;
++	layer.applyMaterialOptions(material, 0);
++
++	CHECK(material.BackfaceCulling == true);
++	CHECK(material.TextureLayers[0].TextureWrapU == video::ETC_CLAMP_TO_EDGE);
++	CHECK(material.TextureLayers[0].TextureWrapV == video::ETC_CLAMP_TO_EDGE);
++	CHECK(material.TextureLayers[1].TextureWrapU == video::ETC_CLAMP_TO_EDGE);
++	CHECK(material.TextureLayers[1].TextureWrapV == video::ETC_CLAMP_TO_EDGE);
++}
++
++TEST_CASE("TileLayer::applyMaterialOptions leaves a tile's own layer-0 "
++		"polygon offset untouched",
++		"[tile_polygon_offset]")
++{
++	// A plain base-layer tile (layer index 0), as used by the overwhelming
++	// majority of nodes that have no overlay at all. This must never get a
++	// polygon offset, in any version of the code.
++	TileLayer layer;
++	video::SMaterial material;
++
++	layer.applyMaterialOptions(material, /*layer=*/0);
++
++	CHECK(material.PolygonOffsetSlopeScale == 0.0f);
++	CHECK(material.PolygonOffsetDepthBias == 0.0f);
++}
++
++TEST_CASE("TileLayer::applyMaterialOptions does not push an overlay slot "
++		"toward the camera just because it is layer 1",
++		"[tile_polygon_offset]")
++{
++	// This represents the layer-1 slot of a TileSpec the way nodedef.cpp
++	// leaves it for a node that has *no* overlay_tiles configured at all
++	// (an untouched, default-constructed TileLayer): shader_id and
++	// texture_id are both left at their defaults and the layer is not
++	// meant to be rendered.
++	//
++	// Before the fix, applyMaterialOptions() decided whether to offset the
++	// polygon purely from the numeric `layer` argument: *every* call with
++	// layer == 1 received a polygon offset of -1, with no regard for
++	// whether that tile's node actually has an overlay needing it. Pushing
++	// unrelated geometry toward the camera like this is exactly what made
++	// the node selection wireframe fade out on overlaid nodes and what
++	// made raillike nodes placed on top of such nodes flicker/disappear
++	// as the camera moved away: the "fix" for one Z-fighting case bled
++	// into unrelated depth comparisons.
++	//
++	// After the fix, whether a polygon offset is applied no longer depends
++	// on the hardcoded layer index, only on whether this specific tile
++	// layer actually needs it - which a default/empty layer never does.
++	TileLayer layer;
++	video::SMaterial material;
++
++	layer.applyMaterialOptions(material, /*layer=*/1);
++
++	CHECK(material.PolygonOffsetSlopeScale == 0.0f);
++	CHECK(material.PolygonOffsetDepthBias == 0.0f);
++}

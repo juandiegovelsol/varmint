@@ -1,0 +1,166 @@
+diff --git a/src/client/content_mapblock.cpp b/src/client/content_mapblock.cpp
+index eb8dabb..71068d1 100644
+--- a/src/client/content_mapblock.cpp
++++ b/src/client/content_mapblock.cpp
+@@ -940,7 +940,7 @@ void MapblockMeshGenerator::drawGlasslikeFramedNode()
+ 
+ 	static const u8 nb_triplet[FRAMED_EDGE_COUNT][3] = {
+ 		{1, 2,  7}, {1, 5,  6}, {4, 2, 15}, {4, 5, 14},
+-		{5, 0, 11}, {5, 3, 13}, {5, 0, 10}, {5, 3, 12},
++		{2, 0, 11}, {2, 3, 13}, {5, 0, 10}, {5, 3, 12},
+ 		{0, 1,  8}, {0, 4, 16}, {3, 4, 17}, {3, 1,  9},
+ 	};
+ 
+@@ -1395,6 +1395,7 @@ void MapblockMeshGenerator::drawFencelikeNode()
+ 	}
+ 
+ 	// Now a section of fence, +Z, if there's a post there
++	p2 = cur_node.p;
+ 	p2.Z++;
+ 	n2 = data->m_vmanip.getNodeNoEx(blockpos_nodes + p2);
+ 	f2 = &nodedef->get(n2);
+@@ -1454,10 +1455,10 @@ namespace {
+ 		{straight,   0}, //  .  . -Z +Z
+ 		{straight,  90}, //  . -X  .  .
+ 		{  curved, 180}, //  . -X  . +Z
+-		{  curved,  90}, //  . -X -Z  .
++		{  curved, 270}, //  . -X -Z  .
+ 		{junction, 180}, //  . -X -Z +Z
+ 		{straight,  90}, // +X  .  .  .
+-		{  curved, 270}, // +X  .  . +Z
++		{  curved,  90}, // +X  .  . +Z
+ 		{  curved,   0}, // +X  . -Z  .
+ 		{junction,   0}, // +X  . -Z +Z
+ 		{straight,  90}, // +X -X  .  .
+@@ -1516,8 +1517,8 @@ namespace {
+ 	static const v3s16 nodebox_tile_dirs[6] = {
+ 		v3s16(0, 1, 0),
+ 		v3s16(0, -1, 0),
+-		v3s16(-1, 0, 0),
+ 		v3s16(1, 0, 0),
++		v3s16(-1, 0, 0),
+ 		v3s16(0, 0, 1),
+ 		v3s16(0, 0, -1)
+ 	};
+diff --git a/src/client/tile.cpp b/src/client/tile.cpp
+index b13d390..84281f8 100644
+--- a/src/client/tile.cpp
++++ b/src/client/tile.cpp
+@@ -21,11 +21,16 @@ void TileLayer::applyMaterialOptions(video::SMaterial &material, int layer) cons
+ 	/*
+ 	 * The second layer is for overlays, but uses the same vertex positions
+ 	 * as the first, which easily leads to Z-fighting.
+-	 * To fix this we can offset the polygons in the direction of the camera.
++	 * To fix this we offset the polygons of the *first layer* away from the camera.
+ 	 * This only affects the depth buffer and leads to no visual gaps in geometry.
++	 *
++	 * However, doing so intrudes the "Z space" of the overlay of the next node
++	 * so that leads to inconsistent Z-sorting again. :(
++	 * HACK: For lack of a better approach we restrict this to cases where
++	 * an overlay is actually present.
+ 	 */
+-	if (layer == 1) {
+-		material.PolygonOffsetSlopeScale = -1;
+-		material.PolygonOffsetDepthBias = -1;
++	if (need_polygon_offset) {
++		material.PolygonOffsetSlopeScale = 1;
++		material.PolygonOffsetDepthBias = 1;
+ 	}
+ }
+diff --git a/src/client/tile.h b/src/client/tile.h
+index 8336d1d..420f075 100644
+--- a/src/client/tile.h
++++ b/src/client/tile.h
+@@ -73,7 +73,8 @@ struct TileLayer
+ 			material_flags == other.material_flags &&
+ 			has_color == other.has_color &&
+ 			color == other.color &&
+-			scale == other.scale;
++			scale == other.scale &&
++			need_polygon_offset == other.need_polygon_offset;
+ 	}
+ 
+ 	/*!
+@@ -92,6 +93,12 @@ struct TileLayer
+ 	 */
+ 	void applyMaterialOptions(video::SMaterial &material, int layer) const;
+ 
++	/// @return is this layer uninitalized?
++	bool empty() const
++	{
++		return !shader_id && !texture_id;
++	}
++
+ 	/// @return is this layer semi-transparent?
+ 	bool isTransparent() const
+ 	{
+@@ -125,6 +132,12 @@ struct TileLayer
+ 		MATERIAL_FLAG_TILEABLE_HORIZONTAL|
+ 		MATERIAL_FLAG_TILEABLE_VERTICAL;
+ 
++	u8 scale = 1;
++
++	/// does this tile need to have a positive polygon offset set?
++	/// @see TileLayer::applyMaterialOptions
++	bool need_polygon_offset = false;
++
+ 	/// @note not owned by this struct
+ 	std::vector<FrameSpec> *frames = nullptr;
+ 
+@@ -136,8 +149,6 @@ struct TileLayer
+ 
+ 	//! If true, the tile has its own color.
+ 	bool has_color = false;
+-
+-	u8 scale = 1;
+ };
+ 
+ enum class TileRotation: u8 {
+diff --git a/src/mapnode.cpp b/src/mapnode.cpp
+index bc10665..a82cbe0 100644
+--- a/src/mapnode.cpp
++++ b/src/mapnode.cpp
+@@ -188,14 +188,14 @@ void transformNodeBox(const MapNode &n, const NodeBox &nodebox,
+ 				box.MaxEdge.Y = (-0.5f + n.getLevel(nodemgr) / 64.0f) * BS;
+ 
+ 			if(facedir == 1) {
+-				box.MinEdge.rotateXZBy(90);
+-				box.MaxEdge.rotateXZBy(90);
++				box.MinEdge.rotateXZBy(-90);
++				box.MaxEdge.rotateXZBy(-90);
+ 			} else if(facedir == 2) {
+ 				box.MinEdge.rotateXZBy(180);
+ 				box.MaxEdge.rotateXZBy(180);
+ 			} else if(facedir == 3) {
+-				box.MinEdge.rotateXZBy(-90);
+-				box.MaxEdge.rotateXZBy(-90);
++				box.MinEdge.rotateXZBy(90);
++				box.MaxEdge.rotateXZBy(90);
+ 			}
+ 
+ 			switch (axisdir) {
+@@ -287,9 +287,9 @@ void transformNodeBox(const MapNode &n, const NodeBox &nodebox,
+ 				if(dir == v3s16(1,0,0))
+ 					vertex.rotateXZBy(180);
+ 				if(dir == v3s16(0,0,-1))
+-					vertex.rotateXZBy(-90);
+-				if(dir == v3s16(0,0,1))
+ 					vertex.rotateXZBy(90);
++				if(dir == v3s16(0,0,1))
++					vertex.rotateXZBy(-90);
+ 			}
+ 
+ 			aabb3f box = aabb3f(vertices[0]);
+diff --git a/src/nodedef.cpp b/src/nodedef.cpp
+index ffc5503..2fc3264 100644
+--- a/src/nodedef.cpp
++++ b/src/nodedef.cpp
+@@ -919,6 +919,8 @@ void ContentFeatures::updateTextures(ITextureSource *tsrc, IShaderSource *shdsrc
+ 			fillTileAttribs(tsrc, &tiles[j].layers[1], tiles[j], tdef_overlay[j],
+ 					color, overlay_material, overlay_shader,
+ 					tdef[j].backface_culling, tsettings);
++
++		tiles[j].layers[0].need_polygon_offset = !tiles[j].layers[1].empty();
+ 	}
+ 
+ 	MaterialType special_material = material_type;

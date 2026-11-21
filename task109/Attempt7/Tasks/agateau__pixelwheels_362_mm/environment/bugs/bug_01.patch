@@ -1,0 +1,29 @@
+diff --git a/core/src/com/agateau/pixelwheels/bonus/Missile.java b/core/src/com/agateau/pixelwheels/bonus/Missile.java
+index 4bef59e..7131458 100644
+--- a/core/src/com/agateau/pixelwheels/bonus/Missile.java
++++ b/core/src/com/agateau/pixelwheels/bonus/Missile.java
+@@ -36,6 +36,7 @@ import com.agateau.pixelwheels.sound.SoundPlayer;
+ import com.agateau.pixelwheels.stats.GameStats;
+ import com.agateau.pixelwheels.utils.BodyRegionDrawer;
+ import com.agateau.pixelwheels.utils.Box2DUtils;
++import com.agateau.utils.AgcMathUtils;
+ import com.badlogic.gdx.graphics.Color;
+ import com.badlogic.gdx.graphics.g2d.Batch;
+ import com.badlogic.gdx.graphics.g2d.TextureRegion;
+@@ -135,7 +136,7 @@ public class Missile extends GameObjectAdapter
+         Vehicle vehicle = shooter.getVehicle();
+         object.mShooter = shooter;
+         object.mBodyDef.position.set(vehicle.getX(), vehicle.getY());
+-        object.mBodyDef.angle = vehicle.getAngle() * MathUtils.degRad;
++        object.mBodyDef.angle = AgcMathUtils.normalizeAnglePiRad(vehicle.getAngle());
+ 
+         object.mBody = gameWorld.getBox2DWorld().createBody(object.mBodyDef);
+         object.mBody.createFixture(object.mShape, WAITING_DENSITY);
+@@ -172,6 +173,7 @@ public class Missile extends GameObjectAdapter
+         mJointDef.bodyB = mBody;
+         mJointDef.localAnchorA.set(vehicleBody.getLocalCenter());
+         mJointDef.localAnchorB.set(mBody.getLocalCenter());
++        mJointDef.referenceAngle = mBody.getAngle() - vehicleBody.getAngle();
+         mJoint = mGameWorld.getBox2DWorld().createJoint(mJointDef);
+     }
+ 

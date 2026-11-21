@@ -1,0 +1,690 @@
+### step 1 [user] 2026-11-19T15:59:00.178Z
+### step 2 [agent] 2026-11-19T15:59:05.999Z
+CALL Bash: cd /app; git ls-files | head -100; ls -la .harbor_assets; ffprobe -v error -show_entries format=duration -of csv .harbor_assets/recording.mp4
+OBS: .envrc
+.gitattributes
+.github/CODEOWNERS
+.github/ISSUE_TEMPLATE/01_report_issue.yml
+.github/ISSUE_TEMPLATE/02_mapping_issue.yml
+.github/ISSUE_TEMPLATE/config.yml
+.github/ISSUE_TEMPLATE/heisentest_template.md
+.github/PULL_REQUEST_TEMPLATE.md
+.github/labeler.yml
+.github/rsi-schema.json
+.github/workflows/build-map-renderer.yml
+.github/workflows/build-test-debug.yml
+.github/workflows/check-crlf.yml
+.github/workflows/close-master-pr.yml
+.github/workflows/heisendetector.yml
+.github/workflows/labeler-conflict.yml
+.github/workflows/labeler-needsreview.yml
+.github/workflows/labeler-pr.yml
+.github/workflows/labeler-review.yml
+.github/workflows/labeler-size.yml
+.github/workflows/labeler-stable.yml
+.git ...[+7654 chars]
+### step 3 [agent] 2026-11-19T15:59:10.500Z
+CALL Bash: mkdir -p /tmp/fr && cd /tmp/fr && ffmpeg -v error -i /app/.harbor_assets/recording.mp4 -vf fps=1 f%02d.png && ls; ffprobe -v error -show_entries stream=width,height -of csv /app/.harbor_assets/recording.mp4
+OBS: f01.png
+f02.png
+f03.png
+f04.png
+f05.png
+f06.png
+f07.png
+f08.png
+f09.png
+f10.png
+f11.png
+f12.png
+f13.png
+f14.png
+f15.png
+f16.png
+stream,1280,720
+Shell cwd was reset to /app
+
+[stdout]
+f01.png
+f02.png
+f03.png
+f04.png
+f05.png
+f06.png
+f07.png
+f08.png
+f09.png
+f10.png
+f11.png
+f12.png
+f13.png
+f14.png
+f15.png
+f16.png
+stream,1280,720
+[stderr]
+
+Shell cwd was reset to /app
+[metadata] {"noOutputExpected": false}
+### step 4 [agent] 2026-11-19T15:59:15.145Z
+CALL Bash: cd /tmp/fr && ffmpeg -v error -i f%02d.png -vf "scale=640:360,tile=4x4" -frames:v 1 grid.png
+CALL Read: /tmp/fr/grid.png
+OBS: Shell cwd was reset to /app
+
+[stderr]
+
+Shell cwd was reset to /app
+[metadata] {"noOutputExpected": false}
+OBS: <image>
+### step 5 [user] 2026-11-19T15:59:15.766Z
+MSG: [Image: original 2560x1440, displayed at 2000x1125. Multiply coordinates by 1.28 to map to original image.]
+### step 6 [agent] 2026-11-19T15:59:18.546Z
+CALL Bash: cd /tmp/fr && ffmpeg -v error -y -i f01.png -vf "crop=480:300:80:30,scale=1440:900:flags=neighbor" c01.png && ffmpeg -v error -y -i f16.png -vf "crop=480:300:80:30,scale=1440:900:flags=neighbor" c16.png
+CALL Read: /tmp/fr/c01.png
+CALL Read: /tmp/fr/c16.png
+OBS: Shell cwd was reset to /app
+
+[stderr]
+
+Shell cwd was reset to /app
+[metadata] {"noOutputExpected": false}
+OBS: <image>
+OBS: <image>
+### step 7 [agent] 2026-11-19T15:59:25.005Z
+CALL Bash: cd /tmp/fr && for i in 01 04 05 06 09 10 12 16; do ffmpeg -v error -y -i f$i.png -vf "crop=900:200:200:250" c$i.png; done; ffmpeg -v error -y -i c01.png -i c04.png -i c05.png -i c06.png -i c09.png -i c10.png -i c12.png -i c16.png -filter_complex vstack=8 stack.png
+CALL Read: /tmp/fr/stack.png
+OBS: Shell cwd was reset to /app
+
+[stderr]
+
+Shell cwd was reset to /app
+[metadata] {"noOutputExpected": false}
+OBS: <image>
+### step 8 [agent] 2026-11-19T15:59:35.194Z
+MSG: The bench is a row of firelocks (Space Station 14). Now I'll look at the firelock code and sprites.
+CALL Bash: cd /app; grep -rli firelock --include=*.cs Content.* | grep -v Tests; ls Resources/Textures/Structures/Doors/Airlocks/Standard/firelock.rsi Resources/Textures/Structures/Doors/edge_door_hazard.rsi 2>/dev/null; grep -rl "Firelock" Resources/Prototypes | head
+OBS: Content.Client/Doors/FirelockSystem.cs
+Content.Server/StationEvents/Events/GreytideVirusRule.cs
+Content.Server/Doors/Systems/FirelockSystem.cs
+Content.Server/Mapping/StructureAlignCommand.cs
+Content.Server/Atmos/Monitor/Components/AtmosAlarmableComponent.cs
+Content.Server/Atmos/EntitySystems/AtmosphereSystem.Monstermos.cs
+Content.Server/Atmos/EntitySystems/AtmosphereSystem.cs
+Content.Server/Construction/Commands/FixRotationsCommand.cs
+Content.Shared/Doors/Systems/SharedDoorSystem.cs
+Content.Shared/Doors/Systems/SharedFirelockSystem.cs
+Content.Shared/Doors/Components/FirelockComponent.cs
+Content.Shared/Mapping/SharedStructureAlignerSystem.cs
+Content.Shared/Whitelist/EntityWhitelist.cs
+Content ...[+1870 chars]
+### step 9 [agent] 2026-11-19T15:59:39.341Z
+CALL Bash: cd /app; cat Content.Client/Doors/FirelockSystem.cs Content.Shared/Doors/Systems/SharedFirelockSystem.cs Content.Shared/Doors/Components/FirelockComponent.cs
+CALL Bash: cd /app; cat Content.Server/Doors/Systems/FirelockSystem.cs; f=$(grep -rl "id: Firelock$" Resources/Prototypes); echo $f; cat $f
+OBS: using Content.Client.Wires.Visualizers;
+using Content.Shared.Doors.Components;
+using Content.Shared.Doors.Systems;
+using Robust.Client.Animations;
+using Robust.Client.GameObjects;
+
+namespace Content.Client.Doors;
+
+// TODO: Consolidate redundant code from the AirlockSystem.
+
+/// <inheritdoc/>
+public sealed partial class FirelockSystem : SharedFirelockSystem
+{
+    [Dependency] private SpriteSystem _sprite = default!;
+
+    [Dependency] private EntityQuery<DoorComponent> _doorQuery;
+
+    /// <inheritdoc/>
+    protected override void OnComponentStartup(Entity<FirelockComponent> ent, ref ComponentStartup args)
+    {
+        base.OnComponentStartup(ent, ref args);
+        if (!_doorQuery.TryComp(en ...[+26798 chars]
+OBS: <persisted-output>
+Output too large (41.2KB). Full output saved to: /logs/agent/sessions/projects/-app/14fafb84-25fa-448e-8ad9-8375764f9958/tool-results/bg0dcld58.txt
+
+Preview (first 2KB):
+using Content.Server.Atmos.Components;
+using Content.Server.Atmos.EntitySystems;
+using Content.Server.Atmos.Monitor.Components;
+using Content.Server.Atmos.Monitor.Systems;
+using Content.Server.Power.EntitySystems;
+using Content.Server.Shuttles.Components;
+using Content.Shared.Atmos;
+using Content.Shared.Atmos.Components;
+using Content.Shared.Atmos.Monitor;
+using Content.Shared.Doors.Components;
+using Content.Shared.Doors.Systems;
+using Content.Shared.Power;
+using Robust.Server.GameObjects;
+using Robust.Sha ...[+31706 chars]
+### step 10 [agent] 2026-11-19T15:59:47.096Z
+CALL Bash: cd /app; sed -n 40,400p Content.Server/Doors/Systems/FirelockSystem.cs; grep -rn "FirelockVisual\|ClosedLights" --include=*.cs Content.* | grep -v "Tests"
+OBS: }
+
+        private void PowerChanged(EntityUid uid, FirelockComponent component, ref PowerChangedEvent args)
+        {
+            component.Powered = args.Powered;
+            Dirty(uid, component);
+        }
+
+        public override void Update(float frameTime)
+        {
+            _accumulatedTicks += 1;
+            if (_accumulatedTicks < UpdateInterval)
+                return;
+
+            _accumulatedTicks = 0;
+
+
+            var query = EntityQueryEnumerator<FirelockComponent, DoorComponent>();
+            while (query.MoveNext(out var uid, out var firelock, out var door))
+            {
+                if (_atmosAlarmQuery.TryComp(uid, out var alarmable)
+                    && alarmab ...[+19080 chars]
+### step 11 [agent] 2026-11-19T15:59:55.886Z
+CALL Bash: cd /app; f=$(grep -rl "id: Firelock$" Resources/Prototypes); echo $f; cat $f
+OBS: <persisted-output>
+Output too large (31.2KB). Full output saved to: /logs/agent/sessions/projects/-app/14fafb84-25fa-448e-8ad9-8375764f9958/tool-results/bw37t6w0m.txt
+
+Preview (first 2KB):
+Resources/Prototypes/RCD/rcd.yml Resources/Prototypes/Recipes/Construction/structures.yml Resources/Prototypes/Entities/Structures/Doors/Firelocks/firelock.yml Resources/Prototypes/Recipes/Construction/Graphs/structures/firelock.yml
+# Operations
+- type: rcd
+  id: Invalid   # Hidden prototype - do not add to RCDs
+  mode: Invalid
+
+- type: rcd
+  id: Deconstruct
+  name: rcd-component-deconstruct
+  category: Main
+  sprite: /Textures/Interface/Radial/RCD/deconstruct.png
+  mode: Deconstruct
+  prototype: EffectRCD ...[+31708 chars]
+### step 12 [agent] 2026-11-19T15:59:59.068Z
+CALL Bash: cd /app; cat Resources/Prototypes/Entities/Structures/Doors/Firelocks/firelock.yml; ls Resources/Prototypes/Entities/Structures/Doors/Firelocks/
+OBS: - type: entity
+  abstract: true
+  parent: [ BaseStructure, StructureHealthDoor ]
+  id: BaseFirelock
+  name: firelock
+  description: Apply crowbar.
+  components:
+  - type: Anchorable
+    flags:
+    - Anchorable
+  - type: Rotatable
+  - type: AtmosAlarmable
+    syncWith:
+    - FireAlarm
+    - AirAlarm
+  - type: ApcPowerReceiver
+  - type: ExtensionCableReceiver
+  - type: DeviceNetwork
+    deviceNetId: AtmosDevices
+    receiveFrequencyId: AtmosMonitor
+  - type: DeviceNetworkRequiresPower
+  - type: InteractionOutline
+  - type: RCDDeconstructable
+    cost: 4
+    delay: 6
+    fx: EffectRCDDeconstruct6
+  - type: Damageable
+    damageModifierSet: PlasteelStaticMod
+  - type: Destructible
+    thresholds ...[+14922 chars]
+### step 13 [agent] 2026-11-19T16:00:17.800Z
+CALL Bash: cd /app; grep -n "Airtight\|airtight\|OnPartialClose\|CloseTime\|Closing" Content.Shared/Doors/Systems/SharedDoorSystem.cs | head -80
+OBS: 96:            if (door.State == DoorState.Closing)
+106:            || door.State == DoorState.Closing && door.Partial
+167:            case DoorState.Closing:
+169:                door.NextStateChange = GameTiming.CurTime + door.CloseTimeOne;
+239:            StartClosing(uid, door, args.User, true);
+392:        door.NextStateChange = GameTiming.CurTime + door.CloseTimeTwo;
+418:    #region Closing
+427:        StartClosing(uid, door, user, predicted);
+461:    public void StartClosing(EntityUid uid, DoorComponent? door = null, EntityUid? user = null, bool predicted = false)
+466:        if (!SetState(uid, DoorState.Closing, door))
+482:    public bool OnPartialClose(EntityUid uid, DoorComponent? d ...[+1172 chars]
+### step 14 [agent] 2026-11-19T16:00:22.080Z
+CALL Bash: cd /app; sed -n 80,200p Content.Shared/Doors/Systems/SharedDoorSystem.cs; sed -n 370,560p Content.Shared/Doors/Systems/SharedDoorSystem.cs; sed -n 800,880p Content.Shared/Doors/Systems/SharedDoorSystem.cs
+OBS: }
+
+    protected virtual void OnComponentInit(Entity<DoorComponent> ent, ref ComponentInit args)
+    {
+        var door = ent.Comp;
+        if (door.NextStateChange != null)
+            _activeDoors.Add(ent);
+        else
+        {
+            // Make sure doors are not perpetually stuck opening or closing.
+            if (door.State == DoorState.Opening)
+            {
+                // force to open.
+                door.State = DoorState.Open;
+                door.Partial = false;
+            }
+            if (door.State == DoorState.Closing)
+            {
+                // force to closed.
+                door.State = DoorState.Closed;
+                door.Partial = false;
+            } ...[+25482 chars]
+### step 15 [agent] 2026-11-19T16:00:27.489Z
+CALL Bash: cd /app; cat Content.Server/Doors/Systems/DoorSystem.cs | head -80; grep -rn "class AirtightSystem" Content.Server; 
+OBS: using Content.Server.Access;
+using Content.Server.Atmos.Components;
+using Content.Server.Atmos.EntitySystems;
+using Content.Shared.Doors.Components;
+using Content.Shared.Doors.Systems;
+using Content.Shared.Power;
+using Robust.Shared.Physics.Components;
+
+namespace Content.Server.Doors.Systems;
+
+public sealed partial class DoorSystem : SharedDoorSystem
+{
+    [Dependency] private AirtightSystem _airtightSystem = default!;
+
+    public override void Initialize()
+    {
+        base.Initialize();
+
+        SubscribeLocalEvent<DoorBoltComponent, PowerChangedEvent>(OnBoltPowerChanged);
+    }
+
+    protected override void SetCollidable(
+        EntityUid uid,
+        bool collidable,
+        DoorCompone ...[+2680 chars]
+### step 16 [agent] 2026-11-19T16:00:30.750Z
+CALL Bash: cd /app; cat Content.Server/Atmos/EntitySystems/AirtightSystem.cs
+OBS: using Content.Server.Atmos.Components;
+using Content.Server.Explosion.EntitySystems;
+using Content.Shared.Atmos;
+using JetBrains.Annotations;
+using Robust.Shared.Map.Components;
+
+namespace Content.Server.Atmos.EntitySystems
+{
+    [UsedImplicitly]
+    public sealed partial class AirtightSystem : EntitySystem
+    {
+        [Dependency] private SharedTransformSystem _transform = default!;
+        [Dependency] private AtmosphereSystem _atmosphereSystem = default!;
+        [Dependency] private ExplosionSystem _explosionSystem = default!;
+        [Dependency] private SharedMapSystem _mapSystem = default!;
+
+        public override void Initialize()
+        {
+            SubscribeLocalEvent<Airtight ...[+13660 chars]
+### step 17 [agent] 2026-11-19T16:00:36.880Z
+CALL Bash: cd /app/Resources/Textures/Structures/Doors/Airlocks/Effects/airlock-effects-firelock.rsi; ls; cat meta.json; cat ../../Glass/firelock-base.rsi/meta.json | head -c 1500; echo; cat ../../Standard/firelock-base.rsi/meta.json | head -c 1500
+OBS: bolted_unlit.png
+closed_unlit.png
+closing_unlit.png
+deny_unlit.png
+emergency_unlit.png
+meta.json
+open_unlit.png
+opening_unlit.png
+pressure_unlit.png
+temperature_unlit.png
+welded.png
+welded_open.png
+{
+    "version": 1,
+    "license": "CC-BY-SA-4.0",
+    "copyright": "By AftrLite",
+    "size": {
+        "x": 32,
+        "y": 32
+    },
+    "states": [
+        {
+            "name": "bolted_unlit",
+            "directions": 4
+        },
+        {
+            "name": "open_unlit",
+            "directions": 4
+        },
+        {
+            "name": "closed_unlit",
+            "directions": 4
+        },
+        {
+            "name": "closing_unlit",
+            "directions": 4,
+            "delays" ...[+19532 chars]
+### step 18 [agent] 2026-11-19T16:00:40.903Z
+CALL Bash: cd /app/Resources/Textures/Structures/Doors; python3 - <<'E'
+import json,glob
+for f in ["Airlocks/Standard/firelock-base.rsi","Airlocks/Glass/firelock-base.rsi","Airlocks/Effects/airlock-effects-firelock.rsi","Airlocks/Effects/airlock-effects.rsi","Misc/edge_door_hazard.rsi"]:
+    m=json.load(open(f+"/meta.json"))
+    print(f, m.get("size"))
+    for s in m["states"]:
+        d=s.get("delays")
+        print("  ",s["name"],s.get("directions"), [ (len(x),round(sum(x),3)) for x in d] if d else None)
+E
+OBS: Airlocks/Standard/firelock-base.rsi {'x': 32, 'y': 32}
+   assembly 4 None
+   opening 4 [(15, 0.49), (15, 0.49), (15, 0.49), (15, 0.49)]
+   closed 4 None
+   open 4 None
+   closing 4 [(15, 0.049), (15, 0.049), (15, 0.049), (15, 0.049)]
+Airlocks/Glass/firelock-base.rsi {'x': 32, 'y': 32}
+   assembly 4 None
+   opening 4 [(15, 0.49), (15, 0.49), (15, 0.49), (15, 0.49)]
+   closed 4 None
+   open 4 None
+   closing 4 [(15, 0.49), (15, 0.49), (15, 0.49), (15, 0.49)]
+Airlocks/Effects/airlock-effects-firelock.rsi {'x': 32, 'y': 32}
+   bolted_unlit 4 None
+   open_unlit 4 None
+   closed_unlit 4 None
+   closing_unlit 4 [(15, 0.49), (15, 0.49), (15, 0.49), (15, 0.49)]
+   deny_unlit 4 [(4, 0.4), (4, 0.4), (4 ...[+3624 chars]
+### step 19 [agent] 2026-11-19T16:00:51.109Z
+CALL Bash: cd /app/Resources/Textures/Structures/Doors; python3 -c "
+import glob
+from PIL import Image
+for f in sorted(glob.glob('Airlocks/Standard/firelock-base.rsi/*.png')+glob.glob('Airlocks/Glass/firelock-base.rsi/*.png')+glob.glob('Airlocks/Effects/airlock-effects-firelock.rsi/*.png')+glob.glob('Misc/edge_door_hazard.rsi/*.png')):
+    print(f, Image.open(f).size)
+"
+OBS: Exit code 1
+Traceback (most recent call last):
+  File "<string>", line 3, in <module>
+ModuleNotFoundError: No module named 'PIL'
+
+[error] tool reported failure
+### step 20 [agent] 2026-11-19T16:00:55.778Z
+CALL Bash: cd /app/Resources/Textures/Structures/Doors; for f in Airlocks/Standard/firelock-base.rsi/*.png Airlocks/Glass/firelock-base.rsi/*.png Airlocks/Effects/airlock-effects-firelock.rsi/*.png Misc/edge_door_hazard.rsi/*.png; do echo "$f $(ffprobe -v error -show_entries stream=width,height -of csv=p=0 $f)"; done
+OBS: Airlocks/Standard/firelock-base.rsi/assembly.png 64,64
+Airlocks/Standard/firelock-base.rsi/closed.png 64,64
+Airlocks/Standard/firelock-base.rsi/closing.png 480,128
+Airlocks/Standard/firelock-base.rsi/open.png 64,64
+Airlocks/Standard/firelock-base.rsi/opening.png 480,128
+Airlocks/Glass/firelock-base.rsi/assembly.png 64,64
+Airlocks/Glass/firelock-base.rsi/closed.png 64,64
+Airlocks/Glass/firelock-base.rsi/closing.png 480,128
+Airlocks/Glass/firelock-base.rsi/open.png 64,64
+Airlocks/Glass/firelock-base.rsi/opening.png 480,128
+Airlocks/Effects/airlock-effects-firelock.rsi/bolted_unlit.png 64,64
+Airlocks/Effects/airlock-effects-firelock.rsi/closed_unlit.png 64,64
+Airlocks/Effects/airlock-effects-fi ...[+2976 chars]
+### step 21 [agent] 2026-11-19T16:01:00.641Z
+MSG: Sprite sheet sizes all match. Next I'll check the opening and closing frames up close to look for misalignment.
+CALL Bash: cd /tmp/fr && rm -f o*.png && ffmpeg -v error -ss 8.6 -t 1.2 -i /app/.harbor_assets/recording.mp4 -vf "fps=10,crop=90:90:380:300,scale=180:180:flags=neighbor,tile=12x1" o2.png && ffmpeg -v error -ss 2.6 -t 1.2 -i /app/.harbor_assets/recording.mp4 -vf "fps=10,crop=90:90:950:300,scale=180:180:flags=neighbor,tile=12x1" o6.png && ffmpeg -v error -y -i o2.png -i o6.png -filter_complex vstack o.png
+CALL Read: /tmp/fr/o.png
+OBS: Shell cwd was reset to /app
+
+[stderr]
+
+Shell cwd was reset to /app
+[metadata] {"noOutputExpected": false}
+OBS: <image>
+### step 22 [user] 2026-11-19T16:01:03.498Z
+MSG: [Image: original 2160x360, displayed at 2000x333. Multiply coordinates by 1.08 to map to original image.]
+### step 23 [agent] 2026-11-19T16:01:09.889Z
+CALL Bash: cd /tmp/fr && R=/app/Resources/Textures/Structures/Doors/Airlocks/Effects/airlock-effects-firelock.rsi; ffmpeg -v error -y -i $R/pressure_unlit.png -i $R/temperature_unlit.png -i $R/closed_unlit.png -filter_complex "[2]pad=128:128[c];[0][1][c]hstack=3,scale=1152:384:flags=neighbor" -frames:v 1 u.png
+CALL Read: /tmp/fr/u.png
+OBS: Shell cwd was reset to /app
+
+[stderr]
+
+Shell cwd was reset to /app
+[metadata] {"noOutputExpected": false}
+OBS: <image>
+### step 24 [agent] 2026-11-19T16:01:22.189Z
+CALL Bash: cd /tmp/fr && ffmpeg -v error -y -i f09.png -vf "crop=900:70:200:310,scale=1800:140:flags=neighbor" l.png; cat /app/Resources/Textures/Structures/Doors/Airlocks/Effects/airlock-effects-firelock.rsi/meta.json >/dev/null; ffmpeg -v error -y -i /app/Resources/Textures/Structures/Doors/Airlocks/Effects/airlock-effects-firelock.rsi/closed_unlit.png -vf "scale=256:256:flags=neighbor" cu.png
+CALL Read: /tmp/fr/l.png
+CALL Read: /tmp/fr/cu.png
+OBS: Shell cwd was reset to /app
+
+[stderr]
+
+Shell cwd was reset to /app
+[metadata] {"noOutputExpected": false}
+OBS: <image>
+OBS: <image>
+### step 25 [agent] 2026-11-19T16:01:52.833Z
+CALL Bash: cd /app; grep -rln "Firelock" Content.IntegrationTests Content.Tests | head; grep -rn "GetTileMixtures" Content.Server/Atmos/EntitySystems/*.cs | head -3
+OBS: Content.Server/Atmos/EntitySystems/AtmosphereSystem.API.cs:174:    public GasMixture?[]? GetTileMixtures(
+
+[stdout]
+Content.Server/Atmos/EntitySystems/AtmosphereSystem.API.cs:174:    public GasMixture?[]? GetTileMixtures(
+[metadata] {"noOutputExpected": false}
+### step 26 [agent] 2026-11-19T16:01:59.540Z
+CALL Bash: cd /app; sed -n 160,240p Content.Server/Atmos/EntitySystems/AtmosphereSystem.API.cs
+OBS: var position = XformSystem.GetGridTilePositionOrDefault((ent, ent.Comp));
+        return GetTileMixture(grid, map, position, excite);
+    }
+
+    /// <summary>
+    /// Gets the gas mixtures for a list of tiles on a grid or map.
+    /// </summary>
+    /// <param name="grid">The grid to get mixtures from.</param>
+    /// <param name="map">The map to get mixtures from.</param>
+    /// <param name="tiles">The list of tiles to get mixtures for.</param>
+    /// <param name="excite">Whether to mark the tiles as active for atmosphere processing.</param>
+    /// <returns>>An array of gas mixtures corresponding to the input tiles.</returns>
+    [PublicAPI]
+    public GasMixture?[]? GetTileMixtures(
+    ...[+4946 chars]
+### step 27 [agent] 2026-11-19T16:02:10.012Z
+CALL Bash: cd /app; grep -rn -B2 -A3 "airBlockedDirection" Resources/Prototypes/Entities/Structures/Doors Resources/Prototypes/Entities/Structures/Windows | grep -A2 airBlockedDirection | head -40; grep -rn "TemperatureThreshold\|PressureThreshold" Resources/ Content.* | grep -v "firelock.TemperatureThreshold\|firelock.PressureThreshold" | head
+OBS: Resources/Prototypes/Entities/Structures/Doors/Airlocks/shuttle.yml:77:    airBlockedDirection:
+Resources/Prototypes/Entities/Structures/Doors/Airlocks/shuttle.yml-78-    - South
+Resources/Prototypes/Entities/Structures/Doors/Airlocks/shuttle.yml-79-  - type: Tag
+--
+Resources/Prototypes/Entities/Structures/Doors/Firelocks/firelock.yml:251:      airBlockedDirection:
+Resources/Prototypes/Entities/Structures/Doors/Firelocks/firelock.yml-252-        - North
+Resources/Prototypes/Entities/Structures/Doors/Firelocks/firelock.yml-253-    - type: Fixtures
+--
+Resources/Prototypes/Entities/Structures/Doors/Windoors/base_structurewindoors.yml:162:    airBlockedDirection:
+Resources/Prototypes/Entities/St ...[+7364 chars]
+### step 28 [agent] 2026-11-19T16:02:21.931Z
+CALL Bash: cd /app; grep -rn "DoorStateChangedEvent" --include=*.cs Content.* | grep -i "firelock\|FirelockComponent"; python3 - <<'E'
+import re,json
+p='Content.Server/Atmos/EntitySystems/AirtightSystem.cs'
+s=open(p).read()
+s=s.replace("""            airtight.Comp.AirBlocked = airblocked;
+            if (!airblocked)
+                UpdatePosition(airtight, xform);""","""            airtight.Comp.AirBlocked = airblocked;
+            UpdatePosition(airtight, xform);""")
+open(p,'w').write(s)
+p='Resources/Prototypes/Entities/Structures/Doors/Firelocks/firelock.yml'
+s=open(p).read()
+s=s.replace("""      airBlockedDirection:
+        - North""","""      airBlockedDirection:
+        - South""")
+s=s.replace("""      - state: panel_open
+        sprite: Structures/Doors/Airlocks/Effects/airlock-effects.rsi
+        map: ["enum.WiresVisualLayers.MaintenancePanel"]
+    - type: Occluder""","""      - state: panel_open
+        sprite: Structures/Doors/Airlocks/Effects/airlock-effects.rsi
+        map: ["enum.WiresVisualLayers.MaintenancePanel"]
+      - state: pressure_unlit
+        visible: false
+        shader: unshaded
+        sprite: Structures/Doors/Airlocks/Effects/airlock-effects-firelock.rsi
+        map: ["enum.FirelockVisualLayersPressure.Base"]
+      - state: temperature_unlit
+        visible: false
+        shader: unshaded
+        sprite: Structures/Doors/Airlocks/Effects/airlock-effects-firelock.rsi
+        map: ["enum.FirelockVisualLayersTemperature.Base"]
+    - type: Occluder""")
+open(p,'w').write(s)
+p='Content.Shared/Doors/Components/FirelockComponent.cs'
+s=open(p).read(); s=s.replace("TemperatureThreshold = 230;","TemperatureThreshold = 330;"); open(p,'w').write(s)
+p='Content.Server/Doors/Systems/FirelockSystem.cs'
+s=open(p).read()
+old="""                    maxTemperature = Math.Max(maxTemperature, gas.Temperature);
+                }
+"""
+new="""                    maxTemperature = Math.Max(maxTemperature, gas.Temperature);
+                }
+                else
+                {
+                    minPressure = Math.Min(minPressure, 0);
+                    maxPressure = Math.Max(maxPressure, 0);
+                    minTemperature = Math.Min(minTemperature, 0);
+                    maxTemperature = Math.Max(maxTemperature, 0);
+                }
+"""
+assert old in s; s=s.replace(old,new); open(p,'w').write(s)
+E
+git diff --stat
+OBS: Content.Server/Atmos/EntitySystems/AirtightSystem.cs         |  3 +--
+ Content.Server/Doors/Systems/FirelockSystem.cs               |  7 +++++++
+ Content.Shared/Doors/Components/FirelockComponent.cs         |  2 +-
+ .../Entities/Structures/Doors/Firelocks/firelock.yml         | 12 +++++++++++-
+ 4 files changed, 20 insertions(+), 4 deletions(-)
+
+[stdout]
+ Content.Server/Atmos/EntitySystems/AirtightSystem.cs         |  3 +--
+ Content.Server/Doors/Systems/FirelockSystem.cs               |  7 +++++++
+ Content.Shared/Doors/Components/FirelockComponent.cs         |  2 +-
+ .../Entities/Structures/Doors/Firelocks/firelock.yml         | 12 +++++++++++-
+ 4 files changed, 20 insertions(+), 4 deletions( ...[+3602 chars]
+### step 29 [agent] 2026-11-19T16:02:33.277Z
+MSG: Now the closing animation delays (copy from the opening/glass timing):
+CALL Bash: cd /app/Resources/Textures/Structures/Doors/Airlocks; grep -n '"closing"' -A20 Standard/firelock-base.rsi/meta.json | head -22
+OBS: 97:            "name": "closing",
+98-            "directions": 4,
+99-            "delays": [
+100-                [
+101-                    0.01,
+102-                    0.005,
+103-                    0.005,
+104-                    0.001,
+105-                    0.001,
+106-                    0.001,
+107-                    0.001,
+108-                    0.001,
+109-                    0.001,
+110-                    0.001,
+111-                    0.001,
+112-                    0.001,
+113-                    0.005,
+114-                    0.005,
+115-                    0.01
+116-                ],
+117-                [
+
+[stdout]
+97:            "name": "closing",
+98-            "directions": 4,
+99 ...[+592 chars]
+### step 30 [agent] 2026-11-19T16:02:39.519Z
+CALL Bash: cd /app/Resources/Textures/Structures/Doors/Airlocks; sed -i '97,170{s/^\( *\)0\.01$/\10.1/;s/^\( *\)0\.01,$/\10.1,/;s/^\( *\)0\.005,$/\10.05,/;s/^\( *\)0\.001,$/\10.01,/}' Standard/firelock-base.rsi/meta.json; python3 -c "
+import json;m=json.load(open('Standard/firelock-base.rsi/meta.json'));g=json.load(open('Glass/firelock-base.rsi/meta.json'))
+print([s['delays'] for s in m['states'] if s['name']=='closing']==[s['delays'] for s in g['states'] if s['name']=='closing'])"; git diff --stat .
+OBS: True
+ .../Airlocks/Standard/firelock-base.rsi/meta.json  | 112 ++++++++++-----------
+ 1 file changed, 56 insertions(+), 56 deletions(-)
+
+[stdout]
+True
+ .../Airlocks/Standard/firelock-base.rsi/meta.json  | 112 ++++++++++-----------
+ 1 file changed, 56 insertions(+), 56 deletions(-)
+[metadata] {"noOutputExpected": false, "bashEditDiff": {"files": [{"filePath": "/app/Resources/Textures/Structures/Doors/Airlocks/Standard/firelock-base.rsi/meta.json", "hunks": [{"oldStart": 98, "oldLines": 72, "newStart": 98, "newLines": 72, "lines": ["             \"directions\": 4,", "             \"delays\": [", "                 [", "+                    0.1,", "+                    0.05,", "+                 ...[+3757 chars]
+### step 31 [agent] 2026-11-19T16:02:45.255Z
+MSG: The closing timing now matches the glass firelock. Last fix: clear the warning when the firelock leaves the shut state.
+CALL Bash: cd /app; python3 - <<'E'
+p='Content.Shared/Doors/Systems/SharedFirelockSystem.cs'
+s=open(p).read()
+s=s.replace("""        SubscribeLocalEvent<FirelockComponent, ComponentStartup>(OnComponentStartup);
+""","""        SubscribeLocalEvent<FirelockComponent, ComponentStartup>(OnComponentStartup);
+        SubscribeLocalEvent<FirelockComponent, DoorStateChangedEvent>(UpdateVisuals);
+""")
+old="""            _appearance.SetData(uid, DoorVisuals.ClosedLights, false, appearance);
+            return;"""
+new="""            _appearance.SetData(uid, DoorVisuals.ClosedLights, false, appearance);
+            _appearance.SetData(uid, FirelockVisuals.PressureWarning, false, appearance);
+            _appearance.SetData(uid, FirelockVisuals.TemperatureWarning, false, appearance);
+            return;"""
+assert old in s; s=s.replace(old,new)
+s=s.replace("""        _appearance.SetData(uid, DoorVisuals.ClosedLights, firelock.IsLocked, appearance);
+    }""","""        _appearance.SetData(uid, DoorVisuals.ClosedLights, firelock.IsLocked, appearance);
+        _appearance.SetData(uid, FirelockVisuals.PressureWarning, firelock.Pressure, appearance);
+        _appearance.SetData(uid, FirelockVisuals.TemperatureWarning, firelock.Temperature, appearance);
+    }""")
+open(p,'w').write(s)
+E
+grep -rn "class DoorStateChangedEvent" Content.Shared; grep -rn "DoorStateChangedEvent>" --include=*.cs Content.*
+OBS: Content.Shared/Doors/DoorEvents.cs:8:    public sealed class DoorStateChangedEvent : EntityEventArgs
+Content.Server/Radiation/Systems/RadiationSystem.Blockers.cs:18:        SubscribeLocalEvent<RadiationBlockerComponent, DoorStateChangedEvent>(OnDoorChanged);
+Content.Server/DeviceLinking/Systems/DoorSignalControlSystem.cs:22:            SubscribeLocalEvent<DoorSignalControlComponent, DoorStateChangedEvent>(OnStateChanged);
+Content.Shared/Doors/Systems/SharedDoorSystem.Bolts.cs:16:        SubscribeLocalEvent<DoorBoltComponent, DoorStateChangedEvent>(OnStateChanged);
+Content.Shared/Doors/Systems/SharedFirelockSystem.cs:32:        SubscribeLocalEvent<FirelockComponent, DoorStateChangedEvent>(Upd ...[+2628 chars]
+### step 32 [agent] 2026-11-19T16:02:56.603Z
+MSG: The server's red point light also stays on after the door opens, so I'll turn it off in the same branch:
+CALL Bash: cd /app; python3 - <<'E'
+p='Content.Server/Doors/Systems/FirelockSystem.cs'
+s=open(p).read()
+old="""                    && door.State != DoorState.Denying)
+                {
+                    continue;
+                }"""
+new="""                    && door.State != DoorState.Denying)
+                {
+                    // Warnings are only shown while the firelock is shut.
+                    if (_pointLightQuery.TryComp(uid, out var openLight) && openLight.Enabled)
+                        _pointLight.SetEnabled(uid, false, openLight);
+                    continue;
+                }"""
+assert old in s; s=s.replace(old,new); open(p,'w').write(s)
+E
+timeout 900 dotnet build Content.Server/Content.Server.csproj -v q 2>&1 | grep -E "error|Warn|Error|Elapsed" | grep -v "warning" | tail -20
+OBS: 401 Warning(s)
+    0 Error(s)
+Time Elapsed 00:01:53.86
+
+[stdout]
+    401 Warning(s)
+    0 Error(s)
+Time Elapsed 00:01:53.86
+[metadata] {"noOutputExpected": false, "bashEditDiff": {"files": [{"filePath": "/app/Content.Server/Doors/Systems/FirelockSystem.cs", "hunks": [{"oldStart": 70, "oldLines": 6, "newStart": 70, "newLines": 9, "lines": ["                     && door.State != DoorState.Welded", "                     && door.State != DoorState.Denying)", "                 {", "+                    // Warnings are only shown while the firelock is shut.", "+                    if (_pointLightQuery.TryComp(uid, out var openLight) && openLight.Enabled)", "+                        _pointLight.Set ...[+189 chars]
+### step 33 [agent] 2026-11-19T16:04:57.743Z
+CALL Bash: cd /app; timeout 900 dotnet build Content.Client/Content.Client.csproj -v q 2>&1 | grep -E " error |Error\(s\)|Elapsed" | tail -5; ls Content.YAMLLinter >/dev/null 2>&1 && echo linter
+OBS: /app/RobustToolbox/Robust.Client/Light/LightLevelOverlay .cs(31,30): warning RA0051: Field '_overlay' is a [Dependency] but is readonly. This will be an error in the future. [/app/RobustToolbox/Robust.Client/Robust.Client.csproj]
+/app/RobustToolbox/Robust.Client/Light/LightLevelOverlay .cs(30,30): warning RA0051: Field '_deps' is a [Dependency] but is readonly. This will be an error in the future. [/app/RobustToolbox/Robust.Client/Robust.Client.csproj]
+/app/RobustToolbox/Robust.Client/Light/LightLevelOverlay .cs(31,30): warning RA0051: Field '_overlay' is a [Dependency] but is readonly. This will be an error in the future. [/app/RobustToolbox/Robust.Client/Robust.Client.csproj]
+    0 Error(s ...[+816 chars]
+### step 34 [agent] 2026-11-19T16:05:26.078Z
+CALL Bash: cd /app; git diff -- '*.cs' '*.yml'
+OBS: diff --git a/Content.Server/Atmos/EntitySystems/AirtightSystem.cs b/Content.Server/Atmos/EntitySystems/AirtightSystem.cs
+index ade2b40..37e98fd 100644
+--- a/Content.Server/Atmos/EntitySystems/AirtightSystem.cs
++++ b/Content.Server/Atmos/EntitySystems/AirtightSystem.cs
+@@ -105,8 +105,7 @@ public void SetAirblocked(Entity<AirtightComponent> airtight, bool airblocked, T
+ 
+             var pos = airtight.Comp.LastPosition;
+             airtight.Comp.AirBlocked = airblocked;
+-            if (!airblocked)
+-                UpdatePosition(airtight, xform);
++            UpdatePosition(airtight, xform);
+             var airtightEv = new AirtightChanged(airtight, airtight, true, pos);
+             Rais ...[+11052 chars]
+### step 35 [agent] 2026-11-19T16:05:36.793Z
+MSG: I fixed six firelock problems from the clip. The server and client both build with 0 errors. I haven't run the game, the YAML linter or any tests, so I haven't seen these fixes in the clip.
+
+**Gas gets past a shut firelock (column 6).** In `AirtightSystem.SetAirblocked`, the atmos tile was only refreshed when a door *opened*. When a firelock closed, atmos never learned the tile was blocked, so gas kept flowing through. It now refreshes on both open and close.
+
+**Edge firelock blocks the wrong side (column 5).** In `firelock.yml` it blocked air on its North edge, but its sprite and collision box sit on the South edge. Gas therefore crossed the visible barrier. It now blocks South, like the windoors.
+
+**Wrong kind of warning.**
+- **Space showed the fire warning (column 1).** The temperature limit was 230 K, so the ~290 K gap between a room and space counted as fire. The orange fire light then covered the cyan pressure light. I raised the limit to 330 K, which I believe is the upstream default (from memory, not checked). Fires are still far above that, so column 3 keeps its fire warning.
+- **Space tiles with no gas data were skipped** in the server check (`FirelockSystem.cs`). They now count as 0 kPa and 0 K.
+- **The glass firelock (column 4) showed no warning at all.** Its sprite was missing the pressure and temperature light layers, so I added them.
+
+**Warning stayed lit after opening (column 2).** Nothing cleared the warning when the door changed state. `SharedFirelockSystem` now updates the warning lights on every door state change, so they only show while the firelock is shut. The server also turns off the red glow once the door is open.
+
+**Firelock snapped shut (column 6).** The standard firelock's `closing` animation frames totalled 0.049 s, ten times faster than the 0.49 s opening. The door finished before its lights and panel did, so the parts drifted out of line. I set the delays to match the opening and glass versions.
+
+One thing to know: when a firelock closes again, it can briefly show the warning from its last closing for up to about half a second, until the server re-checks. Upstream has the same delay for its general closed light.

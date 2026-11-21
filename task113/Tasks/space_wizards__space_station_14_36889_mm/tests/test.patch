@@ -1,0 +1,543 @@
+diff --git a/Content.IntegrationTests/Tests/Doors/FirelockAnimationTest.cs b/Content.IntegrationTests/Tests/Doors/FirelockAnimationTest.cs
+new file mode 100644
+index 00000000..f27a9d37
+--- /dev/null
++++ b/Content.IntegrationTests/Tests/Doors/FirelockAnimationTest.cs
+@@ -0,0 +1,93 @@
++#nullable enable
++using System.Collections.Generic;
++using Content.IntegrationTests.Fixtures;
++using Content.IntegrationTests.Fixtures.Attributes;
++using Content.Shared.Doors.Components;
++using Content.Shared.Doors.Systems;
++using Robust.Client.GameObjects;
++using Robust.Shared.GameObjects;
++
++namespace Content.IntegrationTests.Tests.Doors;
++
++/// <summary>
++/// How a firelock's door panel moves on the client while it shuts.
++/// </summary>
++[TestOf(typeof(FirelockComponent))]
++public sealed class FirelockAnimationTest : GameTest
++{
++    public override PoolSettings PoolSettings => new() { Connected = true, Fresh = true };
++
++    [SidedDependency(Side.Server)] private SharedDoorSystem _sDoorSystem = null!;
++
++    [Test]
++    [Description("While a firelock shuts, its door panel plays its closing frames through to the end instead of " +
++                 "holding one frame and then jumping to the shut picture.")]
++    public async Task ClosingAnimation_PlaysThroughBeforeTheDoorShuts()
++    {
++        await Pair.CreateTestMap();
++
++        EntityUid serverUid = default;
++        await Server.WaitPost(() => serverUid = SSpawnAtPosition("Firelock", TestMap!.GridCoords));
++        await RunUntilSynced();
++
++        await Server.WaitAssertion(() =>
++            Assert.That(SEntMan.GetComponent<DoorComponent>(serverUid).State, Is.EqualTo(DoorState.Open)));
++
++        var clientUid = ToClientUid(serverUid);
++        string? closingState = null;
++        var frameCount = 0;
++        await Client.WaitPost(() =>
++        {
++            var door = CEntMan.GetComponent<DoorComponent>(clientUid);
++            closingState = door.ClosingSpriteState;
++            var spriteSys = Client.System<SpriteSystem>();
++            var sprite = CEntMan.GetComponent<SpriteComponent>(clientUid);
++            Assert.That(spriteSys.TryGetLayer((clientUid, sprite), DoorVisualLayers.Base, out var layer, false));
++            Assert.That(closingState, Is.Not.Null);
++            Assert.That(layer!.ActualRsi!.TryGetState(closingState!, out var state));
++            frameCount = state!.DelayCount;
++        });
++        Assert.That(frameCount, Is.GreaterThan(6), "The closing sprite should be a multi-frame animation.");
++
++        await Server.WaitPost(() => _sDoorSystem.StartClosing(serverUid));
++
++        // Watch the client's door panel, tick by tick, until the door is shut and settled.
++        var framesSeen = new HashSet<int>();
++        var lastFrame = -1;
++        for (var i = 0; i < 60; i++)
++        {
++            await RunTicksSync(1);
++
++            var settled = false;
++            await Client.WaitPost(() =>
++            {
++                var spriteSys = Client.System<SpriteSystem>();
++                var sprite = CEntMan.GetComponent<SpriteComponent>(clientUid);
++                if (!spriteSys.TryGetLayer((clientUid, sprite), DoorVisualLayers.Base, out var layer, false))
++                    return;
++
++                if (layer.State.Name == closingState)
++                {
++                    framesSeen.Add(layer.AnimationFrame);
++                    lastFrame = Math.Max(lastFrame, layer.AnimationFrame);
++                }
++                else if (CEntMan.GetComponent<DoorComponent>(clientUid).State == DoorState.Closed && framesSeen.Count > 0)
++                {
++                    settled = true;
++                }
++            });
++
++            if (settled)
++                break;
++        }
++
++        Assert.Multiple(() =>
++        {
++            Assert.That(framesSeen, Is.Not.Empty, "The closing animation never played.");
++            Assert.That(framesSeen.Count, Is.GreaterThanOrEqualTo(6),
++                $"The door panel showed only {framesSeen.Count} of its {frameCount} closing frames.");
++            Assert.That(lastFrame, Is.GreaterThanOrEqualTo(frameCount - 3),
++                $"The door panel never got near the end of its closing animation (last frame {lastFrame} of {frameCount}).");
++        });
++    }
++}
+diff --git a/Content.IntegrationTests/Tests/Doors/FirelockLane.cs b/Content.IntegrationTests/Tests/Doors/FirelockLane.cs
+new file mode 100644
+index 00000000..330a024b
+--- /dev/null
++++ b/Content.IntegrationTests/Tests/Doors/FirelockLane.cs
+@@ -0,0 +1,182 @@
++#nullable enable
++using System.Collections.Generic;
++using Content.IntegrationTests.Fixtures;
++using Content.Server.Atmos.EntitySystems;
++using Content.Shared.Atmos;
++using Content.Shared.Atmos.Components;
++using Content.Shared.Doors.Components;
++using Content.Shared.Doors.Systems;
++using Content.Shared.Maps;
++using Robust.Client.GameObjects;
++using Robust.Shared.GameObjects;
++using Robust.Shared.Map;
++using Robust.Shared.Map.Components;
++using Robust.Shared.Maths;
++
++namespace Content.IntegrationTests.Tests.Doors;
++
++/// <summary>
++/// A small walled test bench for doors: a one-tile-wide lane on its own grid, with a lower cell (y = 0..1),
++/// the door tile (y = 2) and an upper cell (y = 3..4). The upper cell can instead be left open to space.
++/// Everything here goes through public game systems only: spawn, open/close, read and change tile air, and
++/// read what the client draws.
++/// </summary>
++internal sealed class FirelockLane
++{
++    public static readonly Vector2i DoorTile = new(0, 2);
++    public static readonly Vector2i[] Lower = { new(0, 0), new(0, 1) };
++    public static readonly Vector2i[] Upper = { new(0, 3), new(0, 4) };
++
++    public EntityUid Grid;
++    public EntityUid Door;
++
++    private readonly GameTest _t;
++
++    private FirelockLane(GameTest t)
++    {
++        _t = t;
++    }
++
++    public static async Task<FirelockLane> Build(GameTest t, string doorProto, bool upperIsSpace = false)
++    {
++        var lane = new FirelockLane(t);
++
++        await t.Server.WaitPost(() =>
++        {
++            var mapSys = t.Server.System<SharedMapSystem>();
++            var tileDefs = t.Server.ResolveDependency<ITileDefinitionManager>();
++            var floor = tileDefs["FloorSteel"].TileId;
++            var plating = tileDefs["Plating"].TileId;
++
++            mapSys.CreateMap(out var mapId);
++            var grid = mapSys.CreateGridEntity(mapId);
++            lane.Grid = grid.Owner;
++
++            var walls = new List<Vector2i>();
++            for (var x = -1; x <= 1; x++)
++            {
++                for (var y = -1; y <= 5; y++)
++                {
++                    // Open to space: no floor above the door, and no wall closing it off at the top.
++                    if (upperIsSpace && x == 0 && y >= 3)
++                        continue;
++
++                    var isWall = x != 0 || y == -1 || y == 5;
++                    mapSys.SetTile(grid.Owner, grid.Comp, new Vector2i(x, y), new Tile(isWall ? plating : floor));
++                    if (isWall)
++                        walls.Add(new Vector2i(x, y));
++                }
++            }
++
++            t.SEntMan.EnsureComponent<GridAtmosphereComponent>(grid.Owner);
++            t.SEntMan.EnsureComponent<GasTileOverlayComponent>(grid.Owner);
++
++            foreach (var w in walls)
++                t.SEntMan.SpawnEntity("WallSolid", new EntityCoordinates(grid.Owner, w.X + 0.5f, w.Y + 0.5f));
++
++            lane.Door = t.SEntMan.SpawnEntity(doorProto, new EntityCoordinates(grid.Owner, DoorTile.X + 0.5f, DoorTile.Y + 0.5f));
++        });
++
++        await t.RunTicksSync(5);
++        return lane;
++    }
++
++    public DoorState ServerState => _t.SEntMan.GetComponent<DoorComponent>(Door).State;
++
++    public async Task WaitForState(DoorState state)
++    {
++        await PoolManager.WaitUntil(_t.Server, () => ServerState == state);
++        Assert.That(ServerState, Is.EqualTo(state));
++    }
++
++    /// <summary>
++    /// Shuts the door and waits until it is fully closed.
++    /// </summary>
++    /// <param name="asIfMappedShut">
++    /// Also have atmos re-read the door tile once, the way a door that was already shut when the map loaded is
++    /// seen. Tests that are not about how a door seals use this, so they only depend on what they check.
++    /// </param>
++    public async Task Close(bool asIfMappedShut)
++    {
++        var doors = _t.Server.System<SharedDoorSystem>();
++        await _t.Server.WaitPost(() => doors.TryClose(Door));
++        await WaitForState(DoorState.Closed);
++
++        if (asIfMappedShut)
++            await _t.Server.WaitPost(() => _t.Server.System<AtmosphereSystem>().InvalidateTile(Grid, DoorTile));
++
++        await _t.RunTicksSync(5);
++    }
++
++    /// <summary>
++    /// Gives every tile on the lane the normal round-start air.
++    /// </summary>
++    public async Task FillAir()
++    {
++        await _t.Server.WaitPost(() =>
++        {
++            var atmos = _t.Server.System<AtmosphereSystem>();
++            atmos.RebuildGridAtmosphere((Grid,
++                _t.SEntMan.GetComponent<GridAtmosphereComponent>(Grid),
++                _t.SEntMan.GetComponent<MapGridComponent>(Grid)));
++        });
++        await _t.RunTicksSync(2);
++    }
++
++    public async Task ChangeAir(IEnumerable<Vector2i> tiles, Action<GasMixture> change)
++    {
++        await _t.Server.WaitPost(() =>
++        {
++            var atmos = _t.Server.System<AtmosphereSystem>();
++            foreach (var tile in tiles)
++            {
++                var mix = atmos.GetTileMixture((Grid, null, null), null, tile, excite: true);
++                Assert.That(mix, Is.Not.Null, $"Tile {tile} has no air to change.");
++                change(mix!);
++            }
++        });
++    }
++
++    public async Task<float> Moles(Gas gas, params Vector2i[] tiles)
++    {
++        var total = 0f;
++        await _t.Server.WaitPost(() =>
++        {
++            var atmos = _t.Server.System<AtmosphereSystem>();
++            foreach (var tile in tiles)
++                total += atmos.GetTileMixture((Grid, null, null), null, tile)?.GetMoles(gas) ?? 0f;
++        });
++        return total;
++    }
++
++    /// <summary>
++    /// What the client draws for a keyed sprite layer of the door: whether the layer is shown, and whether it
++    /// actually has a sprite state to draw (a blank placeholder layer draws nothing).
++    /// </summary>
++    public async Task<(bool Shown, bool Drawable)> ClientLayer(Enum key)
++    {
++        var shown = false;
++        var drawable = false;
++        var clientUid = _t.ToClientUid(Door);
++
++        await _t.Client.WaitPost(() =>
++        {
++            var spriteSys = _t.Client.System<SpriteSystem>();
++            var sprite = _t.CEntMan.GetComponent<SpriteComponent>(clientUid);
++            if (!spriteSys.LayerMapTryGet((clientUid, sprite), key, out var index, false)
++                || !spriteSys.TryGetLayer((clientUid, sprite), index, out var layer, false))
++                return;
++
++            shown = layer.Visible;
++            drawable = layer.ActualRsi is { } rsi && rsi.TryGetState(layer.State, out _);
++        });
++
++        return (shown, drawable);
++    }
++
++    public async Task<bool> WarningShown(Enum key)
++    {
++        var (shown, drawable) = await ClientLayer(key);
++        return shown && drawable;
++    }
++}
+diff --git a/Content.IntegrationTests/Tests/Doors/FirelockSealTest.cs b/Content.IntegrationTests/Tests/Doors/FirelockSealTest.cs
+new file mode 100644
+index 00000000..b961ddb8
+--- /dev/null
++++ b/Content.IntegrationTests/Tests/Doors/FirelockSealTest.cs
+@@ -0,0 +1,75 @@
++#nullable enable
++using Content.IntegrationTests.Fixtures;
++using Content.Shared.Atmos;
++using Content.Shared.Doors.Components;
++using Robust.Shared.GameObjects;
++
++namespace Content.IntegrationTests.Tests.Doors;
++
++/// <summary>
++/// What a shut firelock keeps out. Gas is released on one side of the door and the other side is checked
++/// after the air has had time to spread.
++/// </summary>
++[TestOf(typeof(FirelockComponent))]
++public sealed class FirelockSealTest : GameTest
++{
++    public override PoolSettings PoolSettings => new() { Connected = true, Fresh = true };
++
++    private const float Released = 200f;
++
++    // Far below anything that could have flowed through an open gap in four seconds.
++    private const float Trace = 1f;
++
++    [Test]
++    [Description("A firelock that was shut while the round was running holds back gas released behind it afterwards.")]
++    public async Task ClosedFirelock_HoldsBackGasReleasedAfterClosing()
++    {
++        var lane = await FirelockLane.Build(this, "Firelock");
++        await lane.FillAir();
++
++        // Filling the lane makes atmos re-read every tile on its next pass. Let that settle while the door is
++        // still open, so that afterwards only the door shutting can seal its tile.
++        await RunSeconds(2);
++
++        // Shut it during play, then release gas on one side.
++        await lane.Close(asIfMappedShut: false);
++        await lane.ChangeAir(FirelockLane.Upper, m => m.AdjustMoles(Gas.Plasma, Released));
++        await RunSeconds(4);
++
++        var behind = await lane.Moles(Gas.Plasma, FirelockLane.Upper);
++        var through = await lane.Moles(Gas.Plasma, FirelockLane.Lower);
++        Assert.Multiple(() =>
++        {
++            Assert.That(behind, Is.GreaterThan(Released), "The released gas should still be behind the firelock.");
++            Assert.That(through, Is.LessThan(Trace),
++                $"{through:F1} mol of the gas got past a shut firelock.");
++        });
++    }
++
++    [Test]
++    [Description("An edge firelock seals along the edge its door panel is drawn on (the bottom edge of its tile when " +
++                 "unrotated): gas on that side stays on that side and never reaches the firelock's own tile.")]
++    public async Task EdgeFirelock_SealsAlongItsDoorEdge()
++    {
++        // Unrotated, the edge firelock's door panel is drawn along the bottom (south) edge of its tile, so the
++        // lane's lower cell is beyond the panel and the firelock's own tile and the upper cell are on its near side.
++        var lane = await FirelockLane.Build(this, "FirelockEdge");
++        await lane.Close(asIfMappedShut: true);
++        await lane.FillAir();
++
++        await lane.ChangeAir(FirelockLane.Lower, m => m.AdjustMoles(Gas.Plasma, Released));
++        await RunSeconds(4);
++
++        var held = await lane.Moles(Gas.Plasma, FirelockLane.Lower);
++        var onDoorTile = await lane.Moles(Gas.Plasma, FirelockLane.DoorTile);
++        var past = await lane.Moles(Gas.Plasma, FirelockLane.Upper);
++        Assert.Multiple(() =>
++        {
++            Assert.That(held, Is.GreaterThan(Released), "The released gas should still be below the door panel.");
++            Assert.That(onDoorTile, Is.LessThan(Trace),
++                $"{onDoorTile:F1} mol of gas reached the edge firelock's own tile from beyond its door panel.");
++            Assert.That(past, Is.LessThan(Trace),
++                $"{past:F1} mol of gas got past the edge firelock.");
++        });
++    }
++}
+diff --git a/Content.IntegrationTests/Tests/Doors/FirelockWarningLightTest.cs b/Content.IntegrationTests/Tests/Doors/FirelockWarningLightTest.cs
+new file mode 100644
+index 00000000..1f96ced4
+--- /dev/null
++++ b/Content.IntegrationTests/Tests/Doors/FirelockWarningLightTest.cs
+@@ -0,0 +1,169 @@
++#nullable enable
++using Content.IntegrationTests.Fixtures;
++using Content.IntegrationTests.Fixtures.Attributes;
++using Content.Shared.Atmos;
++using Content.Shared.Doors.Components;
++using Content.Shared.Doors.Systems;
++using Content.Shared.Tools.Systems;
++using Robust.Shared.GameObjects;
++
++namespace Content.IntegrationTests.Tests.Doors;
++
++/// <summary>
++/// The warning lights a firelock shows while it is shut and holding something back. Each test builds a real
++/// hazard next to the door and checks what the client draws.
++/// </summary>
++[TestOf(typeof(FirelockComponent))]
++public sealed class FirelockWarningLightTest : GameTest
++{
++    // A brand-new server/client pair per test, so a failure is always reported under the test that caused it.
++    public override PoolSettings PoolSettings => new() { Connected = true, Fresh = true };
++
++    [SidedDependency(Side.Server)] private SharedDoorSystem _sDoorSystem = null!;
++    [SidedDependency(Side.Server)] private WeldableSystem _sWeldable = null!;
++
++    /// <summary>
++    /// A lane whose upper cell holds far more air than the lower one, at the same temperature.
++    /// </summary>
++    private async Task<FirelockLane> OverPressureLane(string proto)
++    {
++        var lane = await FirelockLane.Build(this, proto);
++        await lane.Close(asIfMappedShut: true);
++        await lane.FillAir();
++        await lane.ChangeAir(FirelockLane.Upper, m => m.AdjustMoles(Gas.Nitrogen, 200f));
++        await RunSeconds(3);
++        await RunUntilSynced();
++        return lane;
++    }
++
++    /// <summary>
++    /// A lane whose upper cell holds searing hot air: hot enough for the temperature warning, and the heat also
++    /// pushes its pressure up far enough for the pressure warning.
++    /// </summary>
++    private async Task<FirelockLane> HotLane(string proto)
++    {
++        var lane = await FirelockLane.Build(this, proto);
++        await lane.Close(asIfMappedShut: true);
++        await lane.FillAir();
++        await lane.ChangeAir(FirelockLane.Upper, m => m.Temperature = 1000f);
++        await RunSeconds(3);
++        await RunUntilSynced();
++        return lane;
++    }
++
++    private async Task AssertNoWarningShown(FirelockLane lane, string when)
++    {
++        var pressure = await lane.WarningShown(FirelockVisualLayersPressure.Base);
++        var temperature = await lane.WarningShown(FirelockVisualLayersTemperature.Base);
++        Assert.Multiple(() =>
++        {
++            Assert.That(pressure, Is.False, $"The pressure warning shows on a firelock that is {when}.");
++            Assert.That(temperature, Is.False, $"The temperature warning shows on a firelock that is {when}.");
++        });
++    }
++
++    private async Task AssertBothWarningsShown(FirelockLane lane, string when)
++    {
++        var pressure = await lane.WarningShown(FirelockVisualLayersPressure.Base);
++        var temperature = await lane.WarningShown(FirelockVisualLayersTemperature.Base);
++        Assert.Multiple(() =>
++        {
++            Assert.That(pressure, $"A firelock that is {when} and holding back hot, high-pressure air should show its pressure warning.");
++            Assert.That(temperature, $"A firelock that is {when} and holding back hot, high-pressure air should show its temperature warning.");
++        });
++    }
++
++    [Test]
++    [Description("Once a firelock leaves its shut state (opening, open, closing again) neither of its warning lights " +
++                 "shows, even though whatever it was holding back has not gone away.")]
++    public async Task WarningLights_HideWhenDoorLeavesClosed()
++    {
++        var lane = await HotLane("Firelock");
++        await AssertBothWarningsShown(lane, "shut");
++
++        // Opening: sampled while the door is still moving.
++        await Server.WaitPost(() => _sDoorSystem.StartOpening(lane.Door));
++        await RunTicksSync(3);
++        await RunUntilSynced();
++        Assert.That(lane.ServerState, Is.EqualTo(DoorState.Opening), "Precondition: the door should still be opening.");
++        await AssertNoWarningShown(lane, "opening");
++
++        // Fully open.
++        await lane.WaitForState(DoorState.Open);
++        await RunUntilSynced();
++        await AssertNoWarningShown(lane, "open");
++
++        // Shutting again: sampled while the door is still moving.
++        await Server.WaitPost(() => _sDoorSystem.StartClosing(lane.Door));
++        await RunTicksSync(6);
++        await RunUntilSynced();
++        Assert.That(lane.ServerState, Is.EqualTo(DoorState.Closing), "Precondition: the door should still be closing.");
++        await AssertNoWarningShown(lane, "closing");
++    }
++
++    [Test]
++    [Description("A glass firelock that is shut and holding back high pressure shows the same pressure warning a " +
++                 "standard firelock shows.")]
++    public async Task WarningLights_GlassFirelockShowsWarning()
++    {
++        var lane = await OverPressureLane("FirelockGlass");
++
++        Assert.That(await lane.WarningShown(FirelockVisualLayersPressure.Base),
++            "A shut glass firelock holding back high pressure shows no pressure warning.");
++    }
++
++    [Test]
++    [Description("A shut firelock with open space on one side and normal air on the other is holding back pressure: " +
++                 "it shows the pressure warning and not the temperature one.")]
++    public async Task WarningLights_SpaceBreachIsAPressureWarning()
++    {
++        var lane = await FirelockLane.Build(this, "Firelock", upperIsSpace: true);
++        await lane.Close(asIfMappedShut: true);
++        await lane.FillAir();
++        await RunSeconds(3);
++        await RunUntilSynced();
++
++        var breachPressure = await lane.WarningShown(FirelockVisualLayersPressure.Base);
++        var breachTemperature = await lane.WarningShown(FirelockVisualLayersTemperature.Base);
++        Assert.Multiple(() =>
++        {
++            Assert.That(breachPressure, "A firelock sealing a room off from space should show its pressure warning.");
++            Assert.That(breachTemperature, Is.False,
++                "A firelock sealing an ordinary room off from space shows the temperature warning.");
++        });
++    }
++
++    [Test]
++    [Description("Guard: each warning keeps reacting to its own kind of hazard.")]
++    public async Task WarningLights_MatchTheHazardKind()
++    {
++        // Same temperature on both sides, much more air on one: pressure only.
++        var pressure = await OverPressureLane("Firelock");
++        var opPressure = await pressure.WarningShown(FirelockVisualLayersPressure.Base);
++        var opTemperature = await pressure.WarningShown(FirelockVisualLayersTemperature.Base);
++        Assert.Multiple(() =>
++        {
++            Assert.That(opPressure, "Over-pressure should show the pressure warning.");
++            Assert.That(opTemperature, Is.False, "Over-pressure at room temperature should not show the temperature warning.");
++        });
++
++        // Searing hot air on one side: the temperature warning shows.
++        var hot = await HotLane("Firelock");
++        Assert.That(await hot.WarningShown(FirelockVisualLayersTemperature.Base),
++            "A firelock holding back searing hot air should show the temperature warning.");
++    }
++
++    [Test]
++    [Description("Guard: a firelock welded shut is still shut, so it keeps showing its warnings.")]
++    public async Task WarningLights_StayOnWhileWelded()
++    {
++        var lane = await HotLane("Firelock");
++
++        await Server.WaitPost(() => _sWeldable.SetWeldedState(lane.Door, true));
++        await lane.WaitForState(DoorState.Welded);
++        await RunSeconds(2);
++        await RunUntilSynced();
++
++        await AssertBothWarningsShown(lane, "welded shut");
++    }
++}

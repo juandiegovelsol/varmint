@@ -1,0 +1,311 @@
+# QC Report: space_wizards__space_station_14_36889_mm
+
+- **Task hash:** `space_wizards__space_station_14_36889_mm_attempt6`
+- **Title:** The elements in the video misbehave (task110, Attempt6)
+- **Rubric:** Official V27
+- **Review date:** 2026-11-19
+- **Verdict:** **FAIL**. Only Difficulty fails: with-image pass@4 is 2/4, and Option A needs exactly 1/4 (no-image 0/3 is correct). The other 18 dimensions pass. Symptom Specificity is a non-fail 3: the exact defects are left to the clip, and two Expected lines are garbled. Attempt5's trials ran on the byte-identical bundle (same checksum) and scored 0/3 + 1/4, which meets Option A.
+
+## Scorecard
+
+| # | Dimension | Score | Result | Error category |
+|---|---|---|---|---|
+| 1 | Structure - Task Bundle Files | 5 | Pass | — |
+| 2 | Structure - Deliverables & Packaging | 5 | Pass | — |
+| 3 | Instruction - Requires the Visual Evidence | 5 | Pass | — |
+| 4 | Instruction – Symptom Specificity | 3 | Non-Fail | [Non-Fail - Image-carried Symptom] |
+| 5 | Instruction – Task Type | 5 | Pass | — |
+| 6 | Image - Evidence Quality | 5 | Pass | — |
+| 7 | Metadata - task_type Accuracy | 5 | Pass | — |
+| 8 | Evidence - Chain Consistency | 5 | Pass | — |
+| 9 | Golden Fix - Applies Cleanly | 5 | Pass | — |
+| 10 | Golden Fix - Source-Only Scope | 5 | Pass | — |
+| 11 | Tests - Implementation Overfit | 5 | Pass | — |
+| 12 | Tests - f2p/p2p Identifier Validity | 5 | Pass | — |
+| 13 | Tests - p2p Classification | 5 | Pass | — |
+| 14 | Tests - Discriminating (f2p) | 5 | Pass | — |
+| 15 | Tests - Determinism | 5 | Pass | — |
+| 16 | Hardening - Difficulty (Model Trial Fails) | 2 | Fail | [Fail - Trial Threshold Not Met] |
+| 17 | Hardening - Real & Feasible | 5 | Pass | — |
+| 18 | Gate - Oracle/Nop | 5 | Pass | — |
+| 19 | Unauditable | 5 | Pass | — |
+
+## Delivery gate
+
+| # | Check | Result | Detail |
+|---|---|---|---|
+| 1 | Local oracle | PASS | 1.0 (6/6 f2p, 3/3 p2p), 227 s, `--network none`, 4 CPU / 8 GB. |
+| 2 | Local nop | PASS | 0.0 (0/6 f2p, 3/3 p2p), 199 s. |
+| 3 | Oracle re-run | PASS | 1.0; same outcome per test: yes. |
+| 4 | CB oracle / nop | PASS | 78pQwy9 1.0, agSDJuk 0.0; checksum `e248b0f1…` = with-image trials. |
+| 5 | Patch apply | PASS | `git apply --check` OK for fix.patch and test.patch at `harbor_base`. |
+| 6 | Verifier completion | PASS | Stage banners and `reward=` present; no "could not apply test.patch". |
+| 7 | Local image provenance | WARN | Fresh build blocked (apt mirror unreachable); cached `ss14_110:fast` used, verified to carry exactly the Attempt6 bugs and asset. |
+| 8 | pass@3 no-image | PASS | 0/3 (5/6, 5/6, 4/6; all miss SpaceBreach); `/app/.harbor_assets` empty in each. |
+| 9 | pass@4 with-image (Option A) | FAIL | **2/4** (CiwVjdn, Mj6pkUk). Needs exactly 1/4. Attempt5's trials on the same checksum are 1/4. |
+| 10 | Trial run time (informational) | PASS | Agent 5.6–11.1 min, total 11.4–18.0 min. |
+| 11 | Trial / task checksum | PASS | `task_manifest.json` hashes = all 17 bundle files; with-image = CB oracle/nop checksum. |
+| 12 | Packaging | PASS | `Tasks/` and `Trials/` root siblings, 3 + 4 trials. |
+| 13 | Leaks | PASS | No repo, URL, file, door type, hazard or mechanism in instruction.md. |
+| 14 | Evidence-chain integrity | PASS | Disk, manifest, evidence bundle, instruction and image all agree on `recording.mp4` (sha256 `0274cf20…`). |
+| 15 | Instruction wording | WARN | "A element shuts controlled." / "Every element of a element…": garbled by a door→element replace (dim 4 flag). |
+
+## Trials
+
+| Trial | Mode | Reward | f2p | p2p | Minutes | Failed tests |
+|---|---|---|---|---|---|---|
+| task_without_images__2DqgEZx | no-image | 0.0 | 5/6 | 3/3 | 17.5 | WarningLights_SpaceBreachIsAPressureWarning |
+| task_without_images__cpVoMUs | no-image | 0.0 | 5/6 | 3/3 | 18.0 | WarningLights_SpaceBreachIsAPressureWarning |
+| task_without_images__nsexL5i | no-image | 0.0 | 4/6 | 3/3 | 16.2 | WarningLights_SpaceBreachIsAPressureWarning; ClosedFirelock_HoldsBackGasReleasedAfterClosing |
+| task_with_images__CiwVjdn | with-image | 1.0 | 6/6 | 3/3 | 13.3 | — |
+| task_with_images__Mj6pkUk | with-image | 1.0 | 6/6 | 3/3 | 11.6 | — |
+| task_with_images__trcuD9Y | with-image | 0.0 | 5/6 | 3/3 | 11.4 | WarningLights_SpaceBreachIsAPressureWarning |
+| task_with_images__z4FueN3 | with-image | 0.0 | 5/6 | 3/3 | 13.0 | ClosingAnimation_PlaysThroughBeforeTheDoorShuts |
+
+## Issues & suggested fixes
+
+### Instruction – Symptom Specificity: 3 [Non-Fail - Image-carried Symptom]
+
+**What is wrong:** Image-carried symptoms (non-fail). The two rules above are ungrammatical, and one with-image run took the space-lane warning for intended behaviour.
+
+**Suggested fix:** Keep the abstraction, fix only the grammar: "An element shuts in a controlled way." (or "shuts smoothly", as task.toml already says) and "Every part of an element stays aligned with the rest of it." Sync `difficulty_explanation` (it still quotes "a door shuts smoothly"). Changing `instruction.md` changes the task checksum, so every trial must be re-run; do it only if you are re-running anyway.
+
+### Hardening - Difficulty (Model Trial Fails): 2 [Fail - Trial Threshold Not Met]
+
+**What is wrong:** With-image pass@4 is 2/4; Option A needs exactly 1/4.
+
+**Suggested fix:** Either submit the Attempt5 `Trials/` (same checksum, 0/3 + 1/4) with this `Tasks/`, or re-run pass@4 with images until it lands on exactly 1/4. Over Attempts 4–6 this prompt family passed 5 of 12 with-image runs, so a fresh pass@4 hits exactly 1/4 only about a third of the time. Which run set to submit is your call.
+
+## Dimension details
+
+### 1. Structure - Task Bundle Files: 5 (Pass)
+
+**Evidence:** All 11 fixed files exist and are non-empty: `task.toml` 6,497 B, `instruction.md` 986 B, `evidence_bundle.json` 1,530 B, `environment/Dockerfile` 4,828 B, `environment/assets/ASSET_MANIFEST.json` 825 B, `solution/fix.patch` 8,983 B, `solution/solve.sh` 349 B, `tests/config.json` 1,434 B, `tests/test.patch` 23,130 B, `tests/test.sh` 14,533 B, `tests/verifier.py` 6,691 B. The three JSON files and `task.toml` parse; `py_compile tests/verifier.py` succeeds. `recording.mp4` decodes (ffprobe: h264 1280x720, 30 fps, 480 frames, 16.000 s; all frames extracted). Extra files: `README.md` and `environment/bugs/bug_01..05.patch` (injected bugs); neither is a fail.
+
+**What is wrong:** Nothing found.
+
+**Suggested fix:** None.
+
+### 2. Structure - Deliverables & Packaging: 5 (Pass)
+
+**Evidence:** `task110/Attempt6/` has `Tasks/` and `Trials/` as root-level siblings. `Trials/without_images/` holds 3 runs (2DqgEZx, cpVoMUs, nsexL5i) and `Trials/with_images/` holds 4 (CiwVjdn, Mj6pkUk, trcuD9Y, z4FueN3): 7 trials, the Option A count. Reviewed as unpacked folders (no .tar.gz here).
+
+**What is wrong:** Nothing found. Only the folder layout could be checked, not the final archives.
+
+**Suggested fix:** Tar from inside the attempt folder so each archive unpacks to its own top folder (`tar -czf Tasks.tar.gz Tasks`, `tar -czf Trials.tar.gz Trials`). Keep `Check/`, `Analyze/`, `Oracle/` and `Nop/` out of `Trials.tar.gz`.
+
+### 3. Instruction - Requires the Visual Evidence: 5 (Pass)
+
+**Evidence:** Without the video, the text names only abstract "elements" between a small room and its far side, three aspects (warning lights, how the element moves, what ends up on each side of a shut element) and four general rules. It names no door type, hazard, file, value or mechanism. The space-lane warning (temperature threshold lowered to 230 K) cannot be found from the text: nothing says a vacuum is involved, and 230 K looks like a plausible tuning value.
+The trials agree (corroboration only): all 3 no-image runs found `/app/.harbor_assets` empty (2DqgEZx and cpVoMUs: ffmpeg "No such file"; nsexL5i: `ls -la .harbor_assets` empty, final message "I couldn't watch the video"). They fixed 4–5 of 6 defects by reading the firelock code, and **each missed `WarningLights_SpaceBreachIsAPressureWarning`** (nsexL5i also missed the seal-after-closing test).
+Image path resolves to `/app/.harbor_assets/recording.mp4` (Dockerfile `COPY assets/recording.mp4 /app/.harbor_assets/`). Leak scan of `instruction.md` (177 words): no repo, URL, issue/PR, file, "firelock", "door", gas, plasma, space, threshold or animation word. `ASSET_MANIFEST.json` (which names firelocks) is not copied into the image.
+
+**What is wrong:** Nothing found. Note for the record: only one test separates the no-image runs from a pass (the space-lane warning), so the 0/3 rests on a single defect.
+
+**Suggested fix:** None required. Keep any future wording change away from vacuum/space/cold, since that one defect is the only thing holding 0/3.
+
+### 4. Instruction – Symptom Specificity: 3 (Non-Fail) [Non-Fail - Image-carried Symptom]
+
+**Evidence:** Prompt table:
+
+| element (as written) | defect: text or image? | expected: text or image? | correct counterpart in the clip? | clue left to image | described correctly? |
+|---|---|---|---|---|---|
+| "their warning lights" + "its warning says what kind of danger it is holding back" | image: lane 1 (space) shows the orange temperature brackets over the cyan pressure ones | text rule | yes: lane 2 (dense gas) shows the cyan pressure warning | which lane, which colour | yes |
+| "their warning lights" (glass door) | image: lane 4 holds fire with no brackets | text rule ("its warning says…") | yes: lane 3, same fire, shows brackets | which door type | yes |
+| "The warning only shows while the element is shut" | image: lane 2 keeps its cyan brackets after it opens (from about 10 s to the end) | text rule | no: the clip's only opened door is the buggy one; the expected result is stated in text | which door, when | yes |
+| "the way the element moves" + "A element shuts controlled" | image: lane 6 panel snaps shut in one frame, then its green running lights play over a shut panel (about 1.9–2.3 s, frame-stepping) | text rule (ungrammatical) | yes: lane 2 opening slides normally | which door, the frame timing | yes, but garbled |
+| "what ends up on each side of a shut element" | image: lane 6 shut, gas released above it at about 4–5 s is in the lower room by 6 s | text rule ("keeps what is on one side from reaching the other") | yes: lanes 1–4 hold their hazards | which door, the trigger (shut during play) | yes |
+| "Every element of a element stays aligned with the rest of it" + the side rule | image: lane 5 gas fills the edge door's own tile past its strip | text rule (garbled) | partly: other lanes keep the hazard on the far side | which edge | yes, but garbled |
+
+Why 3, not 5: the text names the aspects and gives a rule for each, but never states a defect (no "wrong colour", "missing", "stays on", "snaps"). Every exact defect is left to the clip, with the rest of the bench as the comparison. That is the V27 middle option. Why not 2: the floor holds. The text names the warning lights by type and gives context for the other aspects (a shut thing between a room and a hazard, with a warning). The with-image runs show the clip plus text was readable: all 4 named the elements as firelocks, and each read 5–7 of the 6 defects.
+
+Every with-image trajectory:
+
+| run | reward | what it read (final message) | could it tell bug from intended? |
+|---|---|---|---|
+| CiwVjdn | 1.0 | all 6: space lane "showed the fire warning on top of the pressure warning"; warning "stayed lit after the firelock opened"; glass "no warning while holding back lava"; "snapped shut instantly"; "vacuum leaked past a firelock"; edge "sealed the wrong side" (filed under "Alignment") | yes, all 6 |
+| Mj6pkUk | 1.0 | all 6 ("Space showed the fire warning (column 1)", "Warning stayed lit after opening (column 2)", "Firelock snapped shut (column 6)" …) | yes, all 6 |
+| trcuD9Y | 0.0 | 5: stays on, glass, snaps shut, gas past shut door, edge side. **"I left one thing alone on purpose. The firelock facing space (1st column) shows the orange temperature warning on top of the cyan pressure one. That's correct"** | **no, for the space-lane warning**: took the bug for intended behaviour |
+| z4FueN3 | 0.0 | all 6 symptoms read correctly ("snapped shut instead of closing smoothly … the closing lights played afterwards"), but blamed the snap on a `SyncSprite` component and never fixed the frame delays | yes; wrong cause, not a misread symptom |
+
+Flags (not graded on their own, but they put this score at risk):
+1. **Ungrammatical, garbled lines from a "door"→"element" replace**: "A element shuts controlled." and "Every element of a element stays aligned with the rest of it." A reviewer may read "element" as a placeholder rather than an element named by type (the dimension 4 floor). The agents parsed them as meant (CiwVjdn filed the edge seal under "Alignment"; Mj6pkUk tied "out of line" to the animation).
+2. 1 of 4 with-image runs (trcuD9Y) took the space-lane warning for intended behaviour. Under V25/V27 "agents couldn't tell" can fail this dimension on its own; the rubric example is 3/4. At 1/4, with the other 3 runs flagging it, I score it as a flag rather than a fail.
+
+**What is wrong:** Image-carried symptoms (non-fail). The two rules above are ungrammatical, and one with-image run took the space-lane warning for intended behaviour.
+
+**Suggested fix:** Keep the abstraction, fix only the grammar: "An element shuts in a controlled way." (or "shuts smoothly", as task.toml already says) and "Every part of an element stays aligned with the rest of it." Sync `difficulty_explanation` (it still quotes "a door shuts smoothly"). Changing `instruction.md` changes the task checksum, so every trial must be re-run; do it only if you are re-running anyway.
+
+### 5. Instruction – Task Type: 5 (Pass)
+
+**Evidence:** The text describes warnings that must follow the door's state ("only shows while the element is shut"), how the element moves while it shuts, and what crosses it after it shuts: defects that show across state transitions over time. That fits `temporal_interaction` ("a defect that only appears across a sequence of interactions / state transitions"). Nothing is misdescribed (no crash called a render bug).
+
+**What is wrong:** Nothing found.
+
+**Suggested fix:** None.
+
+### 6. Image - Evidence Quality: 5 (Pass)
+
+**Evidence:** Naming table:
+
+| file | role field | what the frames show (how verified) | what name/role/instruction claim | true? | agents confused? |
+|---|---|---|---|---|---|
+| `recording.mp4` | `bug_video` | the buggy state: compared frame by frame with `task110/recording_kit/reference_fixed_state.mp4` (same 16 s scene with fixes applied; evidence 01–03). The local image carries exactly the 5 Attempt6 bug patches (each reverses cleanly; files then hash to the upstream base blobs) and the same `recording.mp4` sha256 | neutral name; role says bug; description: six one-tile lanes (lattice/space, dense purple gas, fire, fire behind glass, gas behind an edge firelock, plain air with the last door open); last door shuts and gas is released above it; second door opened later | yes: every item in the description is in the frames, in that order | no: all 4 runs treated it as the buggy clip |
+
+Each f2p against the asset:
+
+| f2p | precondition (test.patch) | clip (bug) | fixed reference | trial cross-check (verifier in the task image) |
+|---|---|---|---|---|
+| HideWhenDoorLeavesClosed | standard firelock vs 1000 K air, opened then re-closed | lane 2 keeps its cyan brackets once open (from about 10 s) | no brackets once open | passes in all 7 trials, every one of which hid the lights from shared code (`SharedFirelockSystem` on door-state change) instead of the golden's client handler |
+| GlassFirelockShowsWarning | `FirelockGlass` vs over-pressure | lane 4 holds fire, no brackets | brackets shown | passes in all 7 trials |
+| SpaceBreachIsAPressureWarning | standard firelock, upper cell open to space | lane 1: orange temperature over cyan pressure | cyan only | fails in exactly the 4 trials that kept 230 K (trcuD9Y + 3 no-image); passes in the 3 that restored 330 K |
+| ClosedFirelock_HoldsBackGasReleasedAfterClosing | door shut during play, then gas released | lane 6 shut, released gas reaches the lower room | gas held | fails only in nsexL5i, the one run that left `AirtightSystem` alone |
+| EdgeFirelock_SealsAlongItsDoorEdge | `FirelockEdge`, gas beyond its panel edge | lane 5 gas fills the door's own tile past its strip | gas stops at the strip | passes in all 7 trials |
+| ClosingAnimation_PlaysThroughBeforeTheDoorShuts | standard firelock, client sprite frames while closing | lane 6 snaps shut, lights run over a shut panel | panel slides in with its lights | fails only in z4FueN3, the one run that left the frame delays (3 of 15 frames shown) |
+
+Steps 3–4 (cross-checks): the golden is the exact reverse of each injected bug, plus the upstream client fix for the lights. The 7 trials act as natural partial fixes run by the real verifier in the task image: each missed defect failed exactly its own f2p and nothing else. Fixing what the clip shows passes the f2p (CiwVjdn, Mj6pkUk, 6/6 with code different from the golden), and each f2p flips only with its own defect. Step 7 (injected defects): all 5 injected bugs are visible in the clip, so a fix that skips one leaves a visible defect, not a valid alternative.
+
+**What is wrong:** Nothing found. Non-graded note: the opened-door warning (lane 2) has no correct counterpart in the clip; its expected result comes from the text rule.
+
+**Suggested fix:** None.
+
+### 7. Metadata - task_type Accuracy: 5 (Pass)
+
+**Evidence:** `task_type = "temporal_interaction"` is one of the seven values. The evidence is a 16 s video whose defects unfold across state changes (a door shutting, gas released after it shuts, a door opening while its lights stay on, a closing animation that needs frame-stepping). The upstream issue (#36889, the warning stays on after opening) is itself a state-transition defect. Tags include `temporal_interaction` and `2d_video`.
+
+**What is wrong:** Nothing found.
+
+**Suggested fix:** None.
+
+### 8. Evidence - Chain Consistency: 5 (Pass)
+
+**Evidence:** Asset references:
+
+| reference | path | sha256 | bytes |
+|---|---|---|---|
+| file on disk | `environment/assets/recording.mp4` | `0274cf20…5eaa36b0` | 1,770,475 |
+| `ASSET_MANIFEST.json` | `/app/.harbor_assets/recording.mp4` | same | same |
+| `evidence_bundle.json` | `local_path` = `container_path` = `/app/.harbor_assets/recording.mp4` | same | same |
+| `instruction.md` | `/app/.harbor_assets/recording.mp4` | — | — |
+| image (Dockerfile `COPY assets/recording.mp4 /app/.harbor_assets/`) | baked file sha256 `0274cf20…` (checked in the local image) | same | — |
+
+All four references point to the same asset.
+
+**What is wrong:** Nothing found.
+
+**Suggested fix:** None.
+
+### 9. Golden Fix - Applies Cleanly: 5 (Pass)
+
+**Evidence:** `git apply --check /solution/fix.patch` at `harbor_base` in the local image: OK (`test.patch` also checks OK). `solve.sh` applies it with `git apply`; CB oracle stdout shows `captured submission.patch (8973 bytes, 5 files)`.
+
+**What is wrong:** Nothing found.
+
+**Suggested fix:** None.
+
+### 10. Golden Fix - Source-Only Scope: 5 (Pass)
+
+**Evidence:** `diff --git` paths = `files_edited` exactly (5): `Content.Client/Doors/FirelockSystem.cs`, `Content.Server/Atmos/EntitySystems/AirtightSystem.cs`, `Content.Shared/Doors/Components/FirelockComponent.cs`, `Resources/Prototypes/Entities/Structures/Doors/Firelocks/firelock.yml`, `Resources/Textures/Structures/Doors/Airlocks/Standard/firelock-base.rsi/meta.json`. No test, doc, lockfile or changeset path. The prototype YAML and the RSI `meta.json` are game content the runtime loads, not tests or docs.
+
+**What is wrong:** Nothing found.
+
+**Suggested fix:** None.
+
+### 11. Tests - Implementation Overfit: 5 (Pass)
+
+**Evidence:** Value-level assertions and their accepted sets:
+
+| assertion | what it reads | real accepted set | alternatives tried / reasoned | test accepts? |
+|---|---|---|---|---|
+| warning layers hidden while Opening/Open/Closing | client layer `Visible` and a drawable RSI state | any mechanism that hides the layer on the client | golden: client `OnAppearanceChange`. **Trials CiwVjdn/Mj6pkUk: shared-side `DoorStateChangedEvent` sets the appearance booleans false (GenericVisualizer kept)** | yes (6/6) |
+| glass shows the pressure warning | layer keyed `FirelockVisualLayersPressure.Base` shown and drawable | inherit the parent layers or add the two keyed layers | golden: drop the override. Trials: add the layers to the glass list | yes (both) |
+| space breach = pressure only | temperature layer not shown | any threshold in about 291–706 K, or skipping vacuum in the check | trials: 330 K (restored); Mj6pkUk also changed the vacuum handling | yes |
+| gas < 1 mol past a door shut in play | atmos moles after 4 s | any way that makes atmos re-read the tile on close | golden: always `UpdatePosition`; trials: same idea written differently | yes |
+| edge seal on the panel edge | moles on the door tile and beyond | `airBlockedDirection: South` (moving the panel/fixture instead breaks "keep looking as it does now") | trials: `South` | yes |
+| closing animation ≥ 6 distinct frames and last ≥ frameCount−3 within 60 ticks | client layer `AnimationFrame` per tick | any closing timing longer than a few ticks and under 2 s (uniform delays, mirroring `opening`, the glass sprite's values) | golden: upstream delays (0.49 s); trials: copied from `opening`/glass | yes |
+
+Structure level: no exact counts beyond thresholds, no ordering, no float equality (gas uses a `< 1 mol` / `> 200 mol` margin), no log-text matching. Failing trials were rejected for real defects: z4FueN3 "showed only 3 of its 15 closing frames" (delays untouched); trcuD9Y and the no-image runs kept 230 K.
+
+**What is wrong:** Nothing found.
+
+**Suggested fix:** None.
+
+### 12. Tests - f2p/p2p Identifier Validity: 5 (Pass)
+
+**Evidence:** `task.toml` and `tests/config.json` f2p (6) and p2p (3) lists are identical, with no overlap. The JUnit report has 9 test cases. `test.sh` writes `classname=""` and the full dotted id in `name`, and `verifier.py` keys on `"{classname} {name}".strip()`, so each id matches exactly one test case (CB oracle/nop and local runs).
+
+**What is wrong:** Nothing found.
+
+**Suggested fix:** None.
+
+### 13. Tests - p2p Classification: 5 (Pass)
+
+**Evidence:** p2p (`AirlockTest.OpenCloseDestroyTest`, `WarningLights_MatchTheHazardKind`, `WarningLights_StayOnWhileWelded`) pass on CB nop (agSDJuk) and CB oracle (78pQwy9), and on local nop (3/3) and local oracle (3/3).
+
+**What is wrong:** Nothing found.
+
+**Suggested fix:** None.
+
+### 14. Tests - Discriminating (f2p): 5 (Pass)
+
+**Evidence:** All 6 f2p fail on nop (CB agSDJuk 0/6, local 0/6 passing) and pass on oracle (CB 78pQwy9 6/6, local 6/6).
+
+**What is wrong:** Nothing found.
+
+**Suggested fix:** None.
+
+### 15. Tests - Determinism: 5 (Pass)
+
+**Evidence:** Tests run on the engine's fixed server/client ticks (`RunTicksSync`, `RunSeconds`) with `Fresh = true` pools and one NUnit worker. They use no wall clock, network or fonts, and gas checks have wide margins. `test.sh` installs nothing: `dotnet build --no-restore`, offline; local runs used `--network none` and completed. The oracle re-run gave the same outcome for every test. Across the 7 Attempt6 trials and the CB oracle/nop, every test result follows the code change; no unexplained flip.
+
+**What is wrong:** Nothing found.
+
+**Suggested fix:** None.
+
+### 16. Hardening - Difficulty (Model Trial Fails): 2 (Fail) [Fail - Trial Threshold Not Met]
+
+**Evidence:** Attempt6 trial results:
+
+| run | mode | reward | f2p | p2p | failed |
+|---|---|---|---|---|---|
+| 2DqgEZx | no-image | 0.0 | 5/6 | 3/3 | SpaceBreach |
+| cpVoMUs | no-image | 0.0 | 5/6 | 3/3 | SpaceBreach |
+| nsexL5i | no-image | 0.0 | 4/6 | 3/3 | SpaceBreach, ClosedFirelock_HoldsBackGas |
+| CiwVjdn | with-image | **1.0** | 6/6 | 3/3 | — |
+| Mj6pkUk | with-image | **1.0** | 6/6 | 3/3 | — |
+| trcuD9Y | with-image | 0.0 | 5/6 | 3/3 | SpaceBreach |
+| z4FueN3 | with-image | 0.0 | 5/6 | 3/3 | ClosingAnimation |
+
+No-image 0/3 (correct). With-image **2/4**. Option A needs exactly 1/4, and the V27 rubric lists 2/4 as a fail example. 7 trials, so Option B doesn't apply. Checksums: with-image `e248b0f1…` = CB oracle/nop; no-image `96f6d694…` (assets-stripped variant); the trial `task_manifest.json` hashes match all 17 bundle files. Run time: agent 5.6–11.1 min, total 11.4–18.0 min (informational).
+
+Context: `Attempt5/` has the **byte-identical bundle** (`diff -rq` empty) with the **same checksum `e248b0f1…`**, and its trials are 0/3 no-image and **1/4** with-image (bviMeex passes). That set meets Option A. Pooling both runs as one Option B set (8 with-image) gives 3/8, which fails.
+
+**What is wrong:** With-image pass@4 is 2/4; Option A needs exactly 1/4.
+
+**Suggested fix:** Either submit the Attempt5 `Trials/` (same checksum, 0/3 + 1/4) with this `Tasks/`, or re-run pass@4 with images until it lands on exactly 1/4. Over Attempts 4–6 this prompt family passed 5 of 12 with-image runs, so a fresh pass@4 hits exactly 1/4 only about a third of the time. Which run set to submit is your call.
+
+### 17. Hardening - Real & Feasible: 5 (Pass)
+
+**Evidence:** Each injected bug is coherent and its fix is what a real developer would write: a lowered default threshold (230 → 330 K), an airtight update made conditional (restore the unconditional call), closing frame delays 10× too short (restore them, as in the `opening` state), a glass prototype that overrides the sprite layer list and drops the warning layers (remove the override), and a flipped edge seal direction (North → South). The upstream defect (#36889, PR #46007) is fixed the upstream way (client appearance handler). All 6 defects are visible in the clip.
+
+**What is wrong:** Nothing found.
+
+**Suggested fix:** None.
+
+### 18. Gate - Oracle/Nop: 5 (Pass)
+
+**Evidence:** Local runs (image `ss14_110:fast`, see the note under Gate): oracle **1.0** (6/6 f2p, 3/3 p2p, 227 s), nop **0.0** (0/6 f2p, 3/3 p2p, 199 s), oracle re-run **1.0** (6/6, 3/3, 225 s); re-run outcome per test identical to the first oracle run: yes.
+CB runs: oracle 78pQwy9 = 1.0 (6/6, 3/3), nop agSDJuk = 0.0 (0/6, 3/3). Both show the stage banners and `reward=`, and neither has "could not apply test.patch". They are the same runs as in Attempt5 (same trial ids and checksum).
+**Image note:** a fresh `docker build` of `environment/` failed at the apt step (`mirrors.edge.kernel.org:443` unreachable from this machine today). The local runs used the cached `ss14_110:fast` image instead. Its fetch/checkout/bug-apply layer is the same command as the Attempt6 Dockerfile. Its restore/build step built the whole solution rather than only `Content.IntegrationTests.csproj`, a superset, and `test.sh` rebuilds anyway. Proof it holds the Attempt6 tree: in a throwaway container, `bug_05..01` each reverse-apply cleanly, and the touched files then hash to the upstream blob ids recorded in the patches (`00f1d490`, `37e98fd9`, `5797040a`, `838fa615`). The baked `recording.mp4` sha256 also matches.
+
+**What is wrong:** Nothing found.
+
+**Suggested fix:** None.
+
+### 19. Unauditable: 5 (Pass)
+
+**Evidence:** A complete, auditable submission: bundle, 7 trials, oracle and nop.
+
+**What is wrong:** Nothing found.
+
+**Suggested fix:** None.

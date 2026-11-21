@@ -1,0 +1,33 @@
+diff --git a/src/object/player.cpp b/src/object/player.cpp
+index a49a00c..35f6f0a 100644
+--- a/src/object/player.cpp
++++ b/src/object/player.cpp
+@@ -1684,6 +1684,16 @@ Player::collision_solid(const CollisionHit& hit)
+   }
+ }
+ 
++bool
++Player::collides(GameObject& other, const CollisionHit& hit) const
++{
++  auto portable = dynamic_cast<Portable*>(&other);
++  if (portable && portable->is_portable() && !portable->is_grabbed())
++    return false;
++
++  return MovingObject::collides(other, hit);
++}
++
+ HitResponse
+ Player::collision(GameObject& other, const CollisionHit& hit)
+ {
+diff --git a/src/object/player.hpp b/src/object/player.hpp
+index 983fe05..4655286 100644
+--- a/src/object/player.hpp
++++ b/src/object/player.hpp
+@@ -49,6 +49,7 @@ public:
+   virtual void update(float dt_sec) override;
+   virtual void draw(DrawingContext& context) override;
+   virtual void collision_solid(const CollisionHit& hit) override;
++  virtual bool collides(GameObject& other, const CollisionHit& hit) const override;
+   virtual HitResponse collision(GameObject& other, const CollisionHit& hit) override;
+   virtual void collision_tile(uint32_t tile_attributes) override;
+   virtual bool is_saveable() const override { return false; }

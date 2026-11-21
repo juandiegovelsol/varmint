@@ -1,0 +1,478 @@
+### 1 USER PROMPT (len 948)
+### 2 CALL Bash: cd /app; git ls-files | head -100; git ls-files | wc -l; ls -la; ffprobe -v error -show_entries format=duration:stream=width,height,r_frame_rate .harbor_assets/recording.mp4
+### 2 OBS: Exit code 1
+.changes/0.22.0.md
+.changes/0.23.0.md
+.changes/0.24.0.md
+.changes/0.24.1.md
+.changes/0.24.2.md
+.changes/header.tpl.md
+.changes/unreleased/.gitkeep
+.changes/unreleased/Added-20230215-090241.yaml
+.changes/unreleased/Added-20230509-084407.yaml
+.changes/unreleased/Added-20230601-093308.yaml
+.changes/unreleased/Added-20230723-223347.yaml
+.changes/unreleased/Changed-20230415-203039.yaml
+.changes/unreleased/Changed-20230426-203023.yaml
+.changes/unreleased/Fixed-20230217-082645.yaml
+.changes/unreleased/Fixed-20230522-183938.yaml
+.changes/unreleased/Fixed-20230522-191115.yaml
+.changes/unreleased/Fixed-20230529-090945.yaml
+.changes/unreleased/Fixed-20230529-191931.yaml
+.changes/unreleased/Fixed-20230616-184222.yaml
+.changes/unreleased/Fixed-20230722-201350.yaml
+.changes/unreleased/Fixed-20230724-223013.yaml
+.changes/unreleased/Fixed-20230726-231254.yaml
+.changie.yaml
+.dockerignore
+.github/ISSUE_TEMPLATE/bug_report.md
+.github/workflows/changelog-check.yml
+.github/workflows/main.yml
+.gitignore
+.markdownlint.yml
+.pre-commit-config.yaml
+CHANGELOG.md
+Dockerfile
+LICENSE.Apache-2.0
+LICENSE.CC-BY-SA
+LICENSE.GPL-3
+Makefile
+README.md
+android/.gitignore
+android/AndroidManifest.xml
+android/a
+### 3 CALL Bash: cd /app; ls -la .harbor_assets; which ffmpeg; find / -name "recording.mp4" 2>/dev/null | head
+### 3 OBS: total 8
+drwxr-xr-x 2 root root 4096 Nov 18 01:13 .
+drwxr-xr-x 1 root root 4096 Nov 18 01:13 ..
+/usr/bin/ffmpeg
+
+[stdout]
+total 8
+drwxr-xr-x 2 root root 4096 Nov 18 01:13 .
+drwxr-xr-x 1 root root 4096 Nov 18 01:13 ..
+/usr/bin/ffmpeg
+[metadata] {"noOutputExpected": false}
+### 4 AGENT MSG: The recording file isn't present (`.harbor_assets` is empty), so I'll locate the bugs by inspecting the rendering code.
+### 4 CALL Bash: cd /app/core/src; find . -name "*.java" | xargs grep -ln -i "shadow\|ZLevel\|camera" | head -50
+### 4 OBS: ./com/agateau/pixelwheels/Constants.java
+./com/agateau/pixelwheels/ZLevel.java
+./com/agateau/pixelwheels/GamePlay.java
+./com/agateau/pixelwheels/racer/VehicleRenderer.java
+./com/agateau/pixelwheels/racer/Racer.java
+./com/agateau/pixelwheels/obstacles/Obstacle.java
+./com/agateau/pixelwheels/screens/DebugScreen.java
+./com/agateau/pixelwheels/screens/VehicleDrawer.java
+./com/agateau/pixelwheels/screens/ChampionshipFinishedScreen.java
+./com/agateau/pixelwheels/bonus/BonusSpot.java
+./com/agateau/pixelwheels/bonus/Mine.java
+./com/agateau/pixelwheels/bonus/Missile.java
+./com/agateau/pixelwheels/bonus/Bullet.java
+./com/agateau/pixelwheels/gameobject/GameObject.java
+./com/agateau/pixelwheels/gameobject/AnimationObject.java
+./com/agateau/pixelwheels/racescreen/RacerCameraUpdater.java
+./com/agateau/pixelwheels/racescreen/Helicopter.java
+./com/agateau/pixelwheels/racescreen/GameRenderer.java
+./com/agateau/pixelwheels/racescreen/CameraUpdater.java
+./com/agateau/pixelwheels/racescreen/FreeCameraUpdater.java
+./com/agateau/pixelwheels/utils/BodyRegionDrawer.java
+./com/agateau/pixelwheels/racescreen/debug/MineDropper.java
+./com/agateau/pixelwheels/racescreen/debug/DropLocationDebugObject.java
+
+[std
+### 5 CALL Bash: cd /app/core/src/com/agateau/pixelwheels; cat ZLevel.java racer/VehicleRenderer.java racescreen/RacerCameraUpdater.java racescreen/CameraUpdater.java utils/BodyRegionDrawer.java
+### 5 OBS: /*
+ * Copyright 2018 Aurélien Gâteau <mail@agateau.com>
+ *
+ * This file is part of Pixel Wheels.
+ *
+ * Pixel Wheels is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU General Public License as published by the Free
+ * Software Foundation, either version 3 of the License, or (at your option)
+ * any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+package com.agateau.pixelwheels;
+
+/** The drawing layers, ordered from bottom to top */
+public enum ZLevel {
+    GROUND,
+    VEHICLES,
+    SHADOWS,
+    OBSTACLES,
+    FLYING
+}
+/*
+ * Copyright 2017 Aurélien Gâteau <mail@agateau.com>
+ *
+ * This file is part of Pixel Wheels.
+ *
+ * Pixel Wheels is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU General Public License as published by the Free
+ * Software Foundatio
+### 6 AGENT MSG: Spotted several candidates already. Let me check the bonus/carried-item rendering and other ZLevel uses.
+### 6 CALL Bash: cd /app/core/src/com/agateau/pixelwheels; grep -rn "ZLevel\.\|drawShadow\|computeShadowOffset\|getCameraAngle\|setZ(" --include=*.java . | grep -v "^./ZLevel"
+### 6 OBS: racer/Vehicle.java:301:    public void setZ(float z) {
+racer/VehicleRenderer.java:138:        if (zLevel == ZLevel.GROUND) {
+racer/VehicleRenderer.java:154:                float offset = BodyRegionDrawer.computeShadowOffset(mVehicle.getZ(), 1);
+racer/VehicleRenderer.java:165:        ZLevel wantedZIndex = mVehicle.isFlying() ? ZLevel.FLYING : ZLevel.VEHICLES;
+racer/HoleHandlerComponent.java:122:        mVehicle.setZ(-mTime / MAX_FALL_DURATION / 10);
+racer/HoleHandlerComponent.java:144:        mVehicle.setZ(-mTime / MAX_FALL_DURATION / 10);
+racer/HoleHandlerComponent.java:162:        mVehicle.setZ(Interpolation.pow2.apply(mTime / LIFT_DROP_DURATION));
+racer/HoleHandlerComponent.java:212:        mVehicle.setZ(Interpolation.bounceOut.apply(1, 0, mTime / LIFT_DROP_DURATION));
+racer/HoleHandlerComponent.java:220:        mVehicle.setZ(0);
+obstacles/Obstacle.java:78:        if (zLevel != ZLevel.OBSTACLES && zLevel != ZLevel.SHADOWS) {
+obstacles/Obstacle.java:84:        if (zLevel == ZLevel.OBSTACLES) {
+obstacles/Obstacle.java:89:            mBodyRegionDrawer.drawShadow(mBody, mRegion);
+bonus/Missile.java:261:        if (zLevel == ZLevel.FLYING) {
+bonus/Missile.java:263:            drawShad
+### 7 CALL Bash: cd /app/core/src/com/agateau/pixelwheels; sed -n 150,330p bonus/Missile.java; sed -n 150,220p bonus/Mine.java; sed -n 150,200p racescreen/GameRenderer.java; sed -n 200,225p racer/Racer.java; sed -n 235,275p racescreen/Helicopter.java
+### 7 OBS: | CollisionCategories.EXPLOSABLE);
+
+        object.mStatus = Status.WAITING;
+        object.mNeedShootSound = false;
+        object.mTarget = null;
+        object.initJoint();
+
+        object.mGuidingSystem.init(object.mBody);
+
+        gameWorld.addGameObject(object);
+
+        DebugShapeMap.put(object, object.mDebugShape);
+
+        return object;
+    }
+
+    public boolean hasTarget() {
+        return mTarget != null;
+    }
+
+    private void initJoint() {
+        Vehicle vehicle = mShooter.getVehicle();
+        Body vehicleBody = vehicle.getBody();
+        mJointDef.bodyA = vehicleBody;
+        mJointDef.bodyB = mBody;
+        mJointDef.localAnchorA.set(vehicleBody.getLocalCenter());
+        mJointDef.localAnchorB.set(mBody.getLocalCenter());
+        mJointDef.referenceAngle = mBody.getAngle() - vehicleBody.getAngle();
+        mJoint = mGameWorld.getBox2DWorld().createJoint(mJointDef);
+    }
+
+    public void shoot() {
+        resetJoint();
+        mBody.getFixtureList().first().setDensity(SHOT_DENSITY);
+        mBody.resetMassData();
+        mBody.setAngularVelocity(0);
+        mStatus = Status.SHOT;
+        mTime = 0;
+        mNeedShootSound = true;
+    }
+
+    @Override
+    public 
+### 8 CALL Bash: cd /app/core/src/com/agateau/pixelwheels; grep -rln "implements.*Renderer\|addRenderer\|removeRenderer" .; ls bonus
+### 8 OBS: racer/VehicleRenderer.java
+screens/VehicleSelector.java
+screens/SelectLanguageScreen.java
+bonus/TurboBonus.java
+bonus/GunBonus.java
+BonusAdapter.java
+Bonus.java
+BonusPool.java
+BonusSpot.java
+Bullet.java
+ClosestRacerFinder.java
+GunBonus.java
+MineBonus.java
+Mine.java
+MissileBonus.java
+MissileGuidingSystem.java
+Missile.java
+TurboBonus.java
+
+[stdout]
+racer/VehicleRenderer.java
+screens/VehicleSelector.java
+screens/SelectLanguageScreen.java
+bonus/TurboBonus.java
+bonus/GunBonus.java
+BonusAdapter.java
+Bonus.java
+BonusPool.java
+BonusSpot.java
+Bullet.java
+ClosestRacerFinder.java
+GunBonus.java
+MineBonus.java
+Mine.java
+MissileBonus.java
+MissileGuidingSystem.java
+Missile.java
+TurboBonus.java
+[metadata] {"noOutputExpected": false}
+### 9 CALL Bash: cd /app/core/src/com/agateau/pixelwheels; sed -n 19,400p bonus/GunBonus.java | grep -v "^ \*\|^/\*\|^import"; grep -n -i "render\|draw" bonus/TurboBonus.java bonus/MissileBonus.java bonus/MineBonus.java
+### 9 OBS: package com.agateau.pixelwheels.bonus;
+
+
+public class GunBonus extends BonusAdapter implements Pool.Poolable {
+    private static final float SHOOT_INTERVAL = 0.1f;
+    private static final int SHOOT_COUNT = 20;
+    private static final float SPREAD_ANGLE = 5;
+    private static final float AI_RAYCAST_LENGTH = 20;
+
+    private final ClosestRacerFinder mClosestRacerFinder =
+            new ClosestRacerFinder(AI_RAYCAST_LENGTH);
+
+    private boolean mTriggered;
+    private float mAnimationTime;
+    private float mDelayForNextShot;
+    private int mRemainingShots;
+
+    private final Renderer mBonusRenderer =
+            new Renderer() {
+                @Override
+                public void draw(Batch batch, float centerX, float centerY) {
+                    TextureRegion region = mAssets.gunAnimation.getKeyFrame(mAnimationTime, true);
+                    Vehicle vehicle = mRacer.getVehicle();
+                    Body body = vehicle.getBody();
+                    float angle = body.getAngle() * MathUtils.radiansToDegrees;
+                    float w = region.getRegionWidth();
+                    float h = region.getRegionHeight();
+                    batch.draw(
+                      
+### 10 AGENT MSG: Now let me check Racer's ZLevel/isFlying and Mine's owner access.
+### 10 CALL Bash: cd /app/core/src/com/agateau/pixelwheels; grep -n "isFlying\|isFalling" -r . | head; grep -n "mOwner\|mShooter" bonus/Mine.java bonus/Missile.java | head
+### 10 OBS: racer/Wheel.java:168:        if (!mVehicle.isFlying()) {
+racer/Wheel.java:245:        if (mVehicle.isFlying()) {
+racer/Vehicle.java:289:    public boolean isFlying() {
+racer/Vehicle.java:293:    public boolean isFalling() {
+racer/Vehicle.java:315:        if (!isFlying()) {
+racer/VehicleRenderer.java:69:        if (mVehicle.isFalling()) {
+racer/VehicleRenderer.java:144:            if (!mVehicle.isFalling()) {
+racer/VehicleRenderer.java:165:        ZLevel wantedZIndex = mVehicle.isFlying() ? ZLevel.FLYING : ZLevel.VEHICLES;
+racer/VehicleRenderer.java:170:        if (mVehicle.isFalling()) {
+racer/VehicleRenderer.java:174:        if (mVehicle.isFalling()) {
+bonus/Missile.java:112:    private Racer mShooter;
+bonus/Missile.java:138:        object.mShooter = shooter;
+bonus/Missile.java:171:        Vehicle vehicle = mShooter.getVehicle();
+bonus/Missile.java:367:        if (other == mShooter) {
+bonus/Missile.java:376:                mShooter.getGameStats().recordEvent(GameStats.Event.MISSILE_HIT);
+bonus/Mine.java:63:    private Racer mOwner;
+bonus/Mine.java:81:        mine.mOwner = owner;
+bonus/Mine.java:102:        mine.mOwner = null;
+bonus/Mine.java:135:        Body vehicleBody = mOwner.g
+### 11 AGENT MSG: Now apply the fixes.
+### 11 CALL Bash: cd /app/core/src/com/agateau/pixelwheels; python3 - <<'EOF'
+import re
+def sub(path, old, new):
+    s=open(path).read()
+    assert old in s, (path, old)
+    open(path,'w').write(s.replace(old,new,1))
+
+# 1. Shadow rotation: drawShadow passed radians as degrees
+sub('utils/BodyRegionDrawer.java', """                1, 1, // scale
+                angle);""", """                mScale, mScale, // scale
+                angle * MathUtils.radDeg);""")
+
+# 2. Vehicle shadow offset direction must match other shadows (+x, -y)
+sub('racer/VehicleRenderer.java', "mVehicle.getX() - offset, mVehicle.getY() + offset", "mVehicle.getX() + offset, mVehicle.getY() - offset")
+
+# 3. Camera: wrong advance direction, delta limited after being applied, zoom limited twice
+sub('racescreen/RacerCameraUpdater.java', """        sDelta.set(0, advance)
+                .rotate(90 - mRacer.getCameraAngle())
+                .add(vehicle.getPosition())
+                .sub(mCameraInfo.position);
+        mNextCameraInfo.position.set(mCameraInfo.position).add(sDelta);
+        if (!immediate) {
+            sDelta.limit(MAX_CAMERA_DELTA * delta);
+        }
+        limitZoomChange(delta);
+        applyChanges();""", """        sDelta.set(advance, 0)
+                .rotate(mRacer.getCameraAngle())
+                .add(vehicle.getPosition())
+                .sub(mCameraInfo.position);
+        if (!immediate) {
+            sDelta.limit(MAX_CAMERA_DELTA * delta);
+        }
+        mNextCameraInfo.position.set(mCameraInfo.
+### 11 OBS: core/src/com/agateau/pixelwheels/bonus/Mine.java               |  6 +++++-
+ core/src/com/agateau/pixelwheels/bonus/Missile.java            | 10 ++++++++--
+ core/src/com/agateau/pixelwheels/racer/VehicleRenderer.java    |  2 +-
+ .../com/agateau/pixelwheels/racescreen/RacerCameraUpdater.java |  7 +++----
+ core/src/com/agateau/pixelwheels/utils/BodyRegionDrawer.java   |  4 ++--
+ 5 files changed, 19 insertions(+), 10 deletions(-)
+
+[stdout]
+ core/src/com/agateau/pixelwheels/bonus/Mine.java               |  6 +++++-
+ core/src/com/agateau/pixelwheels/bonus/Missile.java            | 10 ++++++++--
+ core/src/com/agateau/pixelwheels/racer/VehicleRenderer.java    |  2 +-
+ .../com/agateau/pixelwheels/racescreen/RacerCameraUpdater.java |  7 +++----
+ core/src/com/agateau/pixelwheels/utils/BodyRegionDrawer.java   |  4 ++--
+ 5 files changed, 19 insertions(+), 10 deletions(-)
+[metadata] {"noOutputExpected": false, "bashEditDiff": {"files": [{"filePath": "/app/core/src/com/agateau/pixelwheels/utils/BodyRegionDrawer.java", "hunks": [{"oldStart": 102, "oldLines": 8, "newStart": 102, "newLines": 8, "lines": ["                 region, x - w / 2, y - h / 2, // pos", "                 w / 2, h / 2, // orig
+### 12 CALL Bash: cd /app/core/src/com/agateau/pixelwheels; grep -rn "setScale(\|CAMERA_ADVANCE" --include=*.java . ; grep -n "drawFrameBuffer" -A12 racescreen/Helicopter.java | sed -n '/private void drawFrameBuffer/,/^--/p'; sed -n 70,95p obstacles/Obstacle.java
+### 12 OBS: Constants.java:28:    public static final float CAMERA_ADVANCE_PERCENT = 0.25f;
+obstacles/TiledObstacleCreator.java:160:            sPolygon.setScale(hk, vk);
+racescreen/RacerCameraUpdater.java:58:        float advance = Math.min(viewportWidth, viewportHeight) * Constants.CAMERA_ADVANCE_PERCENT;
+utils/BodyRegionDrawer.java:62:    public void setScale(float scale) {
+297:    private void drawFrameBuffer(Batch batch, float offset) {
+298-        final float U = Constants.UNIT_FOR_PIXEL;
+299-        int w = mFrameBuffer.getWidth();
+300-        int h = mFrameBuffer.getHeight();
+301-        Texture texture = mFrameBuffer.getColorBufferTexture();
+302-        batch.draw(
+303-                texture,
+304-                // dst
+305-                getX() - w * U / 2 + offset,
+306-                getY() - BODY_CENTER.y * U - offset,
+307-                // origin
+308-                w * U / 2,
+309-                BODY_CENTER.y * U,
+    @Override
+    public void act(float delta) {
+        Box2DUtils.applyDrag(mBody, LINEAR_DRAG);
+        Box2DUtils.applyCircularDrag(mBody, ANGULAR_DRAG);
+    }
+
+    @Override
+    public void draw(Batch batch, ZLevel zLevel, Rectangle viewBounds) {
+        if (zLe
+### 13 CALL Bash: cd /app/core/src/com/agateau/pixelwheels; sed -i 's|                mScale, mScale, // scale|                1, 1, // scale|' utils/BodyRegionDrawer.java; sed -n 130,175p bonus/Bullet.java; sed -n 95,125p bonus/BonusSpot.java
+### 13 OBS: @Override
+    public void act(float delta) {}
+
+    @Override
+    public void draw(Batch batch, ZLevel zLevel, Rectangle viewBounds) {
+        if (zLevel != ZLevel.GROUND) {
+            return;
+        }
+        float radius = mBody.getFixtureList().get(0).getShape().getRadius();
+        if (!AgcMathUtils.rectangleContains(viewBounds, getPosition(), radius)) {
+            return;
+        }
+        mDrawer.setBatch(batch);
+        mDrawer.draw(mBody, mAssets.bullet);
+    }
+
+    @Override
+    public void audioRender(AudioClipper clipper) {
+        if (mJustShot) {
+            mAudioManager.play(mAssets.soundAtlas.get("shoot"), clipper.clip(this));
+            mJustShot = false;
+        }
+    }
+
+    @Override
+    public float getX() {
+        return mBody.getPosition().x;
+    }
+
+    @Override
+    public float getY() {
+        return mBody.getPosition().y;
+    }
+
+    private void explode() {
+        Vector2 pos = mBody.getPosition();
+        AnimationObject obj = AnimationObject.create(mAssets.impact, pos.x, pos.y);
+        obj.initAudio(mAudioManager, mAssets.soundAtlas.get("impact"));
+        mGameWorld.addGameObject(obj);
+        setFinished(true);
+    }
+
+    @Override
+    public voi
+### 14 AGENT MSG: Let me quickly sanity-check the cell drawing helpers, then compile.
+### 14 CALL Bash: cd /app/core/src/com/agateau/pixelwheels; grep -n "public void drawCell\|public void drawScaledCell" -A25 gameobject/CellFrameBufferManager.java | head -60
+### 14 OBS: 116:    public void drawCell(Batch batch, Vector2 dst, int cellId) {
+117-        drawCell(batch, dst.x, dst.y, cellId);
+118-    }
+119-
+120:    public void drawCell(Batch batch, float dstX, float dstY, int cellId) {
+121-        drawScaledCell(batch, dstX, dstY, cellId, 1f);
+122-    }
+123-
+124-    /** Draw a cell to the screen */
+125:    public void drawScaledCell(Batch batch, Vector2 dst, int cellId, float scale) {
+126-        drawScaledCell(batch, dst.x, dst.y, cellId, scale);
+127-    }
+128-
+129:    public void drawScaledCell(Batch batch, float dstX, float dstY, int cellId, float scale) {
+130-        Rectangle rect = mCells.get(cellId);
+131-        float w = Constants.UNIT_FOR_PIXEL * rect.width * scale;
+132-        float h = Constants.UNIT_FOR_PIXEL * rect.height * scale;
+133-
+134-        float textureSize = CellFrameBufferManager.SIZE;
+135-        float u = rect.x / textureSize;
+136-        float v = rect.y / textureSize;
+137-        float u2 = (rect.x + rect.width) / textureSize;
+138-        float v2 = (rect.y + rect.height) / textureSize;
+139-
+140-        batch.draw(
+141-                mFrameBuffer.getColorBufferTexture(),
+142-                // dst
+143-                dstX - 
+### 15 CALL Bash: cd /app; ls ~/.gradle 2>/dev/null | head; timeout 500 ./gradlew --offline -q :core:compileJava 2>&1 | tail -20; echo rc=$?
+### 15 OBS: Note: Some input files use or override a deprecated API.
+Note: Recompile with -Xlint:deprecation for details.
+Note: Some input files use unchecked or unsafe operations.
+Note: Recompile with -Xlint:unchecked for details.
+rc=0
+
+[stdout]
+Note: Some input files use or override a deprecated API.
+Note: Recompile with -Xlint:deprecation for details.
+Note: Some input files use unchecked or unsafe operations.
+Note: Recompile with -Xlint:unchecked for details.
+rc=0
+[metadata] {"noOutputExpected": false}
+### 16 CALL Bash: cd /app; timeout 500 ./gradlew --offline -q :core-tests:test 2>&1 | tail -20; echo rc=$?; git diff
+### 16 OBS: Note: Some input files use or override a deprecated API.
+Note: Recompile with -Xlint:deprecation for details.
+rc=0
+diff --git a/core/src/com/agateau/pixelwheels/bonus/Mine.java b/core/src/com/agateau/pixelwheels/bonus/Mine.java
+index 913f76d..a5752de 100644
+--- a/core/src/com/agateau/pixelwheels/bonus/Mine.java
++++ b/core/src/com/agateau/pixelwheels/bonus/Mine.java
+@@ -188,7 +188,11 @@ public class Mine extends GameObjectAdapter
+             TextureRegion region = mAssets.mine.getKeyFrame(mTime);
+             mBodyRegionDrawer.drawShadow(mBody, region);
+         }
+-        if (zLevel == ZLevel.VEHICLES) {
++        ZLevel wantedZLevel =
++                !hasBeenDropped && mOwner.getVehicle().isFlying()
++                        ? ZLevel.FLYING
++                        : ZLevel.VEHICLES;
++        if (zLevel == wantedZLevel) {
+             TextureRegion region = mAssets.mine.getKeyFrame(mTime);
+             mBodyRegionDrawer.draw(mBody, region);
+         }
+diff --git a/core/src/com/agateau/pixelwheels/bonus/Missile.java b/core/src/com/agateau/pixelwheels/bonus/Missile.java
+index e6a94a5..b079373 100644
+--- a/core/src/com/agateau/pixelwheels/bonus/Missile.java
++++ b/core/src/com/agateau
+### 17 AGENT MSG: I couldn't watch the recording: `/app/.harbor_assets/` is empty and there's no `recording.mp4` anywhere on the system. So I found these bugs by reading the rendering code, not by comparing against the clip. The fixes compile and the existing tests pass, but I haven't run the game to see the result.
+
+Here's what I changed, grouped by your three symptoms:
+
+**Items a vehicle carries are drawn at the wrong layer**
+- **Missile (`bonus/Missile.java`)**: a missile waiting on its car was always drawn at the top layer. That's why it showed through bridges, trees and other things that cover the car. It's now drawn at the car's own layer until it's fired, or at the top layer if the car itself is in the air. A fired missile still flies on top as before.
+- **Mine (`bonus/Mine.java`)**: the opposite problem. A carried mine was always drawn at the car's ground layer. When the car was lifted into the air, the mine got hidden under things the car was drawn above. It now follows the car into the air; dropped mines are unchanged.
+
+**Shadows**
+- **Turning (`utils/BodyRegionDrawer.java`)**: the shared shadow code for missiles, mines, bonus spots and obstacles was given the angle in the wrong unit (radians instead of degrees). Those shadows spun to the wrong angle instead of matching the object. Fixed.
+- **Direction (`racer/VehicleRenderer.java`)**: car shadows were offset up-left, while every other shadow (obstacles, helicopter, missiles and so on) falls down-right. Car shadows now fall the same way.
+
+**Camera (`racescreen/RacerCameraUpdater.java`)**
+- The camera is meant to look ahead of the car in the direction it's driving, but it was offset in a mirrored direction.
+- The cap on how fast the camera can move was applied after the move had already been made, so it did nothing and the camera could jump. It's now applied first.
+- A duplicated zoom-limit call is removed.
+
+I didn't touch the track or vehicle movement. Nothing is committed. If you can put the recording back, I can check these against it and look for anything it shows that I missed.

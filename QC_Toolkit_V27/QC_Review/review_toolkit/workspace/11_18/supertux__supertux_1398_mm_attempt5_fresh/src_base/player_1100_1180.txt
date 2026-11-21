@@ -1,0 +1,81 @@
+  }
+
+  /* Duck or Standup! */
+  if (m_controller->hold(Control::DOWN) && !m_stone && !m_swimming) {
+    do_duck();
+  } else {
+    do_standup(false);
+  }
+
+  /* grabbing */
+  try_grab();
+
+  if (!m_controller->hold(Control::ACTION) && m_grabbed_object) {
+    auto moving_object = dynamic_cast<MovingObject*> (m_grabbed_object);
+    if (moving_object) {
+      // move the grabbed object a bit away from tux
+      Rectf grabbed_bbox = moving_object->get_bbox();
+      Rectf dest_;
+      dest_.set_bottom(m_col.m_bbox.get_top() + m_col.m_bbox.get_height() * 0.66666f);
+      dest_.set_top(dest_.get_bottom() - grabbed_bbox.get_height());
+      if (m_dir == Direction::LEFT) {
+        dest_.set_right(m_col.m_bbox.get_left() - 1);
+        dest_.set_left(dest_.get_right() - grabbed_bbox.get_width());
+      } else {
+        dest_.set_left(m_col.m_bbox.get_right() + 1);
+        dest_.set_right(dest_.get_left() + grabbed_bbox.get_width());
+      }
+      if (Sector::get().is_free_of_tiles(dest_, true) &&
+         Sector::get().is_free_of_statics(dest_, moving_object, true)) {
+        moving_object->set_pos(dest_.p1());
+        if (m_controller->hold(Control::UP)) {
+          m_grabbed_object->ungrab(*this, Direction::UP);
+        } else if (m_controller->hold(Control::DOWN)) {
+          m_grabbed_object->ungrab(*this, Direction::DOWN);
+        } else {
+          m_grabbed_object->ungrab(*this, (dest_.get_left() > m_col.m_bbox.get_left()) ?
+                                   Direction::LEFT : Direction::RIGHT);
+        }
+        m_grabbed_object = nullptr;
+      }
+    } else {
+      log_debug << "Non MovingObject grabbed?!?" << std::endl;
+    }
+  }
+
+  /* stop backflipping at will */
+  if ( m_backflipping && ( !m_controller->hold(Control::JUMP) && !m_backflip_timer.started()) ){
+    stop_backflipping();
+  }
+}
+
+void
+Player::position_grabbed_object()
+{
+  auto moving_object = dynamic_cast<MovingObject*>(m_grabbed_object);
+  assert(moving_object);
+  const auto& object_bbox = moving_object->get_bbox();
+
+  // Position where we will hold the lower-inner corner
+  Vector pos(m_col.m_bbox.get_left() + m_col.m_bbox.get_width()/2,
+      m_col.m_bbox.get_top() + m_col.m_bbox.get_height()*0.66666f);
+
+  // Adjust to find the grabbed object's upper-left corner
+  pos.x -= object_bbox.get_width() * (m_dir == Direction::LEFT ? 0.0f : 1.0f);
+  pos.y -= object_bbox.get_height();
+
+  m_grabbed_object->grab(*this, pos, m_dir);
+}
+
+void
+Player::try_grab()
+{
+  if (m_controller->hold(Control::ACTION) && !m_grabbed_object
+     && !m_duck) {
+
+    Vector pos;
+    if (m_dir == Direction::LEFT) {
+      pos = Vector(m_col.m_bbox.get_left() - 5, m_col.m_bbox.get_bottom() - 16);
+    } else {
+      pos = Vector(m_col.m_bbox.get_right() + 5, m_col.m_bbox.get_bottom() - 16);
+    }

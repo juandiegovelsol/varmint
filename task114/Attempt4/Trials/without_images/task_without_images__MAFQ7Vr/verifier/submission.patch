@@ -1,0 +1,62 @@
+diff --git a/bokehjs/src/lib/core/layout/border.ts b/bokehjs/src/lib/core/layout/border.ts
+index 5b3df3f..c9a6bba 100644
+--- a/bokehjs/src/lib/core/layout/border.ts
++++ b/bokehjs/src/lib/core/layout/border.ts
+@@ -49,7 +49,7 @@ export class BorderLayout extends Layoutable {
+     const right = Math.max(Math.max(right_hint.width, this.min_border.right) + this.padding.right, this.align_border.right)
+ 
+     const top_hint = this.top_panel.measure({width: viewport.width, height: 0})
+-    const top = Math.max(top_hint.height, this.min_border.top) + this.padding.top
++    const top = Math.max(Math.max(top_hint.height, this.min_border.top) + this.padding.top, this.align_border.top)
+ 
+     const bottom_hint = this.bottom_panel.measure({width: viewport.width, height: 0})
+     const bottom = Math.max(Math.max(bottom_hint.height, this.min_border.bottom) + this.padding.bottom, this.align_border.bottom)
+diff --git a/bokehjs/src/lib/core/layout/side_panel.ts b/bokehjs/src/lib/core/layout/side_panel.ts
+index 14adf91..00eae0e 100644
+--- a/bokehjs/src/lib/core/layout/side_panel.ts
++++ b/bokehjs/src/lib/core/layout/side_panel.ts
+@@ -244,9 +244,9 @@ export class SideLayout extends ContentLayoutable {
+   override has_size_changed(): boolean {
+     const {width, height} = this._content_size()
+     if (this.panel.is_horizontal) {
+-      return this.bbox.height > height
++      return this.bbox.height != height
+     } else {
+-      return this.bbox.width > width
++      return this.bbox.width != width
+     }
+   }
+ }
+diff --git a/bokehjs/src/lib/models/layouts/alignments.ts b/bokehjs/src/lib/models/layouts/alignments.ts
+index fe526c7..0f16481 100644
+--- a/bokehjs/src/lib/models/layouts/alignments.ts
++++ b/bokehjs/src/lib/models/layouts/alignments.ts
+@@ -47,8 +47,8 @@ export class GridAlignmentLayout extends Layoutable {
+       // itself, matching which sides `_set_geometry` goes on to align.
+       const {aligns} = layout
+       layout.align_border = {
+-        left: aligns.left ? cols[c1].left : 0,
+-        right: aligns.right ? cols[c0].right : 0,
++        left: aligns.left ? cols[c0].left : 0,
++        right: aligns.right ? cols[c1].right : 0,
+         top: aligns.top ? rows[r0].top : 0,
+         bottom: aligns.bottom ? rows[r1].bottom : 0,
+       }
+diff --git a/bokehjs/src/lib/models/layouts/flex_box.ts b/bokehjs/src/lib/models/layouts/flex_box.ts
+index 01c41c5..10b2eb7 100644
+--- a/bokehjs/src/lib/models/layouts/flex_box.ts
++++ b/bokehjs/src/lib/models/layouts/flex_box.ts
+@@ -22,6 +22,13 @@ export abstract class FlexBoxView extends LayoutDOMView {
+     return this.model.children
+   }
+ 
++  override measure_layout(): void {
++    if (this.layout instanceof GridAlignmentLayout) {
++      this.layout.align_borders()
++    }
++    super.measure_layout()
++  }
++
+   override _update_layout(): void {
+     super._update_layout()
+ 

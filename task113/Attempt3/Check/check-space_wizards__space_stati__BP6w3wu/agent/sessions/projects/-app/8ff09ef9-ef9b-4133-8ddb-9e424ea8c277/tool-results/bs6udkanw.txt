@@ -1,0 +1,834 @@
+=== tests/config.json ===
+{
+  "task_id": "space_wizards__space_station_14_36889_mm",
+  "verifier_mode": "test_execution",
+  "test_framework": "dotnet test (NUnit via NUnit3TestAdapter, Content.IntegrationTests)",
+  "test_files": [
+    "Content.IntegrationTests/Tests/Doors/FirelockLane.cs",
+    "Content.IntegrationTests/Tests/Doors/FirelockWarningLightTest.cs",
+    "Content.IntegrationTests/Tests/Doors/FirelockSealTest.cs",
+    "Content.IntegrationTests/Tests/Doors/FirelockAnimationTest.cs"
+  ],
+  "f2p": [
+    "Content.IntegrationTests.Tests.Doors.FirelockWarningLightTest.WarningLights_HideWhenDoorLeavesClosed",
+    "Content.IntegrationTests.Tests.Doors.FirelockWarningLightTest.WarningLights_GlassFirelockShowsWarning",
+    "Content.IntegrationTests.Tests.Doors.FirelockWarningLightTest.WarningLights_SpaceBreachIsAPressureWarning",
+    "Content.IntegrationTests.Tests.Doors.FirelockSealTest.ClosedFirelock_HoldsBackGasReleasedAfterClosing",
+    "Content.IntegrationTests.Tests.Doors.FirelockSealTest.EdgeFirelock_SealsAlongItsDoorEdge",
+    "Content.IntegrationTests.Tests.Doors.FirelockAnimationTest.ClosingAnimation_PlaysThroughBeforeTheDoorShuts"
+  ],
+  "p2p": [
+    "Content.IntegrationTests.Tests.Doors.AirlockTest.OpenCloseDestroyTest",
+    "Content.IntegrationTests.Tests.Doors.FirelockWarningLightTest.WarningLights_MatchTheHazardKind",
+    "Content.IntegrationTests.Tests.Doors.FirelockWarningLightTest.WarningLights_StayOnWhileWelded"
+  ]
+}
+=== tests/test.sh ===
+#!/usr/bin/env bash
+# Behavioral verifier. Resets every path test.patch touches to the immutable harbor_base tag, applies
+# the hidden tests, runs ONLY the configured f2p + p2p tests with the repository's own runner into a
+# JUnit report, and lets verifier.py turn that report into the reward. Nothing here reads the
+# candidate's source to decide anything.
+set -uo pipefail
+
+# ---- task-specific values, filled by the task builder ----------------------------------------
+# run_tests runs the configured tests with the repository's own runner and writes JUnit XML to
+# $JUNIT_OUT. The test ids (f2p + p2p from /tests/config.json) are in $TEST_IDS_FILE, one per line.
+# Write plain shell commands here; no quoting of the whole block is needed.
+run_tests() {
+  cd /app
+
+  # Build a VSTest --filter expression that matches exactly the configured test ids (by fully
+  # qualified name), OR'd together.
+  FILTER=""
+  while IFS= read -r id; do
+    [ -z "$id" ] && continue
+    clause="FullyQualifiedName=${id}"
+    if [ -z "$FILTER" ]; then
+      FILTER="$clause"
+    else
+      FILTER="${FILTER}|${clause}"
+    fi
+  done < "$TEST_IDS_FILE"
+
+  WORKDIR="$(mktemp -d)"
+  NUNIT_XML_DIR="$WORKDIR/nunit-xml"
+  mkdir -p "$NUNIT_XML_DIR"
+
+  # Rebuild (offline: the image already restored every NuGet package, and a source-only
+  # patch does not change what needs restoring). Only the integration test project and what it
+  # references (Content.Client, Content.Server, Content.Shared, Content.Tests and the engine)
+  # are built -- the rest of the solution (benchmarks, map renderer, packaging, linters, tools)
+  # plays no part in the tests. -m lets MSBuild use multiple processes; this stays on top of
+  # the image's own cached build rather than a from-scratch compile.
+  dotnet build Content.IntegrationTests/Content.IntegrationTests.csproj --configuration DebugOpt --no-restore /m
+
+  # NUnit.NumberOfTestWorkers=1 overrides the assembly's [LevelOfParallelism(2)] and runs the
+  # selected tests one at a time on a single dedicated worker thread, instead of on two
+  # concurrent worker threads (NumberOfTestWorkers=0, which drops NUnit's threaded dispatcher
+  # entirely and runs tests directly on the calling thread, turned out to be incompatible with
+  # this engine's GameTest fixtures and produced a wrongly-attributed report -- a result from one
+  # test landing under the other test's name -- so a single *worker thread* is used instead).
+  # With only a couple of tests selected by filter (instead of the full suite), two GameTest-
+  # derived tests can each spin up their own Robust server/client pair at the same time; those
+  # pairs race on the engine's prototype-loading path (PrototypeManager.InstantiateKinds ->
+  # KindData.Freeze) and the second server to start can intermittently hit an
+  # ArgumentNullException while building its prototype dictionary. That's a pre-existing
+  # concurrency bug in the engine's test-pool startup, not something either test or the fix
+  # touches, so it's worked around here by serializing execution onto one worker thread.
+  dotnet test --no-build --configuration DebugOpt Content.IntegrationTests/Content.IntegrationTests.csproj \
+      --filter "$FILTER" \
+      --logger "console;verbosity=normal" \
+      -- NUnit.ConsoleOut=0 NUnit.MapWarningTo=Failed \
+         NUnit.NumberOfTestWorkers=1 \
+         NUnit.TestOutputXml="$(basename "$NUNIT_XML_DIR")" \
+         NUnit.WorkDirectory="$WORKDIR" \
+      || true   # test failures must not abort the script; we still need to emit JUnit XML
+
+  # Convert whatever NUnit3-format XML files were produced into one JUnit-style report.
+  python3 - "$NUNIT_XML_DIR" "$JUNIT_OUT" "$FILTER" <<'PY'
+import sys, glob, os
+import xml.etree.ElementTree as ET
+
+nunit_dir, out_path, filt = sys.argv[1], sys.argv[2], sys.argv[3]
+
+cases = []  # (classname, name, status, message)
+for path in glob.glob(os.path.join(nunit_dir, "*.xml")):
+    try:
+        root = ET.parse(path).getroot()
+    except ET.ParseError:
+        continue
+    for tc in root.iter("test-case"):
+        classname = tc.get("classname") or ""
+        name = tc.get("methodname") or tc.get("name") or ""
+        fullname = tc.get("fullname") or f"{classname}.{name}"
+        result = (tc.get("result") or "").lower()
+        msg = ""
+        failure = tc.find("failure")
+        if failure is not None:
+            m = failure.find("message")
+            st = failure.find("stack-trace")
+            msg = ((m.text or "") if m is not None else "") + "\n" + ((st.text or "") if st is not None else "")
+        if result in ("passed",):
+            status = "pass"
+        elif result in ("skipped", "ignored", "explicit"):
+            status = "skip"
+        else:
+            status = "fail"
+        cases.append((classname, name, fullname, status, msg))
+
+suite = ET.Element("testsuite", {"name": "Content.IntegrationTests", "tests": str(len(cases))})
+for classname, name, fullname, status, msg in cases:
+    # classname left empty and the full "Namespace.Class.Method" dotted id put in "name" so that
+    # verifier.py's "{classname} {name}".strip() key equals config.json's f2p/p2p ids exactly.
+    tc_el = ET.SubElement(suite, "testcase", {"classname": "", "name": fullname})
+    if status == "fail":
+        f_el = ET.SubElement(tc_el, "failure", {"message": (msg or "failed")[:500]})
+        f_el.text = msg[:4000]
+    elif status == "skip":
+        ET.SubElement(tc_el, "skipped")
+
+ET.ElementTree(suite).write(out_path, encoding="unicode", xml_declaration=True)
+print(f"wrote {len(cases)} test-case results to {out_path}")
+PY
+}
+# Directories holding the repo's test plumbing (configs, helpers) that must also be restored so a
+# candidate cannot replace the harness. Space-separated, relative to /app; '' if none.
+PROTECTED_DIRS='Content.IntegrationTests/Fixtures'
+# -----------------------------------------------------------------------------------------------
+
+mkdir -p /logs/verifier
+STDOUT_LOG=/logs/verifier/test-stdout.txt
+STDERR_LOG=/logs/verifier/test-stderr.txt
+export JUNIT_OUT=/logs/verifier/junit.xml
+export TEST_IDS_FILE=/logs/verifier/test_ids.txt
+: > "$STDOUT_LOG"; : > "$STDERR_LOG"
+rm -f "$JUNIT_OUT" /logs/verifier/reward.txt /logs/verifier/reward.json
+
+ensure_reward() { [ -f /logs/verifier/reward.txt ] || echo 0 > /logs/verifier/reward.txt; }
+trap ensure_reward EXIT
+
+cd /app || { echo "no /app" | tee -a "$STDERR_LOG"; exit 1; }
+
+# Capture the agent's submission BEFORE anything below mutates /app -- this is the last
+# moment the tree is base + agent work; the restore loop and test.patch come next.
+#
+# A THROWAWAY INDEX, never /app/.git/index: `git add` against the real one would leave paths
+# staged and change how the `git checkout harbor_base --` and `git clean` below behave.
+#
+# TRACKED EDITS + A SOURCE WHITELIST, not `add -A` with a blacklist. The image builds the .NET
+# solution in-tree AFTER the harbor_base commit (environment/Dockerfile), so build output sits in
+# the working tree as untracked files. A bare `add -A` risks sweeping up generated output along
+# with the agent's work. Inverting it -- stage tracked modifications, then add only untracked
+# files that LOOK like source -- keeps the agent's work and drops generated output by default.
+_SUB=/logs/verifier/submission.patch
+_SUBIDX=/tmp/.submission_index
+_SUBSRC=('*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hh' '*.hpp' '*.hxx' '*.inl' '*.m' '*.mm'
+         '*.py' '*.rb' '*.go' '*.rs' '*.java' '*.js' '*.ts' '*.tsx' '*.cs' '*.kt' '*.swift')
+rm -f "$_SUBIDX"
+# Seed the throwaway index from a COPY of the real one (harbor_base plus anything the agent
+# staged): it carries git's cached file stats, so `add -u` below only re-hashes files that
+# actually changed. A bare `read-tree harbor_base` has no stats and makes `add -u` re-hash every
+# tracked file in this large repo (minutes per run). The real index itself is never written.
+if ! cp /app/.git/index "$_SUBIDX" 2>>"$STDERR_LOG"; then
+  GIT_INDEX_FILE="$_SUBIDX" git -C /app read-tree harbor_base 2>>"$STDERR_LOG" || true
+fi
+GIT_INDEX_FILE="$_SUBIDX" git -C /app add -u 2>>"$STDERR_LOG" || true
+# Enumerate before adding: `git add` aborts and stages NOTHING if any one pathspec matches
+# no file, which silently drops the agent's new files on most tasks.
+# Generated-output dirs are dropped from the UNTRACKED scan only. A project that keeps real
+# source under lib/ is unaffected: those files are tracked at harbor_base, so `add -u` above
+# already has them. This drops only files CREATED under a build dir during the run -- which,
+# left in, break replay: they are recorded as new-file hunks and a fresh container from the
+# same image already has them, so `git apply` fails with "already exists in working directory".
+mapfile -t _SUBNEW < <(git -C /app ls-files --others --exclude-standard \
+  -- "${_SUBSRC[@]}" ':(exclude)lib/' ':(exclude)build/' ':(exclude).deps/' 2>/dev/null)
+if [ "${#_SUBNEW[@]}" -gt 0 ]; then
+  GIT_INDEX_FILE="$_SUBIDX" git -C /app add -- "${_SUBNEW[@]}" 2>>"$STDERR_LOG" || true
+fi
+GIT_INDEX_FILE="$_SUBIDX" git -C /app diff --binary --cached harbor_base \
+  > "$_SUB" 2>>"$STDERR_LOG" || true
+rm -f "$_SUBIDX"
+
+# WHAT THE WHITELIST DROPPED, listed rather than silently discarded. The split above captures
+# every change to a TRACKED file (any extension, deletions included) but only NEW files that
+# look like source -- so an agent adding config.yml, a .cmake module or an extensionless script
+# loses it, and the patch still looks clean. That is the failure this manifest exists to expose.
+#
+# NEWEST FIRST, which is the useful ordering and not a cosmetic one: build output and image
+# assets are created before the agent phase starts, so anything the agent made sorts to the top.
+# Build artifacts are excluded by the same rules as the capture, to keep the list readable.
+#
+# If something here belongs in the submission, widen _SUBSRC. Do not reach for `add -A`.
+_SUBSKIP=/logs/verifier/submission-skipped.txt
+_SUBCAP=/tmp/.submission_captured
+if [ "${#_SUBNEW[@]}" -gt 0 ]; then printf '%s\n' "${_SUBNEW[@]}" > "$_SUBCAP"; else : > "$_SUBCAP"; fi
+_SUBSKIPN=$(git -C /app ls-files --others --exclude-standard -- . \
+    ':(exclude)lib/' ':(exclude)build/' ':(exclude).deps/' \
+    ':(exclude)*.o' ':(exclude)*.d' ':(exclude)*.a' ':(exclude)*.lo' ':(exclude)*.la' \
+    ':(exclude)*.so' ':(exclude)*.so.*' ':(exclude)*.gch' ':(exclude)*.pyc' 2>/dev/null \
+  | grep -vxF -f "$_SUBCAP" 2>/dev/null | wc -l)
+{ echo "# Untracked files NOT captured into submission.patch, newest first."
+  echo "# Anything the agent created sorts above build output, which predates the agent phase."
+  echo "# total: ${_SUBSKIPN}  (showing at most 40)"
+  git -C /app ls-files --others --exclude-standard -- . \
+      ':(exclude)lib/' ':(exclude)build/' ':(exclude).deps/' \
+      ':(exclude)*.o' ':(exclude)*.d' ':(exclude)*.a' ':(exclude)*.lo' ':(exclude)*.la' \
+      ':(exclude)*.so' ':(exclude)*.so.*' ':(exclude)*.gch' ':(exclude)*.pyc' 2>/dev/null \
+    | grep -vxF -f "$_SUBCAP" 2>/dev/null | head -200 \
+    | while IFS= read -r _f; do
+        printf '%s\t%s\t%s\n' "$(stat -c %Y "/app/$_f" 2>/dev/null || echo 0)" \
+                              "$(stat -c %s "/app/$_f" 2>/dev/null || echo 0)" "$_f"
+      done \
+    | sort -rn | head -40 | awk -F'\t' '{printf "%s\t%s\t%s\n",$1,$2,$3}'
+} > "$_SUBSKIP" 2>/dev/null || true
+rm -f "$_SUBCAP"
+
+# Size guard. The whitelist is a heuristic, so a task laying out source unusually could still
+# produce something enormous. Cap it and leave a diagnosable stub: a truncated capture is
+# recoverable, a full disk is not.
+_SUBSZ=$(wc -c < "$_SUB" 2>/dev/null || echo 0)
+if [ "$_SUBSZ" -gt 5242880 ]; then
+  { echo "SUBMISSION CAPTURE SUPPRESSED: ${_SUBSZ} bytes exceeds the 5MB cap."
+    echo "Directories contributing to the discarded patch:"
+    grep -a "^diff --git" "$_SUB" | sed 's#^diff --git a/##; s# b/.*##; s#/[^/]*$##' \
+      | sort | uniq -c | sort -rn | head -20
+  } > "$_SUB.suppressed" 2>/dev/null
+  : > "$_SUB"
+  echo "== submission.patch SUPPRESSED (${_SUBSZ} bytes > 5MB cap) ==" | tee -a "$STDOUT_LOG"
+else
+  echo "== captured submission.patch (${_SUBSZ} bytes, $(grep -ac '^diff --git' "$_SUB" 2>/dev/null || echo 0) files) ==" \
+    | tee -a "$STDOUT_LOG"
+fi
+
+
+# 1. Restore every path test.patch touches. Both diff headers are read, so new files, binary
+#    baselines (image-comparison PNGs, snapshots), renames and deletions are all covered.
+_patch_paths=$( { sed -n 's#^diff --git a/\(.*\) b/.*#\1#p' /tests/test.patch
+                  sed -n 's#^diff --git a/.* b/\(.*\)#\1#p' /tests/test.patch; } | sort -u )
+for _p in $_patch_paths; do
+  git -C /app checkout harbor_base -- "$_p" 2>/dev/null || rm -rf "/app/$_p" 2>/dev/null || true
+done
+for _d in $PROTECTED_DIRS; do
+  git -C /app checkout harbor_base -- "$_d" 2>/dev/null || true
+  git -C /app clean -fdq -- "$_d" 2>/dev/null || true
+done
+
+# 2. Apply the hidden tests.
+echo "== applying test.patch ==" | tee -a "$STDOUT_LOG"
+git apply --binary /tests/test.patch 2>>"$STDERR_LOG" \
+  || git apply /tests/test.patch 2>>"$STDERR_LOG" \
+  || patch -p1 -i /tests/test.patch 2>>"$STDERR_LOG" \
+  || { echo "ERROR: could not apply test.patch" | tee -a "$STDERR_LOG"; exit 1; }
+
+# 3. Run only the configured tests.
+python3 - <<'PY' > "$TEST_IDS_FILE"
+import json
+c = json.load(open("/tests/config.json"))
+print("\n".join(c["f2p"] + c["p2p"]))
+PY
+echo "== running f2p + p2p tests ==" | tee -a "$STDOUT_LOG"
+( cd /app && run_tests ) >>"$STDOUT_LOG" 2>>"$STDERR_LOG" \
+  || echo "(tests exited non-zero; parsing the report)" | tee -a "$STDOUT_LOG"
+
+# 4. Reward from the report.
+echo "== computing reward ==" | tee -a "$STDOUT_LOG"
+# Rubric judge — SUB-AGENT backend: no API key, no network. On the first pass there is no
+# verdict yet, so judge.py writes a judge request under /logs/verifier/judge/ and prints
+# nothing; scoring falls back to tests alone. Once a judge sub-agent has written
+# verdict.json there, `mm_run.sh <task> rescore` folds the verdict into the reward.
+# The `|| echo ""` is load-bearing: the judge must never be able to fail the run.
+RUBRIC=""
+if [ -f /tests/rubrics.json ]; then
+  RUBRIC=$(python3 /tests/judge.py --rubrics /tests/rubrics.json --repo /app \
+             2>/logs/verifier/judge.log || echo "")
+  echo "Rubric verdict: ${RUBRIC:-pending (judge request written; rescore after grading)}"
+fi
+
+python3 /tests/verifier.py --rubric "${RUBRIC:-}" 2>>"$STDERR_LOG" | tee -a "$STDOUT_LOG"
+
+echo "reward=$(cat /logs/verifier/reward.txt 2>/dev/null)" | tee -a "$STDOUT_LOG"
+=== tests/test.patch ===
+diff --git a/Content.IntegrationTests/Tests/Doors/FirelockAnimationTest.cs b/Content.IntegrationTests/Tests/Doors/FirelockAnimationTest.cs
+new file mode 100644
+index 00000000..f27a9d37
+--- /dev/null
++++ b/Content.IntegrationTests/Tests/Doors/FirelockAnimationTest.cs
+@@ -0,0 +1,93 @@
++#nullable enable
++using System.Collections.Generic;
++using Content.IntegrationTests.Fixtures;
++using Content.IntegrationTests.Fixtures.Attributes;
++using Content.Shared.Doors.Components;
++using Content.Shared.Doors.Systems;
++using Robust.Client.GameObjects;
++using Robust.Shared.GameObjects;
++
++namespace Content.IntegrationTests.Tests.Doors;
++
++/// <summary>
++/// How a firelock's door panel moves on the client while it shuts.
++/// </summary>
++[TestOf(typeof(FirelockComponent))]
++public sealed class FirelockAnimationTest : GameTest
++{
++    public override PoolSettings PoolSettings => new() { Connected = true, Fresh = true };
++
++    [SidedDependency(Side.Server)] private SharedDoorSystem _sDoorSystem = null!;
++
++    [Test]
++    [Description("While a firelock shuts, its door panel plays its closing frames through to the end instead of " +
++                 "holding one frame and then jumping to the shut picture.")]
++    public async Task ClosingAnimation_PlaysThroughBeforeTheDoorShuts()
++    {
++        await Pair.CreateTestMap();
++
++        EntityUid serverUid = default;
++        await Server.WaitPost(() => serverUid = SSpawnAtPosition("Firelock", TestMap!.GridCoords));
++        await RunUntilSynced();
++
++        await Server.WaitAssertion(() =>
++            Assert.That(SEntMan.GetComponent<DoorComponent>(serverUid).State, Is.EqualTo(DoorState.Open)));
++
++        var clientUid = ToClientUid(serverUid);
++        string? closingState = null;
++        var frameCount = 0;
++        await Client.WaitPost(() =>
++        {
++            var door = CEntMan.GetComponent<DoorComponent>(clientUid);
++            closingState = door.ClosingSpriteState;
++            var spriteSys = Client.System<SpriteSystem>();
++            var sprite = CEntMan.GetComponent<SpriteComponent>(clientUid);
++            Assert.That(spriteSys.TryGetLayer((clientUid, sprite), DoorVisualLayers.Base, out var layer, false));
++            Assert.That(closingState, Is.Not.Null);
++            Assert.That(layer!.ActualRsi!.TryGetState(closingState!, out var state));
++            frameCount = state!.DelayCount;
++        });
++        Assert.That(frameCount, Is.GreaterThan(6), "The closing sprite should be a multi-frame animation.");
++
++        await Server.WaitPost(() => _sDoorSystem.StartClosing(serverUid));
++
++        // Watch the client's door panel, tick by tick, until the door is shut and settled.
++        var framesSeen = new HashSet<int>();
++        var lastFrame = -1;
++        for (var i = 0; i < 60; i++)
++        {
++            await RunTicksSync(1);
++
++            var settled = false;
++            await Client.WaitPost(() =>
++            {
++                var spriteSys = Client.System<SpriteSystem>();
++                var sprite = CEntMan.GetComponent<SpriteComponent>(clientUid);
++                if (!spriteSys.TryGetLayer((clientUid, sprite), DoorVisualLayers.Base, out var layer, false))
++                    return;
++
++                if (layer.State.Name == closingState)
++                {
++                    framesSeen.Add(layer.AnimationFrame);
++                    lastFrame = Math.Max(lastFrame, layer.AnimationFrame);
++                }
++                else if (CEntMan.GetComponent<DoorComponent>(clientUid).State == DoorState.Closed && framesSeen.Count > 0)
++                {
++                    settled = true;
++                }
++            });
++
++            if (settled)
++                break;
++        }
++
++        Assert.Multiple(() =>
++        {
++            Assert.That(framesSeen, Is.Not.Empty, "The closing animation never played.");
++            Assert.That(framesSeen.Count, Is.GreaterThanOrEqualTo(6),
++                $"The door panel showed only {framesSeen.Count} of its {frameCount} closing frames.");
++            Assert.That(lastFrame, Is.GreaterThanOrEqualTo(frameCount - 3),
++                $"The door panel never got near the end of its closing animation (last frame {lastFrame} of {frameCount}).");
++        });
++    }
++}
+diff --git a/Content.IntegrationTests/Tests/Doors/FirelockLane.cs b/Content.IntegrationTests/Tests/Doors/FirelockLane.cs
+new file mode 100644
+index 00000000..330a024b
+--- /dev/null
++++ b/Content.IntegrationTests/Tests/Doors/FirelockLane.cs
+@@ -0,0 +1,182 @@
++#nullable enable
++using System.Collections.Generic;
++using Content.IntegrationTests.Fixtures;
++using Content.Server.Atmos.EntitySystems;
++using Content.Shared.Atmos;
++using Content.Shared.Atmos.Components;
++using Content.Shared.Doors.Components;
++using Content.Shared.Doors.Systems;
++using Content.Shared.Maps;
++using Robust.Client.GameObjects;
++using Robust.Shared.GameObjects;
++using Robust.Shared.Map;
++using Robust.Shared.Map.Components;
++using Robust.Shared.Maths;
++
++namespace Content.IntegrationTests.Tests.Doors;
++
++/// <summary>
++/// A small walled test bench for doors: a one-tile-wide lane on its own grid, with a lower cell (y = 0..1),
++/// the door tile (y = 2) and an upper cell (y = 3..4). The upper cell can instead be left open to space.
++/// Everything here goes through public game systems only: spawn, open/close, read and change tile air, and
++/// read what the client draws.
++/// </summary>
++internal sealed class FirelockLane
++{
++    public static readonly Vector2i DoorTile = new(0, 2);
++    public static readonly Vector2i[] Lower = { new(0, 0), new(0, 1) };
++    public static readonly Vector2i[] Upper = { new(0, 3), new(0, 4) };
++
++    public EntityUid Grid;
++    public EntityUid Door;
++
++    private readonly GameTest _t;
++
++    private FirelockLane(GameTest t)
++    {
++        _t = t;
++    }
++
++    public static async Task<FirelockLane> Build(GameTest t, string doorProto, bool upperIsSpace = false)
++    {
++        var lane = new FirelockLane(t);
++
++        await t.Server.WaitPost(() =>
++        {
++            var mapSys = t.Server.System<SharedMapSystem>();
++            var tileDefs = t.Server.ResolveDependency<ITileDefinitionManager>();
++            var floor = tileDefs["FloorSteel"].TileId;
++            var plating = tileDefs["Plating"].TileId;
++
++            mapSys.CreateMap(out var mapId);
++            var grid = mapSys.CreateGridEntity(mapId);
++            lane.Grid = grid.Owner;
++
++            var walls = new List<Vector2i>();
++            for (var x = -1; x <= 1; x++)
++            {
++                for (var y = -1; y <= 5; y++)
++                {
++                    // Open to space: no floor above the door, and no wall closing it off at the top.
++                    if (upperIsSpace && x == 0 && y >= 3)
++                        continue;
++
++                    var isWall = x != 0 || y == -1 || y == 5;
++                    mapSys.SetTile(grid.Owner, grid.Comp, new Vector2i(x, y), new Tile(isWall ? plating : floor));
++                    if (isWall)
++                        walls.Add(new Vector2i(x, y));
++                }
++            }
++
++            t.SEntMan.EnsureComponent<GridAtmosphereComponent>(grid.Owner);
++            t.SEntMan.EnsureComponent<GasTileOverlayComponent>(grid.Owner);
++
++            foreach (var w in walls)
++                t.SEntMan.SpawnEntity("WallSolid", new EntityCoordinates(grid.Owner, w.X + 0.5f, w.Y + 0.5f));
++
++            lane.Door = t.SEntMan.SpawnEntity(doorProto, new EntityCoordinates(grid.Owner, DoorTile.X + 0.5f, DoorTile.Y + 0.5f));
++        });
++
++        await t.RunTicksSync(5);
++        return lane;
++    }
++
++    public DoorState ServerState => _t.SEntMan.GetComponent<DoorComponent>(Door).State;
++
++    public async Task WaitForState(DoorState state)
++    {
++        await PoolManager.WaitUntil(_t.Server, () => ServerState == state);
++        Assert.That(ServerState, Is.EqualTo(state));
++    }
++
++    /// <summary>
++    /// Shuts the door and waits until it is fully closed.
++    /// </summary>
++    /// <param name="asIfMappedShut">
++    /// Also have atmos re-read the door tile once, the way a door that was already shut when the map loaded is
++    /// seen. Tests that are not about how a door seals use this, so they only depend on what they check.
++    /// </param>
++    public async Task Close(bool asIfMappedShut)
++    {
++        var doors = _t.Server.System<SharedDoorSystem>();
++        await _t.Server.WaitPost(() => doors.TryClose(Door));
++        await WaitForState(DoorState.Closed);
++
++        if (asIfMappedShut)
++            await _t.Server.WaitPost(() => _t.Server.System<AtmosphereSystem>().InvalidateTile(Grid, DoorTile));
++
++        await _t.RunTicksSync(5);
++    }
++
++    /// <summary>
++    /// Gives every tile on the lane the normal round-start air.
++    /// </summary>
++    public async Task FillAir()
++    {
++        await _t.Server.WaitPost(() =>
++        {
++            var atmos = _t.Server.System<AtmosphereSystem>();
++            atmos.RebuildGridAtmosphere((Grid,
++                _t.SEntMan.GetComponent<GridAtmosphereComponent>(Grid),
++                _t.SEntMan.GetComponent<MapGridComponent>(Grid)));
++        });
++        await _t.RunTicksSync(2);
++    }
++
++    public async Task ChangeAir(IEnumerable<Vector2i> tiles, Action<GasMixture> change)
++    {
++        await _t.Server.WaitPost(() =>
++        {
++            var atmos = _t.Server.System<AtmosphereSystem>();
++            foreach (var tile in tiles)
++            {
++                var mix = atmos.GetTileMixture((Grid, null, null), null, tile, excite: true);
++                Assert.That(mix, Is.Not.Null, $"Tile {tile} has no air to change.");
++                change(mix!);
++            }
++        });
++    }
++
++    public async Task<float> Moles(Gas gas, params Vector2i[] tiles)
++    {
++        var total = 0f;
++        await _t.Server.WaitPost(() =>
++        {
++            var atmos = _t.Server.System<AtmosphereSystem>();
++            foreach (var tile in tiles)
++                total += atmos.GetTileMixture((Grid, null, null), null, tile)?.GetMoles(gas) ?? 0f;
++        });
++        return total;
++    }
++
++    /// <summary>
++    /// What the client draws for a keyed sprite layer of the door: whether the layer is shown, and whether it
++    /// actually has a sprite state to draw (a blank placeholder layer draws nothing).
++    /// </summary>
++    public async Task<(bool Shown, bool Drawable)> ClientLayer(Enum key)
++    {
++        var shown = false;
++        var drawable = false;
++        var clientUid = _t.ToClientUid(Door);
++
++        await _t.Client.WaitPost(() =>
++        {
++            var spriteSys = _t.Client.System<SpriteSystem>();
++            var sprite = _t.CEntMan.GetComponent<SpriteComponent>(clientUid);
++            if (!spriteSys.LayerMapTryGet((clientUid, sprite), key, out var index, false)
++                || !spriteSys.TryGetLayer((clientUid, sprite), index, out var layer, false))
++                return;
++
++            shown = layer.Visible;
++            drawable = layer.ActualRsi is { } rsi && rsi.TryGetState(layer.State, out _);
++        });
++
++        return (shown, drawable);
++    }
++
++    public async Task<bool> WarningShown(Enum key)
++    {
++        var (shown, drawable) = await ClientLayer(key);
++        return shown && drawable;
++    }
++}
+diff --git a/Content.IntegrationTests/Tests/Doors/FirelockSealTest.cs b/Content.IntegrationTests/Tests/Doors/FirelockSealTest.cs
+new file mode 100644
+index 00000000..b961ddb8
+--- /dev/null
++++ b/Content.IntegrationTests/Tests/Doors/FirelockSealTest.cs
+@@ -0,0 +1,75 @@
++#nullable enable
++using Content.IntegrationTests.Fixtures;
++using Content.Shared.Atmos;
++using Content.Shared.Doors.Components;
++using Robust.Shared.GameObjects;
++
++namespace Content.IntegrationTests.Tests.Doors;
++
++/// <summary>
++/// What a shut firelock keeps out. Gas is released on one side of the door and the other side is checked
++/// after the air has had time to spread.
++/// </summary>
++[TestOf(typeof(FirelockComponent))]
++public sealed class FirelockSealTest : GameTest
++{
++    public override PoolSettings PoolSettings => new() { Connected = true, Fresh = true };
++
++    private const float Released = 200f;
++
++    // Far below anything that could have flowed through an open gap in four seconds.
++    private const float Trace = 1f;
++
++    [Test]
++    [Description("A firelock that was shut while the round was running holds back gas released behind it afterwards.")]
++    public async Task ClosedFirelock_HoldsBackGasReleasedAfterClosing()
++    {
++        var lane = await FirelockLane.Build(this, "Firelock");
++        await lane.FillAir();
++
++        // Filling the lane makes atmos re-read every tile on its next pass. Let that settle while the door is
++        // still open, so that afterwards only the door shutting can seal its tile.
++        await RunSeconds(2);
++
++        // Shut it during play, then release gas on one side.
++        await lane.Close(asIfMappedShut: false);
++        await lane.ChangeAir(FirelockLane.Upper, m => m.AdjustMoles(Gas.Plasma, Released));
++        await RunSeconds(4);
++
++        var behind = await lane.Moles(Gas.Plasma, FirelockLane.Upper);
++        var through = await lane.Moles(Gas.Plasma, FirelockLane.Lower);
++        Assert.Multiple(() =>
++        {
++            Assert.That(behind, Is.GreaterThan(Released), "The released gas should still be behind the firelock.");
++            Assert.That(through, Is.LessThan(Trace),
++                $"{through:F1} mol of the gas got past a shut firelock.");
++        });
++    }
++
++    [Test]
++    [Description("An edge firelock seals along the edge its door panel is drawn on (the bottom edge of its tile when " +
++                 "unrotated): gas on that side stays on that side and never reaches the firelock's own tile.")]
++    public async Task EdgeFirelock_SealsAlongItsDoorEdge()
++    {
++        // Unrotated, the edge firelock's door panel is drawn along the bottom (south) edge of its tile, so the
++        // lane's lower cell is beyond the panel and the firelock's own tile and the upper cell are on its near side.
++        var lane = await FirelockLane.Build(this, "FirelockEdge");
++        await lane.Close(asIfMappedShut: true);
++        await lane.FillAir();
++
++        await lane.ChangeAir(FirelockLane.Lower, m => m.AdjustMoles(Gas.Plasma, Released));
++        await RunSeconds(4);
++
++        var held = await lane.Moles(Gas.Plasma, FirelockLane.Lower);
++        var onDoorTile = await lane.Moles(Gas.Plasma, FirelockLane.DoorTile);
++        var past = await lane.Moles(Gas.Plasma, FirelockLane.Upper);
++        Assert.Multiple(() =>
++        {
++            Assert.That(held, Is.GreaterThan(Released), "The released gas should still be below the door panel.");
++            Assert.That(onDoorTile, Is.LessThan(Trace),
++                $"{onDoorTile:F1} mol of gas reached the edge firelock's own tile from beyond its door panel.");
++            Assert.That(past, Is.LessThan(Trace),
++                $"{past:F1} mol of gas got past the edge firelock.");
++        });
++    }
++}
+diff --git a/Content.IntegrationTests/Tests/Doors/FirelockWarningLightTest.cs b/Content.IntegrationTests/Tests/Doors/FirelockWarningLightTest.cs
+new file mode 100644
+index 00000000..1f96ced4
+--- /dev/null
++++ b/Content.IntegrationTests/Tests/Doors/FirelockWarningLightTest.cs
+@@ -0,0 +1,169 @@
++#nullable enable
++using Content.IntegrationTests.Fixtures;
++using Content.IntegrationTests.Fixtures.Attributes;
++using Content.Shared.Atmos;
++using Content.Shared.Doors.Components;
++using Content.Shared.Doors.Systems;
++using Content.Shared.Tools.Systems;
++using Robust.Shared.GameObjects;
++
++namespace Content.IntegrationTests.Tests.Doors;
++
++/// <summary>
++/// The warning lights a firelock shows while it is shut and holding something back. Each test builds a real
++/// hazard next to the door and checks what the client draws.
++/// </summary>
++[TestOf(typeof(FirelockComponent))]
++public sealed class FirelockWarningLightTest : GameTest
++{
++    // A brand-new server/client pair per test, so a failure is always reported under the test that caused it.
++    public override PoolSettings PoolSettings => new() { Connected = true, Fresh = true };
++
++    [SidedDependency(Side.Server)] private SharedDoorSystem _sDoorSystem = null!;
++    [SidedDependency(Side.Server)] private WeldableSystem _sWeldable = null!;
++
++    /// <summary>
++    /// A lane whose upper cell holds far more air than the lower one, at the same temperature.
++    /// </summary>
++    private async Task<FirelockLane> OverPressureLane(string proto)
++    {
++        var lane = await FirelockLane.Build(this, proto);
++        await lane.Close(asIfMappedShut: true);
++        await lane.FillAir();
++        await lane.ChangeAir(FirelockLane.Upper, m => m.AdjustMoles(Gas.Nitrogen, 200f));
++        await RunSeconds(3);
++        await RunUntilSynced();
++        return lane;
++    }
++
++    /// <summary>
++    /// A lane whose upper cell holds searing hot air: hot enough for the temperature warning, and the heat also
++    /// pushes its pressure up far enough for the pressure warning.
++    /// </summary>
++    private async Task<FirelockLane> HotLane(string proto)
++    {
++        var lane = await FirelockLane.Build(this, proto);
++        await lane.Close(asIfMappedShut: true);
++        await lane.FillAir();
++        await lane.ChangeAir(FirelockLane.Upper, m => m.Temperature = 1000f);
++        await RunSeconds(3);
++        await RunUntilSynced();
++        return lane;
++    }
++
++    private async Task AssertNoWarningShown(FirelockLane lane, string when)
++    {
++        var pressure = await lane.WarningShown(FirelockVisualLayersPressure.Base);
++        var temperature = await lane.WarningShown(FirelockVisualLayersTemperature.Base);
++        Assert.Multiple(() =>
++        {
++            Assert.That(pressure, Is.False, $"The pressure warning shows on a firelock that is {when}.");
++            Assert.That(temperature, Is.False, $"The temperature warning shows on a firelock that is {when}.");
++        });
++    }
++
++    private async Task AssertBothWarningsShown(FirelockLane lane, string when)
++    {
++        var pressure = await lane.WarningShown(FirelockVisualLayersPressure.Base);
++        var temperature = await lane.WarningShown(FirelockVisualLayersTemperature.Base);
++        Assert.Multiple(() =>
++        {
++            Assert.That(pressure, $"A firelock that is {when} and holding back hot, high-pressure air should show its pressure warning.");
++            Assert.That(temperature, $"A firelock that is {when} and holding back hot, high-pressure air should show its temperature warning.");
++        });
++    }
++
++    [Test]
++    [Description("Once a firelock leaves its shut state (opening, open, closing again) neither of its warning lights " +
++                 "shows, even though whatever it was holding back has not gone away.")]
++    public async Task WarningLights_HideWhenDoorLeavesClosed()
++    {
++        var lane = await HotLane("Firelock");
++        await AssertBothWarningsShown(lane, "shut");
++
++        // Opening: sampled while the door is still moving.
++        await Server.WaitPost(() => _sDoorSystem.StartOpening(lane.Door));
++        await RunTicksSync(3);
++        await RunUntilSynced();
++        Assert.That(lane.ServerState, Is.EqualTo(DoorState.Opening), "Precondition: the door should still be opening.");
++        await AssertNoWarningShown(lane, "opening");
++
++        // Fully open.
++        await lane.WaitForState(DoorState.Open);
++        await RunUntilSynced();
++        await AssertNoWarningShown(lane, "open");
++
++        // Shutting again: sampled while the door is still moving.
++        await Server.WaitPost(() => _sDoorSystem.StartClosing(lane.Door));
++        await RunTicksSync(6);
++        await RunUntilSynced();
++        Assert.That(lane.ServerState, Is.EqualTo(DoorState.Closing), "Precondition: the door should still be closing.");
++        await AssertNoWarningShown(lane, "closing");
++    }
++
++    [Test]
++    [Description("A glass firelock that is shut and holding back high pressure shows the same pressure warning a " +
++                 "standard firelock shows.")]
++    public async Task WarningLights_GlassFirelockShowsWarning()
++    {
++        var lane = await OverPressureLane("FirelockGlass");
++
++        Assert.That(await lane.WarningShown(FirelockVisualLayersPressure.Base),
++            "A shut glass firelock holding back high pressure shows no pressure warning.");
++    }
++
++    [Test]
++    [Description("A shut firelock with open space on one side and normal air on the other is holding back pressure: " +
++                 "it shows the pressure warning and not the temperature one.")]
++    public async Task WarningLights_SpaceBreachIsAPressureWarning()
++    {
++        var lane = await FirelockLane.Build(this, "Firelock", upperIsSpace: true);
++        await lane.Close(asIfMappedShut: true);
++        await lane.FillAir();
++        await RunSeconds(3);
++        await RunUntilSynced();
++
++        var breachPressure = await lane.WarningShown(FirelockVisualLayersPressure.Base);
++        var breachTemperature = await lane.WarningShown(FirelockVisualLayersTemperature.Base);
++        Assert.Multiple(() =>
++        {
++            Assert.That(breachPressure, "A firelock sealing a room off from space should show its pressure warning.");
++            Assert.That(breachTemperature, Is.False,
++                "A firelock sealing an ordinary room off from space shows the temperature warning.");
++        });
++    }
++
++    [Test]
++    [Description("Guard: each warning keeps reacting to its own kind of hazard.")]
++    public async Task WarningLights_MatchTheHazardKind()
++    {
++        // Same temperature on both sides, much more air on one: pressure only.
++        var pressure = await OverPressureLane("Firelock");
++        var opPressure = await pressure.WarningShown(FirelockVisualLayersPressure.Base);
++        var opTemperature = await pressure.WarningShown(FirelockVisualLayersTemperature.Base);
++        Assert.Multiple(() =>
++        {
++            Assert.That(opPressure, "Over-pressure should show the pressure warning.");
++            Assert.That(opTemperature, Is.False, "Over-pressure at room temperature should not show the temperature warning.");
++        });
++
++        // Searing hot air on one side: the temperature warning shows.
++        var hot = await HotLane("Firelock");
++        Assert.That(await hot.WarningShown(FirelockVisualLayersTemperature.Base),
++            "A firelock holding back searing hot air should show the temperature warning.");
++    }
++
++    [Test]
++    [Description("Guard: a firelock welded shut is still shut, so it keeps showing its warnings.")]
++    public async Task WarningLights_StayOnWhileWelded()
++    {
++        var lane = await HotLane("Firelock");
++
++        await Server.WaitPost(() => _sWeldable.SetWeldedState(lane.Door, true));
++        await lane.WaitForState(DoorState.Welded);
++        await RunSeconds(2);
++        await RunUntilSynced();
++
++        await AssertBothWarningsShown(lane, "welded shut");
++    }
++}

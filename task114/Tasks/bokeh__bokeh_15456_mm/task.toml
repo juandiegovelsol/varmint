@@ -1,0 +1,71 @@
+version = "1.0"
+reward_type = "binary"
+
+[task]
+name = "scale-ai/bokeh__bokeh_15456_mm"
+
+[metadata]
+task_id = "bokeh__bokeh_15456_mm"
+title = "Plots placed together lose parts of themselves"
+repository_name = "bokeh/bokeh"
+repo_url = "https://github.com/bokeh/bokeh"
+issue_number = 15456
+pr_number = 15487
+base_commit = "eaaaeb043ab10371a4f3a6dc0a945ffa6a784ae4"
+fix_commit = "70d18d08ec497e3a3cc35e3a9173007df72d32de"
+task_type = "visual_bug_fix"
+language = "TypeScript"
+framework = "BokehJS"
+cross_file = true
+visual_essentiality = "required"
+difficulty = "hard"
+difficulty_explanation = """
+The evidence is one screenshot of the task's own build: a Row of two fixed-frame plots (one titled), a Row of four plots with legends outside on four sides, a Column of three plots whose y tick labels grow wider, a GridBox with a plot spanning its lower row and a legend on the left of the top-left plot, and a standalone plot with its toolbar on the left. The instruction names only element types (plots, plotting area, axes, title, legend, toolbar) and the aspects that go wrong (how much room a plot gets, the size of its plotting area, where its axes/legend/toolbar end up), states three general expected rules, and adds that most parts are drawn correctly elsewhere in the same screenshot. It names no side, layout kind for any one defect, number of defects, file or mechanism.
+
+There are four independent defects in four files; none of the injected changes carries a comment:
+
+1. Row/Column never raise their children's borders before measuring (the upstream issue #15456, fix PR #15487): FlexBoxView lacks the measure_layout() override that calls GridAlignmentLayout.align_borders(), which CSSGridBoxView already has. Frames are aligned on the canvas but the CSS boxes are sized from each plot's own borders, so the untitled plot of the pair loses its x-axis, the four-legend row is cropped (legend below cut off, legends over toolbars) and the top plot of the column shows a garbled last tick label.
+2. align_borders() reads the aligned left/right borders from the wrong column (cols[c1].left / cols[c0].right instead of cols[c0].left / cols[c1].right, alignments.ts). Invisible for single-cell grid children; in the screenshot the plot spanning two grid columns gets the next column's left border and the previous column's right border, so its box is too narrow: its frame is cut on the right and its toolbar sits over the data. Once defect 1 is fixed, the same swap also makes Row/Column children borrow their neighbour's borders (column top plot cropped again, extra gutter in rows).
+3. BorderLayout._measure ignores the aligned top border (core/layout/border.ts) while the plot's CSS track still honours it, so a fixed-height frame next to a plot with a taller top (title) is stretched down by the difference and its x-axis is pushed out of the box (grid plot b in the screenshot; after defect 1 is fixed, the untitled plots of both rows too). Plot a beside it is the correct counterpart.
+4. PlotView appends the left panel's DOM elements in model order while the canvas stacks them reversed (plot_canvas.ts), so DOM-positioned items on the left side (legend, toolbar) sit next to the frame on top of the canvas-drawn y-axis instead of outside it: the grid legend covers plot a's tick labels and the standalone plot's toolbar covers its y-axis. The legend on the right in the four-legend row is the correct counterpart.
+
+Each Expected rule is enforced by behavioral unit tests (test/unit/models/layouts/plots_in_layouts.ts) that render layouts in the browser and assert on drawn geometry only (no .blf/.png snapshots): 'fully inside its own box, none covers another' -> every f2p test (every axis, title, legend and toolbar the plot model declares must be drawn with a non-zero size, inside the plot element and pairwise non-overlapping, 1 px tolerance); 'a fixed plotting area keeps its size' -> frame-size checks in every f2p test; 'equally tall/wide, plotting areas line up' -> the row, column and grid tests. Validated with a probe that mirrors the test assertions on six builds: fixed passes all; original-bug-only fails the 4 row/column/nested tests; fixed+defect 2 only fails column/nested/spanning-grid; fixed+defect 3 only fails both row tests, nested and the grid-title test; fixed+defect 4 only fails the four-legend row, nested and both left-side tests; the p2p tests pass in every state. Without the screenshot the instruction does not say which layout, side or element is wrong; with it, defects 2-4 each have a correctly drawn counterpart in the same image.
+"""
+files_edited = [
+  "bokehjs/src/lib/core/layout/border.ts",
+  "bokehjs/src/lib/models/layouts/alignments.ts",
+  "bokehjs/src/lib/models/layouts/flex_box.ts",
+  "bokehjs/src/lib/models/plots/plot_canvas.ts",
+]
+f2p = [
+  "Plots in layouts in a row keep outer legends, axes and toolbars inside each plot",
+  "Plots in layouts in a row keep fixed frames aligned and at their size when only some plots have a title",
+  "Plots in layouts in a column keep axes inside each plot when tick labels differ in width",
+  "Plots in layouts in nested rows and columns keep every plot uncropped",
+  "Plots in layouts in a grid keep a plot spanning several columns and the plots above it uncropped",
+  "Plots in layouts in a grid keep fixed frames aligned and at their size when only some plots have a title",
+  "Plots in layouts with a legend on the left keep the legend clear of the axis and the frame",
+  "Plots in layouts with a toolbar on the left keep the toolbar clear of the axis and the frame",
+]
+p2p = [
+  "Plots in layouts in a grid of alike plots keep frames aligned",
+  "Plots in layouts with a legend on the right keep the legend clear of the axis, the frame and the toolbar",
+  "Row should update spacing after initialization",
+  "Plot module PlotView layout should set element style correctly",
+]
+tags = ["multimodal", "visual_bug_fix", "bokehjs", "typescript", "charts", "layout", "flexbox", "grid", "data-viz"]
+
+[agent]
+timeout_sec = 5400.0
+network_mode = "no-network"
+
+[verifier]
+timeout_sec = 2400.0
+network_mode = "public"
+
+[environment]
+build_timeout_sec = 5400.0
+cpus = 4
+memory_mb = 8192
+storage_mb = 30720
+network_mode = "public"

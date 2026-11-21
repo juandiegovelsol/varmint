@@ -1,0 +1,654 @@
+diff --git a/bokehjs/test/unit/models/layouts/plots_in_layouts.ts b/bokehjs/test/unit/models/layouts/plots_in_layouts.ts
+new file mode 100755
+index 0000000000..c5392d54a7
+--- /dev/null
++++ b/bokehjs/test/unit/models/layouts/plots_in_layouts.ts
+@@ -0,0 +1,472 @@
++import {expect} from "#framework/assertions"
++import {display, row, column} from "#framework/layouts"
++
++import {figure} from "@bokehjs/api/plotting"
++import type {Figure} from "@bokehjs/api/plotting"
++import {GridBox, Legend, LegendItem, Range1d, Title} from "@bokehjs/models"
++import type {FigureView} from "@bokehjs/models/plots/figure"
++import type {LayoutDOM, LayoutDOMView} from "@bokehjs/models/layouts/layout_dom"
++import {LegendView} from "@bokehjs/models/annotations/legend"
++import {ToolbarPanelView} from "@bokehjs/models/annotations/toolbar_panel"
++import {TitleView} from "@bokehjs/models/annotations/title"
++import type {Side} from "@bokehjs/core/enums"
++
++type Box = {left: number, top: number, right: number, bottom: number, width: number, height: number}
++
++function box(left: number, top: number, width: number, height: number): Box {
++  return {left, top, width, height, right: left + width, bottom: top + height}
++}
++
++function page_box(el: Element): Box {
++  const {left, top, width, height} = el.getBoundingClientRect()
++  return box(left, top, width, height)
++}
++
++function near(a: number, b: number): boolean {
++  return Math.abs(a - b) <= 1
++}
++
++function inside(inner: Box, outer: Box): boolean {
++  return inner.left >= outer.left - 1 && inner.right <= outer.right + 1 &&
++         inner.top >= outer.top - 1 && inner.bottom <= outer.bottom + 1
++}
++
++function overlap(a: Box, b: Box): boolean {
++  const width = Math.min(a.right, b.right) - Math.max(a.left, b.left)
++  const height = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)
++  return width > 1 && height > 1
++}
++
++type Parts = {
++  plot: Box
++  frame: Box
++  axes: Box[]
++  legends: Box[]
++  toolbar: Box | null
++  title: Box | null
++}
++
++function parts(plot_view: FigureView): Parts {
++  const plot = page_box(plot_view.el)
++  const origin = page_box(plot_view.canvas.el)
++  const on_page = ({left, top, width, height}: {left: number, top: number, width: number, height: number}) => {
++    return box(left + origin.left, top + origin.top, width, height)
++  }
++
++  const frame = on_page(plot_view.frame.bbox)
++  const axes = plot_view.axis_views.map((view) => on_page(view.bbox))
++  const legends: Box[] = []
++  let toolbar: Box | null = null
++  let title: Box | null = null
++
++  for (const view of plot_view.renderer_views.values()) {
++    if (view instanceof LegendView) {
++      legends.push(page_box(view.el))
++    } else if (view instanceof ToolbarPanelView) {
++      toolbar = page_box(view.toolbar_view.el)
++    } else if (view instanceof TitleView && view.layout != null && view.model.text != "") {
++      title = on_page(view.layout.bbox)
++    }
++  }
++
++  return {plot, frame, axes, legends, toolbar, title}
++}
++
++/**
++ * Everything a plot draws around its frame must be drawn, fully visible inside
++ * the plot's own box, nothing may cover anything else, and a fixed frame keeps
++ * its size.
++ */
++function problems(plot_view: FigureView, name: string, frame_size: [number, number] = [150, 150]): string[] {
++  const found: string[] = []
++  const {plot, frame, axes, legends, toolbar, title} = parts(plot_view)
++
++  const {model} = plot_view
++  const side_objects = [...model.above, ...model.below, ...model.left, ...model.right, ...model.center]
++  const n_legends = side_objects.filter((obj) => obj instanceof Legend).length
++  const title_text = model.title instanceof Title ? model.title.text : model.title ?? ""
++  if (axes.length != 2) {
++    found.push(`${name}: ${axes.length} axes drawn, expected 2`)
++  }
++  if (legends.length != n_legends) {
++    found.push(`${name}: ${legends.length} legends drawn, expected ${n_legends}`)
++  }
++  if ((toolbar != null) != (model.toolbar_location != null)) {
++    found.push(`${name}: toolbar ${toolbar != null ? "drawn" : "missing"}`)
++  }
++  if ((title != null) != (title_text != "")) {
++    found.push(`${name}: title ${title != null ? "drawn" : "missing"}`)
++  }
++
++  const [frame_width, frame_height] = frame_size
++  if (!near(frame.width, frame_width) || !near(frame.height, frame_height)) {
++    found.push(`${name}: frame is ${frame.width}x${frame.height}, expected ${frame_width}x${frame_height}`)
++  }
++
++  const items: [string, Box][] = [
++    ["frame", frame],
++    ...axes.map((bbox, i): [string, Box] => [`axis ${i}`, bbox]),
++    ...legends.map((bbox, i): [string, Box] => [`legend ${i}`, bbox]),
++  ]
++  if (toolbar != null) {
++    items.push(["toolbar", toolbar])
++  }
++  if (title != null) {
++    items.push(["title", title])
++  }
++
++  for (const [item, bbox] of items) {
++    if (!(bbox.width > 0 && bbox.height > 0)) {
++      found.push(`${name}: ${item} has no size`)
++    }
++    if (!inside(bbox, plot)) {
++      found.push(`${name}: ${item} is not inside the plot`)
++    }
++  }
++
++  for (let i = 0; i < items.length; i++) {
++    for (let j = i + 1; j < items.length; j++) {
++      const [item_i, bbox_i] = items[i]
++      const [item_j, bbox_j] = items[j]
++      if (overlap(bbox_i, bbox_j)) {
++        found.push(`${name}: ${item_i} overlaps ${item_j}`)
++      }
++    }
++  }
++
++  return found
++}
++
++function legend_plot(side: Side): Figure {
++  const plot = figure({frame_width: 150, frame_height: 150, title: side})
++  const r = plot.scatter([1, 2], [1, 2])
++  const legend = Legend.create({
++    items: [LegendItem.create({label: "test", renderers: [r]})],
++    title: side,
++  })
++  plot.add_layout(legend, side)
++  return plot
++}
++
++function legend_plots(): Figure[] {
++  return (["right", "left", "above", "below"] as const).map((side) => legend_plot(side))
++}
++
++function tick_plots(): Figure[] {
++  return [1, 100000, 1000000000].map((end) => {
++    const plot = figure({
++      frame_width: 150,
++      frame_height: 150,
++      toolbar_location: null,
++      min_border: 3,
++      x_range: Range1d.create({start: 0, end: 1}),
++      y_range: Range1d.create({start: 0, end}),
++    })
++    plot.scatter([0.1, 0.9], [end*0.1, end*0.9])
++    return plot
++  })
++}
++
++function square(attrs: Partial<Figure.Attrs> = {}): Figure {
++  const plot = figure({frame_width: 150, frame_height: 150, ...attrs})
++  plot.scatter([1, 2], [1, 2])
++  return plot
++}
++
++async function show(layout: LayoutDOM, plots: Figure[]): Promise<FigureView[]> {
++  const {view} = await display(layout, null)
++  const root = view as LayoutDOMView
++  return plots.map((plot) => root.owner.get_one(plot))
++}
++
++type Geometry = {plot: number[], frame: number[], axes: number[][], legends: number[][]}
++
++function geometry(plot_view: FigureView): Geometry {
++  const plot = page_box(plot_view.el)
++  const r = ({left, top, width, height}: {left: number, top: number, width: number, height: number}) => [left, top, width, height]
++  const legends: number[][] = []
++  for (const view of plot_view.renderer_views.values()) {
++    if (view instanceof LegendView) {
++      const legend = page_box(view.el)
++      legends.push([legend.left - plot.left, legend.top - plot.top, legend.width, legend.height])
++    }
++  }
++  return {
++    plot: [plot.width, plot.height],
++    frame: r(plot_view.frame.bbox),
++    axes: plot_view.axis_views.map((view) => r(view.bbox)),
++    legends,
++  }
++}
++
++function geometry_differences(changed: Geometry[], fresh: Geometry[]): string[] {
++  const found: string[] = []
++  const compare = (name: string, a: number[], b: number[] | undefined) => {
++    if (b == null || a.length != b.length || a.some((v, i) => Math.abs(v - b[i]) > 1)) {
++      found.push(`${name}: [${a.map(Math.round)}] after the change, [${b?.map(Math.round)}] when drawn that way from the start`)
++    }
++  }
++  changed.forEach((g, i) => {
++    const f = fresh[i]
++    compare(`plot ${i} size`, g.plot, f.plot)
++    compare(`plot ${i} frame`, g.frame, f.frame)
++    if (g.axes.length != f.axes.length || g.legends.length != f.legends.length) {
++      found.push(`plot ${i}: different number of axes or legends`)
++    }
++    g.axes.forEach((axis, j) => compare(`plot ${i} axis ${j}`, axis, f.axes[j]))
++    g.legends.forEach((legend, j) => compare(`plot ${i} legend ${j}`, legend, f.legends[j]))
++  })
++  return found
++}
++
++async function settle(view: LayoutDOMView | FigureView): Promise<void> {
++  await view.ready
++  await new Promise((resolve) => setTimeout(resolve, 300))
++  await view.ready
++}
++
++type Scene = {layout: LayoutDOM, plots: Figure[]}
++
++/**
++ * Builds a scene, displays it, applies a change and compares the result with
++ * the same scene built with the change already applied.
++ */
++async function changed_vs_fresh(build: () => Scene, change: (scene: Scene) => void): Promise<string[]> {
++  const scene = build()
++  const views = await show(scene.layout, scene.plots)
++  change(scene)
++  await settle(views[0])
++  const changed = views.map(geometry)
++
++  const fresh_scene = build()
++  change(fresh_scene)
++  const fresh = (await show(fresh_scene.layout, fresh_scene.plots)).map(geometry)
++  return geometry_differences(changed, fresh)
++}
++
++function ranged_plot(end: number): Figure {
++  const plot = figure({
++    frame_width: 150,
++    frame_height: 150,
++    toolbar_location: null,
++    x_range: Range1d.create({start: 0, end: 1}),
++    y_range: Range1d.create({start: 0, end}),
++  })
++  plot.scatter([0.1, 0.9], [0.1, 0.9])
++  return plot
++}
++
++function legend_scene(): Scene {
++  const plot = legend_plot("right")
++  return {layout: plot, plots: [plot]}
++}
++
++function first_legend(plot: Figure): Legend {
++  const [legend] = [...plot.right, ...plot.left, ...plot.above, ...plot.below].filter((obj) => obj instanceof Legend)
++  return legend as Legend
++}
++
++describe("Plots in layouts", () => {
++  describe("in a row", () => {
++    it("keep outer legends, axes and toolbars inside each plot", async () => {
++      const plots = legend_plots()
++      const views = await show(row(plots), plots)
++
++      const found = views.flatMap((view, i) => problems(view, `plot ${i}`))
++      const [first, ...rest] = views.map(parts)
++      for (const other of rest) {
++        if (!near(other.plot.height, first.plot.height)) {
++          found.push("plots in the row have different heights")
++        }
++        if (!near(other.frame.top, first.frame.top)) {
++          found.push("frames in the row do not line up")
++        }
++      }
++      expect(found).to.be.equal([])
++    })
++
++    it("keep fixed frames aligned and at their size when only some plots have a title", async () => {
++      const titled = figure({frame_width: 200, frame_height: 200, title: "A title"})
++      titled.scatter([0, 5, 10], [0, 5, 10], {size: 10})
++      const untitled = figure({frame_width: 200, frame_height: 200})
++      untitled.scatter([0, 5, 10], [0, 5, 10], {size: 10})
++      const views = await show(row([titled, untitled]), [titled, untitled])
++
++      const found = views.flatMap((view, i) => problems(view, `plot ${i}`, [200, 200]))
++      const [a, b] = views.map(parts)
++      if (!near(a.plot.height, b.plot.height)) {
++        found.push("plots in the row have different heights")
++      }
++      if (!near(a.frame.top, b.frame.top)) {
++        found.push("frames in the row do not line up")
++      }
++      expect(found).to.be.equal([])
++    })
++  })
++
++  describe("in a column", () => {
++    it("keep axes inside each plot when tick labels differ in width", async () => {
++      const plots = tick_plots()
++      const views = await show(column(plots), plots)
++
++      const found = views.flatMap((view, i) => problems(view, `plot ${i}`))
++      const [first, ...rest] = views.map(parts)
++      for (const other of rest) {
++        if (!near(other.plot.width, first.plot.width)) {
++          found.push("plots in the column have different widths")
++        }
++        if (!near(other.frame.left, first.frame.left)) {
++          found.push("frames in the column do not line up")
++        }
++      }
++      expect(found).to.be.equal([])
++    })
++  })
++
++  describe("in nested rows and columns", () => {
++    it("keep every plot uncropped", async () => {
++      const in_row = legend_plots()
++      const in_column = tick_plots()
++      const layout = column([row(in_row), column(in_column)])
++      const views = await show(layout, [...in_row, ...in_column])
++
++      const found = views.flatMap((view, i) => problems(view, `plot ${i}`))
++      expect(found).to.be.equal([])
++    })
++  })
++
++  describe("in a grid", () => {
++    it("keep a plot spanning several columns and the plots above it uncropped", async () => {
++      const a = square({title: "a"})
++      const b = square({title: "b", y_range: Range1d.create({start: 0, end: 1000000})})
++      const wide = figure({frame_width: 380, frame_height: 120, x_axis_label: "time"})
++      wide.scatter([1, 2], [1, 2])
++      const grid = GridBox.create({children: [[a, 0, 0], [b, 0, 1], [wide, 1, 0, 1, 2]]})
++      const views = await show(grid, [a, b, wide])
++
++      const found = [
++        ...problems(views[0], "plot a"),
++        ...problems(views[1], "plot b"),
++        ...problems(views[2], "spanning plot", [380, 120]),
++      ]
++      expect(found).to.be.equal([])
++    })
++
++    it("keep fixed frames aligned and at their size when only some plots have a title", async () => {
++      const a = square({title: "a", y_axis_label: "count"})
++      const b = square({y_range: Range1d.create({start: 0, end: 1000000})})
++      const c = square({x_axis_label: "time"})
++      const d = square({title: "d"})
++      const grid = GridBox.create({children: [[a, 0, 0], [b, 0, 1], [c, 1, 0], [d, 1, 1]]})
++      const views = await show(grid, [a, b, c, d])
++
++      const found = views.flatMap((view, i) => problems(view, `plot ${i}`))
++      const [pa, pb, pc, pd] = views.map(parts)
++      if (!near(pa.frame.top, pb.frame.top) || !near(pc.frame.top, pd.frame.top)) {
++        found.push("frames in a grid row do not line up")
++      }
++      if (!near(pa.frame.left, pc.frame.left) || !near(pb.frame.left, pd.frame.left)) {
++        found.push("frames in a grid column do not line up")
++      }
++      expect(found).to.be.equal([])
++    })
++
++    it("of alike plots keep frames aligned", async () => {
++      const plots = [0, 1, 2, 3].map((i) => square({title: `plot ${i}`}))
++      const grid = GridBox.create({children: [[plots[0], 0, 0], [plots[1], 0, 1], [plots[2], 1, 0], [plots[3], 1, 1]]})
++      const views = await show(grid, plots)
++
++      const found = views.flatMap((view, i) => problems(view, `plot ${i}`))
++      const [p0, p1, p2] = views.map(parts)
++      if (!near(p0.frame.top, p1.frame.top) || !near(p0.frame.left, p2.frame.left)) {
++        found.push("frames in the grid do not line up")
++      }
++      expect(found).to.be.equal([])
++    })
++  })
++
++  describe("with a legend on the left", () => {
++    it("keep the legend clear of the axis and the frame", async () => {
++      const plot = legend_plot("left")
++      const {view} = await display(plot, null)
++      expect(problems(view, "plot")).to.be.equal([])
++    })
++  })
++
++  describe("with a toolbar on the left", () => {
++    it("keep the toolbar clear of the axis and the frame", async () => {
++      const plot = square({title: "tools", toolbar_location: "left"})
++      const {view} = await display(plot, null)
++      expect(problems(view, "plot")).to.be.equal([])
++    })
++  })
++
++  describe("with a legend on the right", () => {
++    it("keep the legend clear of the axis, the frame and the toolbar", async () => {
++      const plot = legend_plot("right")
++      const {view} = await display(plot, null)
++      expect(problems(view, "plot")).to.be.equal([])
++    })
++  })
++
++  describe("after what they show changes", () => {
++    it("lay a chart out as if drawn that way from the start when its tick labels widen", async () => {
++      const found = await changed_vs_fresh(() => {
++        const plot = ranged_plot(1)
++        return {layout: plot, plots: [plot]}
++      }, ({plots: [plot]}) => {
++        (plot.y_range as Range1d).end = 1000000000
++      })
++      expect(found).to.be.equal([])
++    })
++
++    it("lay a chart out as if drawn that way from the start when a legend label gets longer", async () => {
++      const found = await changed_vs_fresh(legend_scene, ({plots: [plot]}) => {
++        first_legend(plot).items[0].label = {value: "a much longer label"}
++      })
++      expect(found).to.be.equal([])
++    })
++
++    it("lay a column out as if drawn that way from the start when tick labels widen", async () => {
++      const found = await changed_vs_fresh(() => {
++        const plots = tick_plots()
++        return {layout: column(plots), plots}
++      }, ({plots}) => {
++        (plots[0].y_range as Range1d).end = 1000000000
++      })
++      expect(found).to.be.equal([])
++    })
++
++    it("lay a chart out as if drawn that way from the start when its tick labels narrow", async () => {
++      const found = await changed_vs_fresh(() => {
++        const plot = ranged_plot(1000000000)
++        return {layout: plot, plots: [plot]}
++      }, ({plots: [plot]}) => {
++        (plot.y_range as Range1d).end = 1
++      })
++      expect(found).to.be.equal([])
++    })
++  })
++
++  describe("stretching across a row", () => {
++    it("stay within the row", async () => {
++      const wide = figure({sizing_mode: "stretch_width", height: 200, y_range: Range1d.create({start: 0, end: 1000000000})})
++      wide.scatter([1, 2], [1, 2])
++      const narrow = figure({sizing_mode: "stretch_width", height: 200})
++      narrow.scatter([1, 2], [1, 2])
++      const layout = row([wide, narrow], {sizing_mode: "stretch_width"})
++      const {view} = await display(layout, [900, 300])
++      await settle(view)
++
++      const row_box = page_box(view.el)
++      const found: string[] = []
++      for (const [name, plot] of [["first", wide], ["second", narrow]] as const) {
++        const box = page_box(view.owner.get_one(plot).el)
++        if (!inside(box, row_box)) {
++          found.push(`${name} chart [${Math.round(box.left)}, ${Math.round(box.right)}] is not within the row [${Math.round(row_box.left)}, ${Math.round(row_box.right)}]`)
++        }
++      }
++      expect(found).to.be.equal([])
++    })
++  })
++})
+diff --git a/gen_junit.mjs b/gen_junit.mjs
+new file mode 100644
+index 0000000000..d5c171c9fa
+--- /dev/null
++++ b/gen_junit.mjs
+@@ -0,0 +1,145 @@
++// Generates a JUnit XML report for a fixed set of bokehjs devtools tests,
++// possibly spanning multiple suites (unit/integration/defaults).
++// Usage: node gen_junit.mjs <tests.json> <junit_out> <repo_bokehjs_dir> <logs_dir>
++//   tests.json: [{"id": "full test description", "file": "...", "suite": "unit"}]
++//   logs_dir: contains "<suite>.log" for every suite referenced in tests.json
++import fs from "node:fs"
++import path from "node:path"
++
++const [,, testsJsonPath, junitOut, repoDir, logsDir] = process.argv
++
++const tests = JSON.parse(fs.readFileSync(testsJsonPath, "utf-8"))
++
++function xmlEscape(s) {
++  return String(s).replace(/[<>&'"]/g, (c) => ({
++    "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;",
++  }[c]))
++}
++
++const BASELINE_SUITES = new Set(["integration", "defaults"])
++
++function resultsForSuite(suite) {
++  const resultsById = new Map()
++  if (BASELINE_SUITES.has(suite)) {
++    const candidates = ["report.jsonl", "report.json"].map((n) => path.join(repoDir, "test", "baselines", "linux", n))
++    const reportPath = candidates.find((p) => fs.existsSync(p))
++    if (reportPath == null) {
++      console.error(`FATAL: expected a report at one of ${JSON.stringify(candidates)} but none exist (suite=${suite})`)
++      process.exit(97)
++    }
++    if (reportPath.endsWith(".jsonl")) {
++      const lines = fs.readFileSync(reportPath, "utf-8").split("\n").filter((l) => l.trim() !== "")
++      for (const line of lines) {
++        const record = JSON.parse(line)
++        if (record.type === "result") {
++          resultsById.set(record.descriptions.join(" "), !!record.status.success)
++        }
++      }
++    } else {
++      const report = JSON.parse(fs.readFileSync(reportPath, "utf-8"))
++      for (const [descriptions, status] of report.results) {
++        resultsById.set(descriptions.join(" "), !!status.success)
++      }
++    }
++  } else {
++    // Parse "Failed tests:" section from the plain-text log (FORCE_COLOR=0).
++    const logFile = path.join(logsDir, `${suite}.log`)
++    if (!fs.existsSync(logFile)) {
++      console.error(`FATAL: expected log at ${logFile} but it doesn't exist (suite=${suite})`)
++      process.exit(97)
++    }
++    const log = fs.readFileSync(logFile, "utf-8")
++    // eslint-disable-next-line no-control-regex
++    const plain = log.replace(/\x1b\[[0-9;]*m/g, "")
++    const failed = new Set()
++
++    // Primary signal: inline failure trees printed as each test runs, e.g.:
++    //   ✗ Bug
++    //    └┬─ in issue #15712
++    //     └── renders wedges with ... as full discs
++    // (works across devtools versions, even ones without a trailing "Failed tests:" summary)
++    const lines = plain.split("\n")
++    for (let i = 0; i < lines.length; i++) {
++      const head = /^\s*✗\s(.*)$/.exec(lines[i]) // ✗
++      if (head == null) continue
++      const parts = [head[1]]
++      let j = i + 1
++      for (; j < lines.length; j++) {
++        const node = /^\s*└(?:──|┬─)\s(.*)$/.exec(lines[j]) // └── or └┬─
++        if (node == null) break
++        parts.push(node[1])
++      }
++      failed.add(parts.join(" "))
++      i = j - 1
++    }
++
++    // Secondary signal: a trailing "Failed tests:" summary, if this devtools version has one.
++    const idx = plain.lastIndexOf("Failed tests:")
++    if (idx !== -1) {
++      const tail = plain.slice(idx + "Failed tests:".length)
++      for (const rawLine of tail.split("\n").slice(1)) {
++        if (rawLine.trim() === "") break
++        let line = rawLine.replace(/^\s+/, "").replace(/\s+$/, "")
++        line = line.replace(/\s*\(timeout\)$/, "")
++        if (line !== "") failed.add(line)
++      }
++    }
++
++    // A log only names the tests that failed, so a test that never ran (a build error, a test file
++    // that failed to load, a grep that matched nothing) would otherwise read as passed. Count a
++    // suite's tests as passed only when the runner's own summary accounts for every one of them.
++    const expected = tests.filter((t) => t.suite === suite).length
++    const summaries = [...plain.matchAll(/(?:(\d+) failed, )?(\d+) passed, (\d+) skipped, (\d+) deselected of total (\d+) tests/g)]
++    const summary = summaries.at(-1)
++    const n_failed = summary == null ? 0 : Number(summary[1] ?? 0)
++    const n_passed = summary == null ? 0 : Number(summary[2])
++    const n_skipped = summary == null ? 0 : Number(summary[3])
++    const attributed = tests.filter((t) => t.suite === suite && failed.has(t.id)).length
++    const complete = summary != null && n_failed + n_passed === expected && n_skipped === 0 && attributed === n_failed
++    if (!complete) {
++      console.error(`suite=${suite}: runner summary ${summary == null ? "missing" : JSON.stringify(summary[0])} does not account for ${expected} selected tests; counting all as failed`)
++    }
++
++    for (const t of tests) {
++      if (t.suite === suite) resultsById.set(t.id, complete && !failed.has(t.id))
++    }
++  }
++  return resultsById
++}
++
++const suites = [...new Set(tests.map((t) => t.suite))]
++const resultsById = new Map()
++for (const suite of suites) {
++  for (const [id, success] of resultsForSuite(suite)) {
++    resultsById.set(id, success)
++  }
++}
++
++const missing = tests.filter((t) => !resultsById.has(t.id)).map((t) => t.id)
++if (missing.length !== 0) {
++  console.error(`FATAL: these test ids produced no result (typo in id, or grep didn't match): ${JSON.stringify(missing)}`)
++  process.exit(98)
++}
++
++let failures = 0
++const cases = tests.map((t) => {
++  const success = resultsById.get(t.id)
++  if (!success) failures++
++  const classname = xmlEscape(t.file ?? t.suite)
++  const name = xmlEscape(t.id)
++  if (success) {
++    return `  <testcase classname="${classname}" name="${name}"/>`
++  } else {
++    return `  <testcase classname="${classname}" name="${name}"><failure message="test failed">see test run log</failure></testcase>`
++  }
++})
++
++const xml = `<?xml version="1.0" encoding="UTF-8"?>
++<testsuite name="bokehjs" tests="${tests.length}" failures="${failures}">
++${cases.join("\n")}
++</testsuite>
++`
++
++fs.mkdirSync(path.dirname(junitOut), {recursive: true})
++fs.writeFileSync(junitOut, xml)
++console.log(`Wrote ${junitOut}: ${tests.length} tests, ${failures} failures`)
+diff --git a/tests.json b/tests.json
+new file mode 100755
+index 0000000000..363c0e1a87
+--- /dev/null
++++ b/tests.json
+@@ -0,0 +1,19 @@
++[
++  {"id": "Plots in layouts in a row keep outer legends, axes and toolbars inside each plot", "file": "test/unit/models/layouts/plots_in_layouts.ts", "suite": "unit", "kind": "f2p"},
++  {"id": "Plots in layouts in a row keep fixed frames aligned and at their size when only some plots have a title", "file": "test/unit/models/layouts/plots_in_layouts.ts", "suite": "unit", "kind": "f2p"},
++  {"id": "Plots in layouts in a column keep axes inside each plot when tick labels differ in width", "file": "test/unit/models/layouts/plots_in_layouts.ts", "suite": "unit", "kind": "f2p"},
++  {"id": "Plots in layouts in nested rows and columns keep every plot uncropped", "file": "test/unit/models/layouts/plots_in_layouts.ts", "suite": "unit", "kind": "f2p"},
++  {"id": "Plots in layouts in a grid keep a plot spanning several columns and the plots above it uncropped", "file": "test/unit/models/layouts/plots_in_layouts.ts", "suite": "unit", "kind": "f2p"},
++  {"id": "Plots in layouts in a grid keep fixed frames aligned and at their size when only some plots have a title", "file": "test/unit/models/layouts/plots_in_layouts.ts", "suite": "unit", "kind": "f2p"},
++  {"id": "Plots in layouts with a legend on the left keep the legend clear of the axis and the frame", "file": "test/unit/models/layouts/plots_in_layouts.ts", "suite": "unit", "kind": "f2p"},
++  {"id": "Plots in layouts with a toolbar on the left keep the toolbar clear of the axis and the frame", "file": "test/unit/models/layouts/plots_in_layouts.ts", "suite": "unit", "kind": "f2p"},
++  {"id": "Plots in layouts after what they show changes lay a chart out as if drawn that way from the start when its tick labels widen", "file": "test/unit/models/layouts/plots_in_layouts.ts", "suite": "unit", "kind": "f2p"},
++  {"id": "Plots in layouts after what they show changes lay a chart out as if drawn that way from the start when a legend label gets longer", "file": "test/unit/models/layouts/plots_in_layouts.ts", "suite": "unit", "kind": "f2p"},
++  {"id": "Plots in layouts after what they show changes lay a column out as if drawn that way from the start when tick labels widen", "file": "test/unit/models/layouts/plots_in_layouts.ts", "suite": "unit", "kind": "f2p"},
++  {"id": "Plots in layouts stretching across a row stay within the row", "file": "test/unit/models/layouts/plots_in_layouts.ts", "suite": "unit", "kind": "f2p"},
++  {"id": "Plots in layouts in a grid of alike plots keep frames aligned", "file": "test/unit/models/layouts/plots_in_layouts.ts", "suite": "unit", "kind": "p2p"},
++  {"id": "Plots in layouts with a legend on the right keep the legend clear of the axis, the frame and the toolbar", "file": "test/unit/models/layouts/plots_in_layouts.ts", "suite": "unit", "kind": "p2p"},
++  {"id": "Row should update spacing after initialization", "file": "test/unit/models/layouts/row.ts", "suite": "unit", "kind": "p2p"},
++  {"id": "Plot module PlotView layout should set element style correctly", "file": "test/unit/models/plots/plot.ts", "suite": "unit", "kind": "p2p"},
++  {"id": "Plots in layouts after what they show changes lay a chart out as if drawn that way from the start when its tick labels narrow", "file": "test/unit/models/layouts/plots_in_layouts.ts", "suite": "unit", "kind": "p2p"}
++]

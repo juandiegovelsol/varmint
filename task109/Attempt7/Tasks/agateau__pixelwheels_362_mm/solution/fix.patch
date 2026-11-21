@@ -1,0 +1,166 @@
+diff --git a/core/src/com/agateau/pixelwheels/ZLevel.java b/core/src/com/agateau/pixelwheels/ZLevel.java
+index b66f63a..ff49920 100644
+--- a/core/src/com/agateau/pixelwheels/ZLevel.java
++++ b/core/src/com/agateau/pixelwheels/ZLevel.java
+@@ -20,9 +20,11 @@ package com.agateau.pixelwheels;
+ 
+ /** The drawing layers, ordered from bottom to top */
+ public enum ZLevel {
+-    GROUND,
++    GROUND, // bgX layers, skidmarks, vehicle shadows, mines, bullets...
+     VEHICLES,
+-    SHADOWS,
+-    OBSTACLES,
+-    FLYING
++    SHADOWS, // obstacle and helicopter shadows
++    OBSTACLES, // obstacles
++    FLYING_LOW, // missiles
++    FG_LAYERS, // fgX layers
++    FLYING_HIGH, // helicopter, vehicles being carried by helicopter
+ }
+diff --git a/core/src/com/agateau/pixelwheels/bonus/Missile.java b/core/src/com/agateau/pixelwheels/bonus/Missile.java
+index e6a94a5..4533254 100644
+--- a/core/src/com/agateau/pixelwheels/bonus/Missile.java
++++ b/core/src/com/agateau/pixelwheels/bonus/Missile.java
+@@ -36,7 +36,6 @@ import com.agateau.pixelwheels.sound.SoundPlayer;
+ import com.agateau.pixelwheels.stats.GameStats;
+ import com.agateau.pixelwheels.utils.BodyRegionDrawer;
+ import com.agateau.pixelwheels.utils.Box2DUtils;
+-import com.agateau.utils.AgcMathUtils;
+ import com.badlogic.gdx.graphics.Color;
+ import com.badlogic.gdx.graphics.g2d.Batch;
+ import com.badlogic.gdx.graphics.g2d.TextureRegion;
+@@ -88,7 +87,6 @@ public class Missile extends GameObjectAdapter
+     private final BodyRegionDrawer mDrawer = new BodyRegionDrawer();
+     private final ClosestRacerFinder mRacerFinder = new ClosestRacerFinder(LOCK_DISTANCE, LOCK_ARC);
+     private final MissileGuidingSystem mGuidingSystem = new MissileGuidingSystem();
+-    private final Vector2 mReactorPos = new Vector2();
+     private Assets mAssets;
+ 
+     private final DebugShapeMap.Shape mDebugShape =
+@@ -137,7 +135,7 @@ public class Missile extends GameObjectAdapter
+         Vehicle vehicle = shooter.getVehicle();
+         object.mShooter = shooter;
+         object.mBodyDef.position.set(vehicle.getX(), vehicle.getY());
+-        object.mBodyDef.angle = AgcMathUtils.normalizeAnglePiRad(vehicle.getAngle());
++        object.mBodyDef.angle = vehicle.getAngle() * MathUtils.degRad;
+ 
+         object.mBody = gameWorld.getBox2DWorld().createBody(object.mBodyDef);
+         object.mBody.createFixture(object.mShape, WAITING_DENSITY);
+@@ -174,7 +172,6 @@ public class Missile extends GameObjectAdapter
+         mJointDef.bodyB = mBody;
+         mJointDef.localAnchorA.set(vehicleBody.getLocalCenter());
+         mJointDef.localAnchorB.set(mBody.getLocalCenter());
+-        mJointDef.referenceAngle = mBody.getAngle() - vehicleBody.getAngle();
+         mJoint = mGameWorld.getBox2DWorld().createJoint(mJointDef);
+     }
+ 
+@@ -258,7 +255,7 @@ public class Missile extends GameObjectAdapter
+ 
+     @Override
+     public void draw(Batch batch, ZLevel zLevel, Rectangle viewBounds) {
+-        if (zLevel == ZLevel.FLYING) {
++        if (zLevel == ZLevel.FLYING_LOW) {
+             // Draw the shadow at Z_FLYING so that the shadow is drawn *over* its vehicle
+             drawShadow(batch);
+             drawMissile(batch);
+@@ -293,9 +290,8 @@ public class Missile extends GameObjectAdapter
+         float w = Constants.UNIT_FOR_PIXEL * region.getRegionWidth();
+         float h = Constants.UNIT_FOR_PIXEL * region.getRegionHeight();
+         float refH = Constants.UNIT_FOR_PIXEL * -WIDTH / 2;
+-        mReactorPos.set(0, refH).rotateRad(angle).add(center);
+-        float x = mReactorPos.x;
+-        float y = mReactorPos.y;
++        float x = center.x + refH * MathUtils.cos(angle);
++        float y = center.y + refH * MathUtils.sin(angle);
+         batch.draw(
+                 region,
+                 x - w / 2,
+diff --git a/core/src/com/agateau/pixelwheels/racer/VehicleRenderer.java b/core/src/com/agateau/pixelwheels/racer/VehicleRenderer.java
+index 7e8553c..060b9b8 100644
+--- a/core/src/com/agateau/pixelwheels/racer/VehicleRenderer.java
++++ b/core/src/com/agateau/pixelwheels/racer/VehicleRenderer.java
+@@ -155,14 +155,14 @@ public class VehicleRenderer implements CellFrameBufferUser {
+                 float old = batch.getPackedColor();
+                 batch.setColor(0, 0, 0, BodyRegionDrawer.SHADOW_ALPHA);
+                 mCellFrameBufferManager.drawCell(
+-                        batch, mVehicle.getX() - offset, mVehicle.getY() + offset, mCellId);
++                        batch, mVehicle.getX() + offset, mVehicle.getY() - offset, mCellId);
+                 batch.setPackedColor(old);
+             }
+             return;
+         }
+ 
+         // Vehicle level: wheels and body
+-        ZLevel wantedZIndex = mVehicle.isFlying() ? ZLevel.FLYING : ZLevel.VEHICLES;
++        ZLevel wantedZIndex = mVehicle.isFlying() ? ZLevel.FLYING_HIGH : ZLevel.VEHICLES;
+         if (zLevel != wantedZIndex) {
+             return;
+         }
+diff --git a/core/src/com/agateau/pixelwheels/racescreen/GameRenderer.java b/core/src/com/agateau/pixelwheels/racescreen/GameRenderer.java
+index 1d74a8f..877fce6 100644
+--- a/core/src/com/agateau/pixelwheels/racescreen/GameRenderer.java
++++ b/core/src/com/agateau/pixelwheels/racescreen/GameRenderer.java
+@@ -167,7 +167,7 @@ public class GameRenderer {
+                 object.draw(mBatch, z, viewBounds);
+             }
+ 
+-            if (z == ZLevel.OBSTACLES && mForegroundLayerIndexes.length > 0) {
++            if (z == ZLevel.FG_LAYERS && mForegroundLayerIndexes.length > 0) {
+                 mGameObjectPerformanceCounter.stop();
+                 mTilePerformanceCounter.start();
+ 
+diff --git a/core/src/com/agateau/pixelwheels/racescreen/Helicopter.java b/core/src/com/agateau/pixelwheels/racescreen/Helicopter.java
+index ab012c4..42fb316 100644
+--- a/core/src/com/agateau/pixelwheels/racescreen/Helicopter.java
++++ b/core/src/com/agateau/pixelwheels/racescreen/Helicopter.java
+@@ -248,7 +248,7 @@ public class Helicopter extends GameObjectAdapter implements Pool.Poolable, Disp
+             float offset = SHADOW_OFFSET * Constants.UNIT_FOR_PIXEL;
+             drawFrameBuffer(batch, offset);
+             batch.setPackedColor(old);
+-        } else if (zLevel == ZLevel.FLYING) {
++        } else if (zLevel == ZLevel.FLYING_HIGH) {
+             drawFrameBuffer(batch, 0);
+         }
+     }
+diff --git a/core/src/com/agateau/pixelwheels/racescreen/RacerCameraUpdater.java b/core/src/com/agateau/pixelwheels/racescreen/RacerCameraUpdater.java
+index f16e0f3..53358c7 100644
+--- a/core/src/com/agateau/pixelwheels/racescreen/RacerCameraUpdater.java
++++ b/core/src/com/agateau/pixelwheels/racescreen/RacerCameraUpdater.java
+@@ -56,8 +56,8 @@ class RacerCameraUpdater extends CameraUpdater {
+ 
+         // Compute pos
+         float advance = Math.min(viewportWidth, viewportHeight) * Constants.CAMERA_ADVANCE_PERCENT;
+-        sDelta.set(0, advance)
+-                .rotate(90 - mRacer.getCameraAngle())
++        sDelta.set(advance, 0)
++                .rotate(mRacer.getCameraAngle())
+                 .add(vehicle.getPosition())
+                 .sub(mCameraInfo.position);
+         mNextCameraInfo.position.set(mCameraInfo.position).add(sDelta);
+diff --git a/core/src/com/agateau/pixelwheels/racescreen/debug/DropLocationDebugObject.java b/core/src/com/agateau/pixelwheels/racescreen/debug/DropLocationDebugObject.java
+index 98cfa7f..eec2ab0 100644
+--- a/core/src/com/agateau/pixelwheels/racescreen/debug/DropLocationDebugObject.java
++++ b/core/src/com/agateau/pixelwheels/racescreen/debug/DropLocationDebugObject.java
+@@ -88,7 +88,7 @@ public class DropLocationDebugObject extends GameObjectAdapter {
+ 
+     @Override
+     public void draw(Batch batch, ZLevel zLevel, Rectangle viewBounds) {
+-        if (!mActive || zLevel != ZLevel.FLYING) {
++        if (!mActive || zLevel != ZLevel.FLYING_HIGH) {
+             return;
+         }
+         TextureRegion region = mAssets.target;
+diff --git a/core/src/com/agateau/pixelwheels/utils/BodyRegionDrawer.java b/core/src/com/agateau/pixelwheels/utils/BodyRegionDrawer.java
+index 6bbb42c..e4d3d71 100644
+--- a/core/src/com/agateau/pixelwheels/utils/BodyRegionDrawer.java
++++ b/core/src/com/agateau/pixelwheels/utils/BodyRegionDrawer.java
+@@ -90,7 +90,7 @@ public class BodyRegionDrawer {
+ 
+     public void drawShadow(Body body, TextureRegion region) {
+         Vector2 center = body.getPosition();
+-        float angle = body.getAngle();
++        float angle = body.getAngle() * MathUtils.radiansToDegrees;
+         float offset = computeShadowOffset(mZ, mScale);
+         float x = center.x + offset;
+         float y = center.y - offset;

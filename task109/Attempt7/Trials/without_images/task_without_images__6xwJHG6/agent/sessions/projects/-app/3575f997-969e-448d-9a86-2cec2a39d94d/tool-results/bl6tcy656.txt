@@ -1,0 +1,959 @@
+/*
+ * Copyright 2018 Aurélien Gâteau <mail@agateau.com>
+ *
+ * This file is part of Pixel Wheels.
+ *
+ * Pixel Wheels is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU General Public License as published by the Free
+ * Software Foundation, either version 3 of the License, or (at your option)
+ * any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+package com.agateau.pixelwheels.bonus;
+
+import com.agateau.pixelwheels.Assets;
+import com.agateau.pixelwheels.Constants;
+import com.agateau.pixelwheels.GameWorld;
+import com.agateau.pixelwheels.ZLevel;
+import com.agateau.pixelwheels.debug.DebugShapeMap;
+import com.agateau.pixelwheels.gameobject.AnimationObject;
+import com.agateau.pixelwheels.gameobject.AudioClipper;
+import com.agateau.pixelwheels.gameobject.Explosable;
+import com.agateau.pixelwheels.gameobject.GameObjectAdapter;
+import com.agateau.pixelwheels.racer.Racer;
+import com.agateau.pixelwheels.racer.Vehicle;
+import com.agateau.pixelwheels.racescreen.Collidable;
+import com.agateau.pixelwheels.racescreen.CollisionCategories;
+import com.agateau.pixelwheels.sound.AudioManager;
+import com.agateau.pixelwheels.sound.SoundPlayer;
+import com.agateau.pixelwheels.stats.GameStats;
+import com.agateau.pixelwheels.utils.BodyRegionDrawer;
+import com.agateau.pixelwheels.utils.Box2DUtils;
+import com.agateau.utils.AgcMathUtils;
+import com.badlogic.gdx.graphics.Color;
+import com.badlogic.gdx.graphics.g2d.Batch;
+import com.badlogic.gdx.graphics.g2d.TextureRegion;
+import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
+import com.badlogic.gdx.math.MathUtils;
+import com.badlogic.gdx.math.Rectangle;
+import com.badlogic.gdx.math.Vector2;
+import com.badlogic.gdx.physics.box2d.Body;
+import com.badlogic.gdx.physics.box2d.BodyDef;
+import com.badlogic.gdx.physics.box2d.Contact;
+import com.badlogic.gdx.physics.box2d.ContactImpulse;
+import com.badlogic.gdx.physics.box2d.Fixture;
+import com.badlogic.gdx.physics.box2d.Joint;
+import com.badlogic.gdx.physics.box2d.Manifold;
+import com.badlogic.gdx.physics.box2d.PolygonShape;
+import com.badlogic.gdx.physics.box2d.World;
+import com.badlogic.gdx.physics.box2d.joints.WeldJointDef;
+import com.badlogic.gdx.utils.Disposable;
+import com.badlogic.gdx.utils.Pool;
+import com.badlogic.gdx.utils.ReflectionPool;
+
+/** A player bullet */
+public class Missile extends GameObjectAdapter
+        implements Collidable, Pool.Poolable, Disposable, Explosable {
+    private static final ReflectionPool<Missile> sPool = new ReflectionPool<>(Missile.class);
+
+    private static final float WIDTH = 44;
+    private static final float HEIGHT = 13;
+    private static final float DURATION = 3;
+
+    private static final float LOCK_DISTANCE = 40;
+    private static final float LOCK_ARC = 120;
+    private static final float WAITING_DENSITY = 0.0000001f;
+    private static final float SHOT_DENSITY = 0.0001f;
+    private static final Color TARGETED_COLOR = new Color(1, 1, 1, 0.7f);
+    private static final Color LOCKED_COLOR = new Color(1, 0.3f, 0.3f, 0.9f);
+    private SoundPlayer mSoundPlayer;
+
+    enum Status {
+        WAITING,
+        SHOT,
+        LOCKED
+    }
+
+    // Init-once fields
+    private final BodyDef mBodyDef = new BodyDef();
+    private final WeldJointDef mJointDef = new WeldJointDef();
+    private final PolygonShape mShape = new PolygonShape();
+    private final BodyRegionDrawer mDrawer = new BodyRegionDrawer();
+    private final ClosestRacerFinder mRacerFinder = new ClosestRacerFinder(LOCK_DISTANCE, LOCK_ARC);
+    private final MissileGuidingSystem mGuidingSystem = new MissileGuidingSystem();
+    private final Vector2 mReactorPos = new Vector2();
+    private Assets mAssets;
+
+    private final DebugShapeMap.Shape mDebugShape =
+            new DebugShapeMap.Shape() {
+                @Override
+                public void draw(ShapeRenderer renderer) {
+                    renderer.begin(ShapeRenderer.ShapeType.Line);
+                    renderer.setColor(1, 0, 0, 1);
+
+                    Vector2 origin = mBody.getWorldCenter();
+                    float angle = mBody.getAngle() * MathUtils.radDeg;
+                    renderer.line(origin, mRacerFinder.getLeftVertex(origin, angle));
+                    renderer.line(origin, mRacerFinder.getRightVertex(origin, angle));
+                    renderer.end();
+                }
+            };
+
+    // Init-at-pool-reuse fields
+    private GameWorld mGameWorld;
+    private AudioManager mAudioManager;
+    private Racer mShooter;
+    private Body mBody;
+
+    // Moving fields
+    private float mTime;
+    private Joint mJoint;
+    private Status mStatus;
+    private boolean mNeedShootSound;
+    private Racer mTarget;
+
+    public Missile() {
+        mBodyDef.type = BodyDef.BodyType.DynamicBody;
+        mBodyDef.bullet = true;
+        mShape.setAsBox(
+                WIDTH * Constants.UNIT_FOR_PIXEL / 2, HEIGHT * Constants.UNIT_FOR_PIXEL / 2);
+    }
+
+    public static Missile create(
+            Assets assets, GameWorld gameWorld, AudioManager audioManager, Racer shooter) {
+        Missile object = sPool.obtain();
+        object.mAssets = assets;
+        object.mGameWorld = gameWorld;
+        object.mAudioManager = audioManager;
+        object.setFinished(false);
+        object.mRacerFinder.setIgnoredRacer(shooter);
+        Vehicle vehicle = shooter.getVehicle();
+        object.mShooter = shooter;
+        object.mBodyDef.position.set(vehicle.getX(), vehicle.getY());
+        object.mBodyDef.angle = AgcMathUtils.normalizeAnglePiRad(vehicle.getAngle());
+
+        object.mBody = gameWorld.getBox2DWorld().createBody(object.mBodyDef);
+        object.mBody.createFixture(object.mShape, WAITING_DENSITY);
+        object.mBody.setUserData(object);
+        Box2DUtils.setCollisionInfo(
+                object.mBody,
+                CollisionCategories.RACER_BULLET,
+                CollisionCategories.WALL
+                        | CollisionCategories.RACER
+                        | CollisionCategories.EXPLOSABLE);
+
+        object.mStatus = Status.WAITING;
+        object.mNeedShootSound = false;
+        object.mTarget = null;
+        object.initJoint();
+
+        object.mGuidingSystem.init(object.mBody);
+
+        gameWorld.addGameObject(object);
+
+        DebugShapeMap.put(object, object.mDebugShape);
+
+        return object;
+    }
+
+    public boolean hasTarget() {
+        return mTarget != null;
+    }
+
+    private void initJoint() {
+        Vehicle vehicle = mShooter.getVehicle();
+        Body vehicleBody = vehicle.getBody();
+        mJointDef.bodyA = vehicleBody;
+        mJointDef.bodyB = mBody;
+        mJointDef.localAnchorA.set(vehicleBody.getLocalCenter());
+        mJointDef.localAnchorB.set(mBody.getLocalCenter());
+        mJointDef.referenceAngle = mBody.getAngle() - vehicleBody.getAngle();
+        mJoint = mGameWorld.getBox2DWorld().createJoint(mJointDef);
+    }
+
+    public void shoot() {
+        resetJoint();
+        mBody.getFixtureList().first().setDensity(SHOT_DENSITY);
+        mBody.resetMassData();
+        mBody.setAngularVelocity(0);
+        mStatus = Status.SHOT;
+        mTime = 0;
+        mNeedShootSound = true;
+    }
+
+    @Override
+    public void reset() {
+        // Do not reset the joint here: it crashes for some reason.
+        // The joint is deleted when the body is destroyed anyway.
+        mGameWorld.getBox2DWorld().destroyBody(mBody);
+        mBody = null;
+        DebugShapeMap.remove(this);
+    }
+
+    private void resetJoint() {
+        if (mJoint != null) {
+            mGameWorld.getBox2DWorld().destroyJoint(mJoint);
+            mJoint = null;
+        }
+    }
+
+    @Override
+    public void dispose() {
+        sPool.free(this);
+    }
+
+    @Override
+    public void act(float delta) {
+        switch (mStatus) {
+            case WAITING:
+                actWaiting();
+                break;
+            case SHOT:
+                actShot(delta);
+                break;
+            case LOCKED:
+                actLocked(delta);
+                break;
+        }
+    }
+
+    private void actWaiting() {
+        findTarget();
+    }
+
+    private void actShot(float delta) {
+        findTarget();
+        if (mTarget != null) {
+            mStatus = Status.LOCKED;
+        }
+        mGuidingSystem.act(null);
+        consumeTime(delta);
+    }
+
+    private void actLocked(float delta) {
+        mGuidingSystem.act(mTarget.getPosition());
+        consumeTime(delta);
+    }
+
+    private void consumeTime(float delta) {
+        mTime += delta;
+        if (mTime >= DURATION) {
+            explode();
+        }
+    }
+
+    private void findTarget() {
+        World world = mGameWorld.getBox2DWorld();
+        mTarget =
+                mRacerFinder.find(
+                        world, mBody.getWorldCenter(), mBody.getAngle() * MathUtils.radDeg);
+    }
+
+    @Override
+    public void draw(Batch batch, ZLevel zLevel, Rectangle viewBounds) {
+        if (zLevel == ZLevel.FLYING) {
+            // Draw the shadow at Z_FLYING so that the shadow is drawn *over* its vehicle
+            drawShadow(batch);
+            drawMissile(batch);
+            drawTarget(batch);
+            if (mStatus != Status.WAITING) {
+                drawReactorFire(batch);
+            }
+        }
+    }
+
+    private void drawTarget(Batch batch) {
+        if (mTarget == null) {
+            return;
+        }
+        batch.setColor(mStatus == Status.LOCKED ? LOCKED_COLOR : TARGETED_COLOR);
+        TextureRegion region = mAssets.target;
+        float w = Constants.UNIT_FOR_PIXEL * region.getRegionWidth();
+        float h = Constants.UNIT_FOR_PIXEL * region.getRegionHeight();
+        batch.draw(region, mTarget.getX() - w / 2, mTarget.getY() - h / 2, w, h);
+        batch.setColor(Color.WHITE);
+    }
+
+    private void drawMissile(Batch batch) {
+        mDrawer.setBatch(batch);
+        mDrawer.draw(mBody, mAssets.missile);
+    }
+
+    private void drawReactorFire(Batch batch) {
+        TextureRegion region = mAssets.turboFlame.getKeyFrame(mTime, true);
+        Vector2 center = mBody.getPosition();
+        float angle = mBody.getAngle();
+        float w = Constants.UNIT_FOR_PIXEL * region.getRegionWidth();
+        float h = Constants.UNIT_FOR_PIXEL * region.getRegionHeight();
+        float refH = Constants.UNIT_FOR_PIXEL * -WIDTH / 2;
+        mReactorPos.set(0, refH).rotateRad(angle).add(center);
+        float x = mReactorPos.x;
+        float y = mReactorPos.y;
+        batch.draw(
+                region,
+                x - w / 2,
+                y - h, // pos
+                w / 2,
+                h, // origin
+                w,
+                h, // size
+                1,
+                1, // scale
+                angle * MathUtils.radDeg - 90);
+    }
+
+    private void drawShadow(Batch batch) {
+        mDrawer.setBatch(batch);
+        mDrawer.drawShadow(mBody, mAssets.missile);
+    }
+
+    @Override
+    public void audioRender(AudioClipper clipper) {
+        if (mNeedShootSound) {
+            mSoundPlayer = mAudioManager.createSoundPlayer(mAssets.soundAtlas.get("missile"));
+            mSoundPlayer.setVolume(clipper.clip(this));
+            mSoundPlayer.play();
+
+            mNeedShootSound = false;
+        }
+    }
+
+    @Override
+    public float getX() {
+        return mBody.getPosition().x;
+    }
+
+    @Override
+    public float getY() {
+        return mBody.getPosition().y;
+    }
+
+    public void remove() {
+        setFinished(true);
+    }
+
+    @Override
+    public void explode() {
+        Vector2 pos = mBody.getPosition();
+        AnimationObject obj = mAssets.createExplosion(mAudioManager, pos.x, pos.y);
+        mGameWorld.addGameObject(obj);
+        mSoundPlayer.stop();
+        setFinished(true);
+    }
+
+    @Override
+    public void beginContact(Contact contact, Fixture otherFixture) {}
+
+    @Override
+    public void endContact(Contact contact, Fixture otherFixture) {}
+
+    @Override
+    public void preSolve(Contact contact, Fixture otherFixture, Manifold oldManifold) {
+        if (isFinished()) {
+            return;
+        }
+        if (mStatus == Status.WAITING) {
+            contact.setEnabled(false);
+            return;
+        }
+        Object other = otherFixture.getBody().getUserData();
+        if (other == mShooter) {
+            contact.setEnabled(false);
+            return;
+        }
+
+        explode();
+        if (other instanceof Racer) {
+            Racer racer = (Racer) other;
+            if (!racer.isFinished() && !racer.getLapPositionComponent().hasFinishedRace()) {
+                mShooter.getGameStats().recordEvent(GameStats.Event.MISSILE_HIT);
+            }
+            racer.spin();
+        } else if (other instanceof Explosable) {
+            ((Explosable) other).explode();
+        }
+    }
+
+    @Override
+    public void postSolve(Contact contact, Fixture otherFixture, ContactImpulse impulse) {}
+}
+/*
+ * Copyright 2017 Aurélien Gâteau <mail@agateau.com>
+ *
+ * This file is part of Pixel Wheels.
+ *
+ * Pixel Wheels is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU General Public License as published by the Free
+ * Software Foundation, either version 3 of the License, or (at your option)
+ * any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+package com.agateau.pixelwheels.bonus;
+
+import com.agateau.pixelwheels.Assets;
+import com.agateau.pixelwheels.Constants;
+import com.agateau.pixelwheels.GameWorld;
+import com.agateau.pixelwheels.ZLevel;
+import com.agateau.pixelwheels.gameobject.Explosable;
+import com.agateau.pixelwheels.gameobject.GameObjectAdapter;
+import com.agateau.pixelwheels.map.Material;
+import com.agateau.pixelwheels.racer.Racer;
+import com.agateau.pixelwheels.racer.Vehicle;
+import com.agateau.pixelwheels.racescreen.Collidable;
+import com.agateau.pixelwheels.racescreen.CollisionCategories;
+import com.agateau.pixelwheels.sound.AudioManager;
+import com.agateau.pixelwheels.utils.BodyRegionDrawer;
+import com.agateau.pixelwheels.utils.Box2DUtils;
+import com.badlogic.gdx.graphics.Color;
+import com.badlogic.gdx.graphics.g2d.Batch;
+import com.badlogic.gdx.graphics.g2d.TextureRegion;
+import com.badlogic.gdx.math.Rectangle;
+import com.badlogic.gdx.math.Vector2;
+import com.badlogic.gdx.physics.box2d.Body;
+import com.badlogic.gdx.physics.box2d.BodyDef;
+import com.badlogic.gdx.physics.box2d.CircleShape;
+import com.badlogic.gdx.physics.box2d.Contact;
+import com.badlogic.gdx.physics.box2d.ContactImpulse;
+import com.badlogic.gdx.physics.box2d.Fixture;
+import com.badlogic.gdx.physics.box2d.Joint;
+import com.badlogic.gdx.physics.box2d.Manifold;
+import com.badlogic.gdx.physics.box2d.joints.WeldJointDef;
+import com.badlogic.gdx.utils.Disposable;
+import com.badlogic.gdx.utils.Pool;
+import com.badlogic.gdx.utils.ReflectionPool;
+
+/** A mine on the road */
+public class Mine extends GameObjectAdapter
+        implements Collidable, Pool.Poolable, Disposable, Explosable {
+    private static final ReflectionPool<Mine> sPool = new ReflectionPool<>(Mine.class);
+
+    private static final float MINE_RADIUS = 0.8f;
+
+    private GameWorld mGameWorld;
+    private AudioManager mAudioManager;
+    private Assets mAssets;
+    private Racer mOwner;
+    private BodyDef mBodyDef;
+    private final WeldJointDef mJointDef = new WeldJointDef();
+    private CircleShape mShape;
+
+    private Body mBody;
+    private float mTime;
+    private Joint mJoint;
+
+    private static final Vector2 sTmp = new Vector2();
+
+    public static Mine createAttachedMine(
+            GameWorld gameWorld, Assets assets, AudioManager audioManager, Racer owner) {
+        Vehicle vehicle = owner.getVehicle();
+        sTmp.set(-vehicle.getWidth(), 0);
+        sTmp.rotate(vehicle.getAngle()).add(vehicle.getX(), vehicle.getY());
+
+        Mine mine = createInternal(gameWorld, assets, audioManager, sTmp);
+        mine.mOwner = owner;
+        mine.initJoint();
+        return mine;
+    }
+
+    public static Mine createDroppedMine(
+            GameWorld gameWorld, Assets assets, AudioManager audioManager, Vector2 position) {
+        Mine mine = createInternal(gameWorld, assets, audioManager, position);
+        mine.mBody.setType(BodyDef.BodyType.StaticBody);
+        return mine;
+    }
+
+    private static Mine createInternal(
+            GameWorld gameWorld, Assets assets, AudioManager audioManager, Vector2 position) {
+        Mine mine = sPool.obtain();
+        if (mine.mBodyDef == null) {
+            mine.firstInit(assets);
+        }
+
+        mine.mGameWorld = gameWorld;
+        mine.mAudioManager = audioManager;
+        mine.mOwner = null;
+        mine.mTime = 0;
+        mine.mJoint = null;
+        mine.setFinished(false);
+
+        mine.mBodyDef.position.set(position);
+
+        mine.mBody = gameWorld.getBox2DWorld().createBody(mine.mBodyDef);
+        mine.mBody.createFixture(mine.mShape, 0.00001f);
+        mine.mBody.setUserData(mine);
+        mine.mBody.setType(BodyDef.BodyType.DynamicBody);
+
+        Box2DUtils.setCollisionInfo(
+                mine.mBody,
+                CollisionCategories.EXPLOSABLE,
+                CollisionCategories.WALL
+                        | CollisionCategories.RACER
+                        | CollisionCategories.RACER_BULLET);
+
+        gameWorld.addGameObject(mine);
+        return mine;
+    }
+
+    private void firstInit(Assets assets) {
+        mAssets = assets;
+        mBodyDef = new BodyDef();
+        mBodyDef.type = BodyDef.BodyType.DynamicBody;
+
+        mShape = new CircleShape();
+        mShape.setRadius(MINE_RADIUS);
+    }
+
+    private void initJoint() {
+        Body vehicleBody = mOwner.getVehicle().getBody();
+        mJointDef.bodyA = mOwner.getVehicle().getBody();
+        mJointDef.bodyB = mBody;
+        mJointDef.localAnchorA.set(
+                vehicleBody.getLocalCenter().add(-mOwner.getVehicle().getWidth(), 0));
+        mJointDef.localAnchorB.set(mBody.getLocalCenter());
+        mJoint = mGameWorld.getBox2DWorld().createJoint(mJointDef);
+    }
+
+    @Override
+    public void reset() {
+        mGameWorld.getBox2DWorld().destroyBody(mBody);
+        mBody = null;
+    }
+
+    @Override
+    public void dispose() {
+        sPool.free(this);
+    }
+
+    @Override
+    public void act(float delta) {
+        mTime += delta;
+    }
+
+    private final BodyRegionDrawer mBodyRegionDrawer = new BodyRegionDrawer();
+
+    @Override
+    public void draw(Batch batch, ZLevel zLevel, Rectangle viewBounds) {
+        mBodyRegionDrawer.setBatch(batch);
+
+        Material material = mGameWorld.getTrack().getMaterialAt(getPosition());
+        boolean hasBeenDropped = mJoint == null;
+        boolean drawShadow = !hasBeenDropped || !material.isWater();
+        if (hasBeenDropped) {
+            switch (material) {
+                case WATER:
+                    batch.setColor(Constants.HALF_IMMERSED_COLOR);
+                    break;
+                case DEEP_WATER:
+                    batch.setColor(Constants.FULLY_IMMERSED_COLOR);
+                    break;
+                default:
+                    break;
+            }
+        } else {
+            batch.setColor(mOwner.getVehicleRenderer().getBatchColor());
+        }
+
+        if (zLevel == ZLevel.GROUND && drawShadow) {
+            // Smaller shadow if the mine has been dropped
+            float z = hasBeenDropped ? -0.1f : 0f;
+            mBodyRegionDrawer.setZ(z);
+            TextureRegion region = mAssets.mine.getKeyFrame(mTime);
+            mBodyRegionDrawer.drawShadow(mBody, region);
+        }
+        if (zLevel == ZLevel.VEHICLES) {
+            TextureRegion region = mAssets.mine.getKeyFrame(mTime);
+            mBodyRegionDrawer.draw(mBody, region);
+        }
+
+        batch.setColor(Color.WHITE);
+    }
+
+    @Override
+    public float getX() {
+        return mBody.getPosition().x;
+    }
+
+    @Override
+    public float getY() {
+        return mBody.getPosition().y;
+    }
+
+    @Override
+    public void explode() {
+        if (mJoint != null) {
+            mOwner.resetBonus();
+        }
+        setFinished(true);
+        Vector2 pos = mBody.getPosition();
+        mGameWorld.addGameObject(mAssets.createExplosion(mAudioManager, pos.x, pos.y));
+    }
+
+    @Override
+    public void beginContact(Contact contact, Fixture otherFixture) {
+        Object other = otherFixture.getBody().getUserData();
+        if (!(other instanceof Racer)) {
+            return;
+        }
+        if (mJoint != null && other == mOwner) {
+            return;
+        }
+        explode();
+        ((Racer) other).spin();
+    }
+
+    @Override
+    public void endContact(Contact contact, Fixture otherFixture) {}
+
+    @Override
+    public void preSolve(Contact contact, Fixture otherFixture, Manifold oldManifold) {}
+
+    @Override
+    public void postSolve(Contact contact, Fixture otherFixture, ContactImpulse impulse) {}
+
+    public void drop() {
+        mGameWorld.getBox2DWorld().destroyJoint(mJoint);
+        mJoint = null;
+        mBody.setType(BodyDef.BodyType.StaticBody);
+    }
+}
+/*
+ * Copyright 2017 Aurélien Gâteau <mail@agateau.com>
+ *
+ * This file is part of Pixel Wheels.
+ *
+ * Pixel Wheels is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU General Public License as published by the Free
+ * Software Foundation, either version 3 of the License, or (at your option)
+ * any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+package com.agateau.pixelwheels.racer;
+
+import com.agateau.pixelwheels.Assets;
+import com.agateau.pixelwheels.Constants;
+import com.agateau.pixelwheels.Renderer;
+import com.agateau.pixelwheels.ZLevel;
+import com.agateau.pixelwheels.gameobject.CellFrameBufferManager;
+import com.agateau.pixelwheels.gameobject.CellFrameBufferUser;
+import com.agateau.pixelwheels.utils.BodyRegionDrawer;
+import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.graphics.Color;
+import com.badlogic.gdx.graphics.g2d.Animation;
+import com.badlogic.gdx.graphics.g2d.Batch;
+import com.badlogic.gdx.graphics.g2d.TextureRegion;
+import com.badlogic.gdx.math.MathUtils;
+import com.badlogic.gdx.math.Rectangle;
+import com.badlogic.gdx.math.Vector2;
+import com.badlogic.gdx.physics.box2d.Body;
+import com.badlogic.gdx.utils.Array;
+
+/** Renders a vehicle */
+public class VehicleRenderer implements CellFrameBufferUser {
+    private static final int CELL_SIZE = 200;
+
+    private final Assets mAssets;
+    private final Vehicle mVehicle;
+    private final Array<Renderer> mRenderers = new Array<>();
+    private final SkidmarksRenderer mSkidmarksRenderer;
+    private float mTime = 0;
+    private final BodyRegionDrawer mBodyRegionDrawer = new BodyRegionDrawer();
+    private CellFrameBufferManager mCellFrameBufferManager;
+    private int mCellId = -1;
+
+    public VehicleRenderer(Assets assets, Vehicle vehicle) {
+        mAssets = assets;
+        mVehicle = vehicle;
+        mSkidmarksRenderer = new SkidmarksRenderer(mAssets);
+    }
+
+    public void addRenderer(Renderer renderer) {
+        mRenderers.add(renderer);
+    }
+
+    public void removeRenderer(Renderer renderer) {
+        mRenderers.removeValue(renderer, true);
+    }
+
+    private final Color mBatchColor = new Color();
+
+    public Color getBatchColor() {
+        if (mVehicle.isFalling()) {
+            float k = MathUtils.clamp(1 + mVehicle.getZ() * 10, 0, 1);
+            // k = 0 fully immersed, k = 1 not immersed
+            mBatchColor.set(Constants.FULLY_IMMERSED_COLOR);
+            mBatchColor.lerp(Color.WHITE, k);
+        } else {
+            mBatchColor.set(Color.WHITE);
+        }
+        return mBatchColor;
+    }
+
+    @Override
+    public void init(CellFrameBufferManager manager) {
+        mCellFrameBufferManager = manager;
+        mCellId = manager.reserveCell(CELL_SIZE, CELL_SIZE);
+    }
+
+    private void drawBodyToCell(Batch batch, Body body, TextureRegion region) {
+        float angle = body.getAngle() * MathUtils.radiansToDegrees;
+        float xOffset =
+                (body.getPosition().x - mVehicle.getPosition().x) / Constants.UNIT_FOR_PIXEL;
+        float yOffset =
+                (body.getPosition().y - mVehicle.getPosition().y) / Constants.UNIT_FOR_PIXEL;
+        float w = region.getRegionWidth();
+        float h = region.getRegionHeight();
+        float x = mCellFrameBufferManager.getCellCenterX(mCellId) + xOffset;
+        float y = mCellFrameBufferManager.getCellCenterY(mCellId) + yOffset;
+        batch.draw(
+                region,
+                // dst
+                x - w / 2,
+                y - h / 2,
+                // origin
+                w / 2,
+                h / 2,
+                // size
+                w,
+                h,
+                // scale
+                1,
+                1,
+                // angle
+                angle);
+    }
+
+    @Override
+    public void drawToCell(Batch batch, Rectangle viewBounds) {
+        mTime += Gdx.app.getGraphics().getDeltaTime();
+
+        // Wheels and body
+        for (Vehicle.WheelInfo info : mVehicle.getWheelInfos()) {
+            drawBodyToCell(batch, info.wheel.getBody(), info.wheel.getRegion());
+        }
+
+        TextureRegion region = mVehicle.getRegion(mTime);
+        drawBodyToCell(batch, mVehicle.getBody(), region);
+
+        float centerX = mCellFrameBufferManager.getCellCenterX(mCellId);
+        float centerY = mCellFrameBufferManager.getCellCenterY(mCellId);
+        for (Renderer renderer : mRenderers) {
+            renderer.draw(batch, centerX, centerY);
+        }
+    }
+
+    public void draw(Batch batch, ZLevel zLevel, Rectangle viewBounds) {
+        mBodyRegionDrawer.setBatch(batch);
+        float scale = mVehicle.getZ() + 1;
+
+        // Ground: skidmarks, splash, shadow
+        if (zLevel == ZLevel.GROUND) {
+            for (Vehicle.WheelInfo info : mVehicle.getWheelInfos()) {
+                mSkidmarksRenderer.draw(batch, info.wheel.getSkidmarks(), viewBounds);
+            }
+
+            // Only draw splash and shadow if we are not falling
+            if (!mVehicle.isFalling()) {
+                for (Vehicle.WheelInfo info : mVehicle.getWheelInfos()) {
+                    if (info.wheel.getMaterial().isWater()) {
+                        Animation<TextureRegion> splashAnimation = info.wheel.getSplashAnimation();
+                        mBodyRegionDrawer.draw(
+                                info.wheel.getBody(), splashAnimation.getKeyFrame(mTime, true));
+                    }
+                }
+
+                // Shadows
+                float offset = BodyRegionDrawer.computeShadowOffset(mVehicle.getZ(), 1);
+                float old = batch.getPackedColor();
+                batch.setColor(0, 0, 0, BodyRegionDrawer.SHADOW_ALPHA);
+                mCellFrameBufferManager.drawCell(
+                        batch, mVehicle.getX() - offset, mVehicle.getY() + offset, mCellId);
+                batch.setPackedColor(old);
+            }
+            return;
+        }
+
+        // Vehicle level: wheels and body
+        ZLevel wantedZIndex = mVehicle.isFlying() ? ZLevel.FLYING : ZLevel.VEHICLES;
+        if (zLevel != wantedZIndex) {
+            return;
+        }
+
+        if (mVehicle.isFalling()) {
+            batch.setColor(getBatchColor());
+        }
+        mCellFrameBufferManager.drawScaledCell(batch, mVehicle.getPosition(), mCellId, scale);
+        if (mVehicle.isFalling()) {
+            batch.setColor(Color.WHITE);
+        }
+
+        // Turbo (not in cell because it makes no sense for it to have a shadow)
+        if (mVehicle.getTurboTime() >= 0) {
+            drawTurbo(batch);
+        }
+    }
+
+    private void drawTurbo(Batch batch) {
+        TextureRegion region = mAssets.turboFlame.getKeyFrame(mVehicle.getTurboTime(), true);
+        Body body = mVehicle.getBody();
+        Vector2 center = body.getPosition();
+        float angle = body.getAngle() * MathUtils.radiansToDegrees;
+        float w = Constants.UNIT_FOR_PIXEL * region.getRegionWidth();
+        float h = Constants.UNIT_FOR_PIXEL * region.getRegionHeight();
+        float refH = -mVehicle.getWidth() / 2;
+        float x = center.x + refH * MathUtils.cosDeg(angle);
+        float y = center.y + refH * MathUtils.sinDeg(angle);
+        batch.draw(
+                region,
+                // pos
+                x - w / 2,
+                y - h,
+                // origin
+                w / 2,
+                h,
+                // size
+                w,
+                h,
+                // scale
+                1,
+                1,
+                // angle
+                angle - 90);
+    }
+}
+/*
+ * Copyright 2017 Aurélien Gâteau <mail@agateau.com>
+ *
+ * This file is part of Pixel Wheels.
+ *
+ * Pixel Wheels is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU General Public License as published by the Free
+ * Software Foundation, either version 3 of the License, or (at your option)
+ * any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+package com.agateau.pixelwheels.utils;
+
+import com.agateau.pixelwheels.Constants;
+import com.badlogic.gdx.graphics.g2d.Batch;
+import com.badlogic.gdx.graphics.g2d.TextureRegion;
+import com.badlogic.gdx.math.MathUtils;
+import com.badlogic.gdx.math.Vector2;
+import com.badlogic.gdx.physics.box2d.Body;
+
+/** Helper class to draw a TextureRegion for a Box2D Body */
+public class BodyRegionDrawer {
+    public static final float SHADOW_ALPHA = 0.35f;
+    public static final float SHADOW_OFFSET_PX = 3;
+    private static final int Z_MAX_SHADOW_OFFSET_PX = 30;
+    private static final int SCALE_MAX_SHADOW_OFFSET_PX = 30;
+    private Batch mBatch;
+    private float mZ = 0;
+    private float mScale = 1;
+    private float mOffsetX = 0;
+    private float mOffsetY = 0;
+
+    public void setBatch(Batch batch) {
+        mBatch = batch;
+    }
+
+    /**
+     * Defines the default Z value for a body.
+     *
+     * <p>0 for a ground object, 1 for flying object.
+     *
+     * <p>Only affects the offset of the shadow.
+     */
+    public void setZ(float z) {
+        mZ = z;
+    }
+
+    /**
+     * Defines the scale of the body.
+     *
+     * <p>1 by default, bigger for bigger objects.
+     *
+     * <p>Affects the size of the region, and the size and offset of its shadow
+     */
+    public void setScale(float scale) {
+        mScale = scale;
+    }
+
+    public void setOffset(float x, float y) {
+        mOffsetX = x;
+        mOffsetY = y;
+    }
+
+    public void draw(Body body, TextureRegion region) {
+        Vector2 center = body.getPosition();
+        float angle = body.getAngle();
+        float x = center.x + mOffsetX * MathUtils.cos(angle) - mOffsetY * MathUtils.sin(angle);
+        float y = center.y + mOffsetX * MathUtils.sin(angle) + mOffsetY * MathUtils.cos(angle);
+        float w = Constants.UNIT_FOR_PIXEL * region.getRegionWidth();
+        float h = Constants.UNIT_FOR_PIXEL * region.getRegionHeight();
+        mBatch.draw(
+                region,
+                x - w / 2,
+                y - h / 2, // pos
+                w / 2,
+                h / 2, // origin
+                w,
+                h, // size
+                mScale,
+                mScale,
+                angle * MathUtils.radDeg);
+    }
+
+    public void drawShadow(Body body, TextureRegion region) {
+        Vector2 center = body.getPosition();
+        float angle = body.getAngle();
+        float offset = computeShadowOffset(mZ, mScale);
+        float x = center.x + offset;
+        float y = center.y - offset;
+        float w = Constants.UNIT_FOR_PIXEL * region.getRegionWidth();
+        float h = Constants.UNIT_FOR_PIXEL * region.getRegionHeight();
+        float old = mBatch.getPackedColor();
+        mBatch.setColor(0, 0, 0, SHADOW_ALPHA);
+        mBatch.draw(
+                region, x - w / 2, y - h / 2, // pos
+                w / 2, h / 2, // origin
+                w, h, // size
+                1, 1, // scale
+                angle);
+        mBatch.setPackedColor(old);
+    }
+
+    public static float computeShadowOffset(float z, float scale) {
+        return (SHADOW_OFFSET_PX
+                        + z * Z_MAX_SHADOW_OFFSET_PX
+                        + (scale - 1) * SCALE_MAX_SHADOW_OFFSET_PX)
+                * Constants.UNIT_FOR_PIXEL;
+    }
+}

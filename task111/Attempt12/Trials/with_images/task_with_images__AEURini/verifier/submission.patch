@@ -1,0 +1,135 @@
+diff --git a/src/client/content_mapblock.cpp b/src/client/content_mapblock.cpp
+index eb8dabb..71068d1 100644
+--- a/src/client/content_mapblock.cpp
++++ b/src/client/content_mapblock.cpp
+@@ -940,7 +940,7 @@ void MapblockMeshGenerator::drawGlasslikeFramedNode()
+ 
+ 	static const u8 nb_triplet[FRAMED_EDGE_COUNT][3] = {
+ 		{1, 2,  7}, {1, 5,  6}, {4, 2, 15}, {4, 5, 14},
+-		{5, 0, 11}, {5, 3, 13}, {5, 0, 10}, {5, 3, 12},
++		{2, 0, 11}, {2, 3, 13}, {5, 0, 10}, {5, 3, 12},
+ 		{0, 1,  8}, {0, 4, 16}, {3, 4, 17}, {3, 1,  9},
+ 	};
+ 
+@@ -1395,6 +1395,7 @@ void MapblockMeshGenerator::drawFencelikeNode()
+ 	}
+ 
+ 	// Now a section of fence, +Z, if there's a post there
++	p2 = cur_node.p;
+ 	p2.Z++;
+ 	n2 = data->m_vmanip.getNodeNoEx(blockpos_nodes + p2);
+ 	f2 = &nodedef->get(n2);
+@@ -1454,10 +1455,10 @@ namespace {
+ 		{straight,   0}, //  .  . -Z +Z
+ 		{straight,  90}, //  . -X  .  .
+ 		{  curved, 180}, //  . -X  . +Z
+-		{  curved,  90}, //  . -X -Z  .
++		{  curved, 270}, //  . -X -Z  .
+ 		{junction, 180}, //  . -X -Z +Z
+ 		{straight,  90}, // +X  .  .  .
+-		{  curved, 270}, // +X  .  . +Z
++		{  curved,  90}, // +X  .  . +Z
+ 		{  curved,   0}, // +X  . -Z  .
+ 		{junction,   0}, // +X  . -Z +Z
+ 		{straight,  90}, // +X -X  .  .
+@@ -1516,8 +1517,8 @@ namespace {
+ 	static const v3s16 nodebox_tile_dirs[6] = {
+ 		v3s16(0, 1, 0),
+ 		v3s16(0, -1, 0),
+-		v3s16(-1, 0, 0),
+ 		v3s16(1, 0, 0),
++		v3s16(-1, 0, 0),
+ 		v3s16(0, 0, 1),
+ 		v3s16(0, 0, -1)
+ 	};
+diff --git a/src/client/tile.cpp b/src/client/tile.cpp
+index b13d390..f7df9ec 100644
+--- a/src/client/tile.cpp
++++ b/src/client/tile.cpp
+@@ -21,11 +21,14 @@ void TileLayer::applyMaterialOptions(video::SMaterial &material, int layer) cons
+ 	/*
+ 	 * The second layer is for overlays, but uses the same vertex positions
+ 	 * as the first, which easily leads to Z-fighting.
+-	 * To fix this we can offset the polygons in the direction of the camera.
+-	 * This only affects the depth buffer and leads to no visual gaps in geometry.
++	 * To fix this we offset the base layer (of tiles that have an overlay)
++	 * away from the camera. This only affects the depth buffer and leads to
++	 * no visual gaps in geometry. The overlay itself is kept at its real depth,
++	 * so it never hides things placed right in front of the surface
++	 * (e.g. rails, selection boxes).
+ 	 */
+-	if (layer == 1) {
+-		material.PolygonOffsetSlopeScale = -1;
+-		material.PolygonOffsetDepthBias = -1;
++	if (layer == 0 && (material_flags & MATERIAL_FLAG_HAS_OVERLAY)) {
++		material.PolygonOffsetSlopeScale = 1;
++		material.PolygonOffsetDepthBias = 1;
+ 	}
+ }
+diff --git a/src/client/tile.h b/src/client/tile.h
+index 8336d1d..a1acecf 100644
+--- a/src/client/tile.h
++++ b/src/client/tile.h
+@@ -37,6 +37,8 @@ enum MaterialType : u8 {
+ //#define MATERIAL_FLAG_HIGHLIGHTED 0x10
+ #define MATERIAL_FLAG_TILEABLE_HORIZONTAL 0x20
+ #define MATERIAL_FLAG_TILEABLE_VERTICAL 0x40
++// Set on a base layer (layer 0) if the tile also has an overlay layer
++#define MATERIAL_FLAG_HAS_OVERLAY 0x80
+ 
+ /*
+ 	This fully defines the looks of a tile.
+diff --git a/src/mapnode.cpp b/src/mapnode.cpp
+index bc10665..a82cbe0 100644
+--- a/src/mapnode.cpp
++++ b/src/mapnode.cpp
+@@ -188,14 +188,14 @@ void transformNodeBox(const MapNode &n, const NodeBox &nodebox,
+ 				box.MaxEdge.Y = (-0.5f + n.getLevel(nodemgr) / 64.0f) * BS;
+ 
+ 			if(facedir == 1) {
+-				box.MinEdge.rotateXZBy(90);
+-				box.MaxEdge.rotateXZBy(90);
++				box.MinEdge.rotateXZBy(-90);
++				box.MaxEdge.rotateXZBy(-90);
+ 			} else if(facedir == 2) {
+ 				box.MinEdge.rotateXZBy(180);
+ 				box.MaxEdge.rotateXZBy(180);
+ 			} else if(facedir == 3) {
+-				box.MinEdge.rotateXZBy(-90);
+-				box.MaxEdge.rotateXZBy(-90);
++				box.MinEdge.rotateXZBy(90);
++				box.MaxEdge.rotateXZBy(90);
+ 			}
+ 
+ 			switch (axisdir) {
+@@ -287,9 +287,9 @@ void transformNodeBox(const MapNode &n, const NodeBox &nodebox,
+ 				if(dir == v3s16(1,0,0))
+ 					vertex.rotateXZBy(180);
+ 				if(dir == v3s16(0,0,-1))
+-					vertex.rotateXZBy(-90);
+-				if(dir == v3s16(0,0,1))
+ 					vertex.rotateXZBy(90);
++				if(dir == v3s16(0,0,1))
++					vertex.rotateXZBy(-90);
+ 			}
+ 
+ 			aabb3f box = aabb3f(vertices[0]);
+diff --git a/src/nodedef.cpp b/src/nodedef.cpp
+index ffc5503..a5a5859 100644
+--- a/src/nodedef.cpp
++++ b/src/nodedef.cpp
+@@ -915,10 +915,13 @@ void ContentFeatures::updateTextures(ITextureSource *tsrc, IShaderSource *shdsrc
+ 		fillTileAttribs(tsrc, &tiles[j].layers[0], tiles[j], tdef[j],
+ 				color, material_type, tile_shader,
+ 				tdef[j].backface_culling, tsettings);
+-		if (!tdef_overlay[j].name.empty())
++		if (!tdef_overlay[j].name.empty()) {
+ 			fillTileAttribs(tsrc, &tiles[j].layers[1], tiles[j], tdef_overlay[j],
+ 					color, overlay_material, overlay_shader,
+ 					tdef[j].backface_culling, tsettings);
++			if (tiles[j].layers[1].texture_id != 0)
++				tiles[j].layers[0].material_flags |= MATERIAL_FLAG_HAS_OVERLAY;
++		}
+ 	}
+ 
+ 	MaterialType special_material = material_type;

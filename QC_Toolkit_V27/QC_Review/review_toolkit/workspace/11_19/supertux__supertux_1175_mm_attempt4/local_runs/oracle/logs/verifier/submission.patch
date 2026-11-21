@@ -1,0 +1,106 @@
+diff --git a/src/badguy/badguy.cpp b/src/badguy/badguy.cpp
+index 7fac33d..b06de71 100644
+--- a/src/badguy/badguy.cpp
++++ b/src/badguy/badguy.cpp
+@@ -315,15 +315,23 @@ BadGuy::collision_tile(uint32_t tile_attributes)
+     m_in_water = false;
+   }
+ 
+-  if (tile_attributes & Tile::HURTS && is_hurtable()) {
+-    if (tile_attributes & Tile::FIRE) {
+-      if (is_flammable()) ignite();
+-    }
+-    else if (tile_attributes & Tile::ICE) {
+-      if (is_freezable()) freeze();
+-    }
+-    else {
+-      kill_fall();
++  if (tile_attributes & Tile::HURTS && is_hurtable())
++  {
++    Rectf hurtbox = get_bbox().grown(-6.f);
++    if (!Sector::get().is_free_of_tiles(hurtbox, true, Tile::HURTS))
++    {
++      if (tile_attributes & Tile::FIRE)
++      {
++        if (is_flammable()) ignite();
++      }
++      else if (tile_attributes & Tile::ICE)
++      {
++        if (is_freezable()) freeze();
++      }
++      else
++      {
++        kill_fall();
++      }
+     }
+   }
+ }
+@@ -352,7 +360,7 @@ BadGuy::collision(GameObject& other, const CollisionHit& hit)
+   auto player = dynamic_cast<Player*> (&other);
+   if (player) {
+ 
+-    if (player->get_bbox().get_top() < (m_col.m_bbox.get_top() + 16)) {
++    if (player->get_bbox().get_bottom() < (m_col.m_bbox.get_top() + 16)) {
+       if (player->is_stone()) {
+         kill_fall();
+         return FORCE_MOVE;
+diff --git a/src/badguy/stalactite.cpp b/src/badguy/stalactite.cpp
+index c4f5f03..9212e79 100644
+--- a/src/badguy/stalactite.cpp
++++ b/src/badguy/stalactite.cpp
+@@ -48,7 +48,7 @@ Stalactite::active_update(float dt_sec)
+     auto player = get_nearest_player();
+     if (player && !player->get_ghost_mode()) {
+       if (player->get_bbox().get_right() > m_col.m_bbox.get_left() - SHAKE_RANGE_X
+-         && player->get_bbox().get_left() < m_col.m_bbox.get_right() + SHAKE_RANGE_Y
++         && player->get_bbox().get_left() < m_col.m_bbox.get_right() + SHAKE_RANGE_X
+          && player->get_bbox().get_bottom() > m_col.m_bbox.get_top()
+          && player->get_bbox().get_top() < m_col.m_bbox.get_bottom() + SHAKE_RANGE_Y
+          && Sector::get().can_see_player(m_col.m_bbox.get_middle())) {
+diff --git a/src/object/explosion.cpp b/src/object/explosion.cpp
+index 5c7240b..141a00b 100644
+--- a/src/object/explosion.cpp
++++ b/src/object/explosion.cpp
+@@ -37,7 +37,7 @@ Explosion::Explosion(const Vector& pos, float p_push_strength,
+ {
+   SoundManager::current()->preload("sounds/explosion.wav");
+   SoundManager::current()->preload("sounds/firecracker.ogg");
+-  set_pos(m_col.m_bbox.get_middle());
++  set_pos(get_pos() - (m_col.m_bbox.get_middle() - get_pos()));
+   lightsprite->set_blend(Blend::ADD);
+   lightsprite->set_color(Color(0.6f, 0.6f, 0.6f));
+ }
+diff --git a/src/object/player.cpp b/src/object/player.cpp
+index 51b9cee..7e9e6fb 100644
+--- a/src/object/player.cpp
++++ b/src/object/player.cpp
+@@ -1739,7 +1739,9 @@ Player::collision_tile(uint32_t tile_attributes)
+ {
+   if (tile_attributes & Tile::HURTS)
+   {
+-    kill(false);
++    Rectf hurtbox = get_bbox().grown(-6.f);
++    if (!Sector::get().is_free_of_tiles(hurtbox, true, Tile::HURTS))
++      kill(false);
+   }
+ 
+   if (tile_attributes & Tile::WALLJUMP)
+@@ -1855,7 +1857,7 @@ Player::kill(bool completely)
+   if (m_dying || m_deactivated || is_winning() )
+     return;
+ 
+-  if (!completely && (m_safe_timer.started() || m_invincible_timer.check() || m_stone))
++  if (!completely && (m_safe_timer.started() || m_invincible_timer.started() || m_stone))
+     return;
+ 
+   m_growing = false;
+@@ -1877,8 +1879,7 @@ Player::kill(bool completely)
+       || m_player_status.bonus == EARTH_BONUS) {
+       m_safe_timer.start(TUX_SAFE_TIME);
+       set_bonus(GROWUP_BONUS, true);
+-    }
+-    if (m_player_status.bonus == GROWUP_BONUS) {
++    } else if (m_player_status.bonus == GROWUP_BONUS) {
+       m_safe_timer.start(TUX_SAFE_TIME /* + GROWING_TIME */);
+       m_duck = false;
+       stop_backflipping();

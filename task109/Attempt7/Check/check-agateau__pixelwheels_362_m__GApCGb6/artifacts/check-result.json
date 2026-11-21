@@ -1,0 +1,46 @@
+{
+  "behavior_in_task_description": {
+    "outcome": "pass",
+    "explanation": "This is a multimodal task, and the instruction names every tested symptom class in words. It says something a vehicle carries shows through what covers the vehicle (z-order test) and its effects are off (exhaust test), and that it is drawn wrongly compared with the vehicle (rocket heading tests). It says some shadows don't fall or turn like the others (rocket shadow rotation and car shadow offset tests) and that the view shows more road behind than ahead (camera look-ahead test). The exact expected look, such as down-right shadows, a nose-aligned rocket and a tail exhaust, is pointed to as the correct examples elsewhere in the clip. The helicopter and keep-car-on-screen p2p guards fall under the instruction's 'everything else should keep looking the way it does now'. No new interfaces or files are needed."
+  },
+  "behavior_in_tests": {
+    "outcome": "pass",
+    "explanation": "Each described symptom has a test. MissileZOrderTest covers the carried rocket being drawn before the foreground layer. RocketTest covers the carried rocket's heading, the fired rocket's flight direction, the exhaust at the tail and the shadow's orientation. VehicleShadowTest covers the car shadow's offset and RacerCameraTest covers the camera look-ahead. Regression guards cover the helicopter draw order and keeping the car on screen. Together these cover all the defects described."
+  },
+  "informative_test_structure": {
+    "outcome": "pass",
+    "explanation": "Each test file opens with a header comment saying what player-visible behavior it checks and how: a real Box2D world, a DrawRecorder batch and a GL context. Test methods have descriptive names, helper methods are factored out, and assertion messages explain the expected visual result. test.sh and verifier.py are organized into commented steps."
+  },
+  "anti_cheating_measures": {
+    "outcome": "pass",
+    "explanation": "Bug patches are applied and deleted in the same Docker layer. Upstream git history is replaced by a single base commit and all file timestamps are set to one value, so neither points at the bugs. Tests and solution are not in the image, and the agent runs with no network, so it cannot fetch the upstream fix. Tests exercise behavior through rendering and physics rather than source text. test.sh restores core-tests from harbor_base before applying the hidden tests, so the agent cannot tamper with the harness."
+  },
+  "structured_data_schema": {
+    "outcome": "not_applicable",
+    "explanation": "The task is a code fix. No structured output (JSON, CSV, API) is expected from the agent."
+  },
+  "pinned_dependencies": {
+    "outcome": "pass",
+    "explanation": "The base image is a fixed tag (eclipse-temurin:17-jdk-jammy) and the repo is checked out at an exact commit SHA. Gradle dependencies come from the repo's pinned versions, and the added lwjgl3 backend uses the repo's $gdxVersion. Only apt packages are unpinned, which is acceptable."
+  },
+  "typos": {
+    "outcome": "pass",
+    "explanation": "No typos were found in paths, test IDs, class names or commands. Test IDs in config.json match the test classes and methods in test.patch, and the asset paths match the Dockerfile. Some test.sh comments are stale copy-paste about a wx build, but they don't affect anything. The REPORTS array is never defined, but under bash 5.x it expands to nothing harmlessly, even with set -u."
+  },
+  "tests_or_solution_in_image": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile copies only bugs/ (deleted in the same RUN) and the recording. Neither tests/ nor solution/ is copied into the image."
+  },
+  "test_deps_in_image": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile only pre-fetches the Gradle and Maven dependency cache, so the offline test run can resolve jars, including the libGDX lwjgl3 desktop backend, which the game's own desktop build also uses. The build.gradle change is reverted and build output removed, so no test code or test configuration remains in the image. The tests themselves are applied at verification time."
+  },
+  "hardcoded_solution": {
+    "outcome": "pass",
+    "explanation": "solve.sh applies a real source patch that fixes all six defects: the ZLevel restructure plus its call sites, the missile angle, the exhaust axis, the shadow rotation, the vehicle shadow offset and the camera rotation. It does not echo answers or write expected outputs, which is the standard oracle pattern for a code-fix task."
+  },
+  "file_reference_mentioned": {
+    "outcome": "not_applicable",
+    "explanation": "The agent doesn't have to produce any output files; it fixes existing source code. The one input file, the recording, is referenced by its full path."
+  }
+}

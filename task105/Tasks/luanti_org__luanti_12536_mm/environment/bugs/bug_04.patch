@@ -1,13 +1,29 @@
 diff --git a/src/client/content_mapblock.cpp b/src/client/content_mapblock.cpp
-index 8675275aa..31a418554 100644
+index 9158b88..e2a9417 100644
 --- a/src/client/content_mapblock.cpp
 +++ b/src/client/content_mapblock.cpp
-@@ -538,7 +538,7 @@ f32 MapblockMeshGenerator::getCornerLevel(int i, int k)
- 	int air_count = 0;
- 	for (int dk = 0; dk < 2; dk++)
- 	for (int di = 0; di < 2; di++) {
--		NeighborData &neighbor_data = liquid_neighbors[k + dk][i + di];
-+		NeighborData &neighbor_data = liquid_neighbors[i + di][k + dk];
- 		content_t content = neighbor_data.content;
+@@ -1422,7 +1422,7 @@ void MapblockMeshGenerator::drawNodeboxNode()
+ 	u8 sametype_neighbors = 0;
+ 	for (int dir = 0; dir != 6; dir++) {
+ 		u8 flag = 1 << dir;
+-		v3s16 p2 = blockpos_nodes + p + nodebox_tile_dirs[dir];
++		v3s16 p2 = blockpos_nodes + p + nodebox_connection_dirs[dir];
+ 		MapNode n2 = data->m_vmanip.getNodeNoEx(p2);
  
- 		// If top is liquid, draw starting from top of node
+ 		// mark neighbors that are the same node type
+@@ -1436,12 +1436,9 @@ void MapblockMeshGenerator::drawNodeboxNode()
+ 		if (nodedef->get(n2).drawtype == NDT_NORMAL)
+ 			solid_neighbors |= flag;
+ 
+-		if (f->node_box.type == NODEBOX_CONNECTED) {
+-			p2 = blockpos_nodes + p + nodebox_connection_dirs[dir];
+-			n2 = data->m_vmanip.getNodeNoEx(p2);
+-			if (nodedef->nodeboxConnects(n, n2, flag))
+-				neighbors_set |= flag;
+-		}
++		if (f->node_box.type == NODEBOX_CONNECTED &&
++				nodedef->nodeboxConnects(n, n2, flag))
++			neighbors_set |= flag;
+ 	}
+ 
+ 	std::vector<aabb3f> boxes;

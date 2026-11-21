@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QC Eval supertux__supertux_1398_mm</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>(function(){try{if(localStorage.getItem('theme')!=='dark')document.documentElement.classList.add('light')}catch(e){document.documentElement.classList.add('light')}})();</script>
+<style>
+:root{--bg:#0e1013;--panel:#15181d;--panel2:#1b1f26;--line:#272c35;--fg:#e7e9ee;--fg-dim:#a3aab8;--fg-faint:#6f7787;
+  --pass:#3fb27f;--nf:#d9a13b;--fail:#e0574f;--accent:#6f9dff;--shadow:0 1px 2px rgba(0,0,0,.35),0 8px 24px rgba(0,0,0,.22)}
+html.light{--bg:#faf9f7;--panel:#fff;--panel2:#f3f2ef;--line:#e3e1dc;--fg:#1c1e22;--fg-dim:#5c6270;--fg-faint:#8b91a0;
+  --pass:#1f8a5c;--nf:#a9741a;--fail:#c0392f;--accent:#2f5fd0;--shadow:0 1px 2px rgba(20,20,25,.06),0 8px 24px rgba(20,20,25,.06)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:'DM Sans',system-ui,sans-serif;font-size:15.5px;line-height:1.65;-webkit-font-smoothing:antialiased}
+a{color:var(--accent)}
+#bar{position:fixed;top:0;left:0;height:3px;background:var(--accent);width:0;z-index:99;transition:width .1s}
+.wrap{display:grid;grid-template-columns:270px minmax(0,1fr);max-width:1500px;margin:0 auto}
+aside{position:sticky;top:0;height:100vh;overflow-y:auto;padding:26px 18px 40px;border-right:1px solid var(--line);background:var(--panel)}
+aside .brand{font-family:'Instrument Serif',serif;font-size:25px;line-height:1.15;margin-bottom:2px}
+aside .sub{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--fg-faint);letter-spacing:.06em;text-transform:uppercase;margin-bottom:20px}
+aside a{display:block;padding:4px 8px;border-radius:6px;color:var(--fg-dim);text-decoration:none;font-size:13px;border-left:2px solid transparent}
+aside a:hover{background:var(--panel2);color:var(--fg)}
+aside a.h3{padding-left:20px;font-size:12.2px;color:var(--fg-faint)}
+aside a.on{color:var(--fg);border-left-color:var(--accent);background:var(--panel2)}
+.themebtn{margin-top:22px;width:100%;padding:7px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);color:var(--fg-dim);font-family:'DM Sans',sans-serif;font-size:12.5px;cursor:pointer}
+.themebtn:hover{color:var(--fg)}
+main{padding:34px 44px 120px;min-width:0}
+.hero{margin-bottom:26px}
+.eyebrow{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-faint)}
+h1.title{font-family:'Instrument Serif',serif;font-weight:400;font-size:46px;line-height:1.05;margin:6px 0 4px;overflow-wrap:anywhere}
+.taskid{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--fg-dim);overflow-wrap:anywhere}
+.subtitle{color:var(--fg-dim);margin-top:6px}
+.verdict{display:inline-flex;align-items:center;gap:10px;margin-top:16px;padding:9px 16px;border-radius:999px;font-weight:600;font-size:14px;border:1px solid}
+.verdict.reject{color:var(--fail);border-color:color-mix(in srgb,var(--fail) 45%,transparent);background:color-mix(in srgb,var(--fail) 11%,transparent)}
+.verdict.accept{color:var(--pass);border-color:color-mix(in srgb,var(--pass) 45%,transparent);background:color-mix(in srgb,var(--pass) 11%,transparent)}
+.verdict .dot{width:9px;height:9px;border-radius:50%;background:currentColor;flex:none}
+.reason{margin-top:12px;color:var(--fg-dim);max-width:820px}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:24px 0 30px}
+.metric{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:13px 15px;box-shadow:var(--shadow)}
+.metric .k{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--fg-faint)}
+.metric .v{font-family:'Instrument Serif',serif;font-size:30px;line-height:1.15;margin-top:3px}
+.metric .v small{font-family:'DM Sans',sans-serif;font-size:13px;color:var(--fg-dim)}
+.metric.p .v{color:var(--pass)} .metric.f .v{color:var(--fail)} .metric.n .v{color:var(--nf)}
+section.card{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:22px 24px;margin:0 0 26px;box-shadow:var(--shadow)}
+section.card>h2{font-family:'Instrument Serif',serif;font-weight:400;font-size:26px;margin:0 0 4px}
+section.card>.hint{color:var(--fg-dim);font-size:13.5px;margin:0 0 18px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(196px,1fr));gap:9px}
+.dim{position:relative;border:1px solid var(--line);border-radius:9px;padding:10px 11px 11px 13px;background:var(--panel2);overflow:hidden}
+.dim::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--fg-faint)}
+.dim.s5::before{background:var(--pass)} .dim.s3::before{background:var(--nf)} .dim.s2::before,.dim.s1::before{background:var(--fail)}
+.dim .no{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--fg-faint)}
+.dim .nm{font-size:12.6px;line-height:1.3;margin-top:2px;padding-right:22px}
+.dim .ct{font-size:11px;color:var(--fail);margin-top:4px}
+.dim .sc{position:absolute;top:9px;right:10px;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:500;padding:1px 6px;border-radius:5px}
+.dim.s5 .sc{color:var(--pass);background:color-mix(in srgb,var(--pass) 14%,transparent)}
+.dim.s3 .sc{color:var(--nf);background:color-mix(in srgb,var(--nf) 14%,transparent)}
+.dim.s2 .sc,.dim.s1 .sc{color:var(--fail);background:color-mix(in srgb,var(--fail) 14%,transparent)}
+.dim.s2{border-color:color-mix(in srgb,var(--fail) 40%,var(--line))}
+.dim .why{display:none;margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);font-size:12px;color:var(--fg-dim);line-height:1.5}
+.dim.open .why{display:block}
+.dim.clk{cursor:pointer} .dim.clk:hover{border-color:var(--accent)}
+.gates{display:grid;gap:9px}
+.gate{display:grid;grid-template-columns:26px 1fr auto;gap:2px 12px;align-items:start;padding:11px 13px;border:1px solid var(--line);border-radius:9px;background:var(--panel2)}
+.gate .i{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--fg-faint);padding-top:2px}
+.gate .l{font-size:13.5px}
+.gate .e{grid-column:2/4;font-size:12.2px;color:var(--fg-dim)}
+.pill{font-family:'JetBrains Mono',monospace;font-size:10.5px;padding:2px 8px;border-radius:999px;white-space:nowrap;font-weight:500;vertical-align:middle}
+.pill.ok{color:var(--pass);background:color-mix(in srgb,var(--pass) 14%,transparent)}
+.pill.no{color:var(--fail);background:color-mix(in srgb,var(--fail) 14%,transparent)}
+.pill.nf{color:var(--nf);background:color-mix(in srgb,var(--nf) 14%,transparent)}
+.pill.mute{color:var(--fg-dim);background:var(--panel2);border:1px solid var(--line)}
+.legend{display:flex;flex-wrap:wrap;gap:16px;margin-top:16px;font-size:12.4px;color:var(--fg-dim)}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px}
+.body{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:8px 30px 34px;box-shadow:var(--shadow)}
+.body h2{font-family:'Instrument Serif',serif;font-weight:400;font-size:30px;margin:38px 0 10px;padding-top:14px;border-top:1px solid var(--line)}
+.body h2:first-of-type{border-top:none;margin-top:22px}
+.body h3{font-weight:600;font-size:17px;margin:26px 0 8px}
+.body p{margin:11px 0}
+.body code{font-family:'JetBrains Mono',monospace;font-size:.86em;background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:1px 5px;overflow-wrap:anywhere}
+.body blockquote{margin:14px 0;padding:2px 16px;border-left:3px solid var(--fail);background:color-mix(in srgb,var(--fail) 6%,transparent);border-radius:0 7px 7px 0;color:var(--fg-dim)}
+.body blockquote strong{color:var(--fg)}
+.body table{width:100%;border-collapse:collapse;margin:14px 0;font-size:12.9px}
+.tablewrap{overflow-x:auto}
+.body th,.body td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+.body th{background:var(--panel2);font-weight:600;font-size:11.4px;letter-spacing:.02em;text-transform:uppercase;color:var(--fg-dim);white-space:nowrap}
+.body table.kv th{width:150px}
+.body tbody tr:nth-child(even){background:color-mix(in srgb,var(--panel2) 55%,transparent)}
+.body td strong.v5{color:var(--pass)} .body td strong.v2{color:var(--fail)}
+.catline{color:var(--fail);font-size:13px;margin:-4px 0 6px}
+figure{margin:14px 0} figure img{max-width:100%;border:1px solid var(--line);border-radius:8px;display:block}
+figcaption{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--fg-faint);margin-top:4px}
+@media (max-width:1080px){.wrap{grid-template-columns:1fr}
+  aside{position:static;height:auto;border-right:none;border-bottom:1px solid var(--line)}
+  main{padding:26px 16px 80px} h1.title{font-size:34px} .body{padding:8px 16px 26px}}
+</style></head>
+<body><div id="bar"></div><div class="wrap">
+<aside><div class="brand">QC Evaluation</div><div class="sub">Official V27 (6a676431c4ebbc30851d6f10-V27_removing_misaligned_task_type_redundancy) · 19 dims</div>
+<nav id="toc"></nav><button class="themebtn" onclick="tt()">Toggle theme</button></aside>
+<main>
+<div class="hero">
+  <div class="eyebrow">QC review · task108 Attempt2 · 11_17 · 2026-11-17</div>
+  <h1 class="title">Eval: supertux__supertux_1398_mm</h1>
+  <div class="taskid">task supertux__supertux_1398_mm</div>
+  <div class="subtitle">Some objects misbehave in the forest (SuperTux/supertux #1398, temporal_interaction)</div>
+  <div class="verdict accept"><span class="dot"></span>Accept: PASS</div>
+  <p class="reason">No dimension fails. 18 of 19 dimensions score 5. Dimension 4 (Symptom Specificity) scores 3, [Non-Fail - Image-carried Symptom], which is not a fail: the text names the element (&#x27;the objects Tux grabs&#x27;) and the four situations (carried, let go, falling, lying on the ground), but every concrete defect is left to recording.mp4. Difficulty meets Option A: 0/3 no-image and exactly 1/4 with-image (gCxmGFG = 1.0). All 17 hashed bundle files match the with-image trial manifest sha256, and the with-image trials, CB Oracle (1.0) and CB Nop (0.0) share lock digest 3e06674b. The 5 bug patches and then fix.patch apply cleanly on base_commit (local git apply --check, exit 0); the net base-to-fixed diff is exactly upstream PR #1449&#x27;s one-line Rock::collision change. All six defects are visible in recording.mp4 (contact sheets in evidence/). Every trial f2p failure is a defect the agent missed, not a correct alternative fix rejected. Non-graded notes: the task.toml difficulty_explanation is stale against the current instruction; no-image runs reach 5/7 f2p, so the visual margin rests on the coin and leaf defects. Local oracle/nop/re-run were not run, by the user&#x27;s standing rule; the CB runs were used instead.</p>
+</div>
+<div class="metrics">
+  <div class="metric p"><div class="k">Decision</div><div class="v">Accept</div></div>
+  <div class="metric p"><div class="k">Dimensions at 5</div><div class="v">18<small>/19</small></div></div>
+  <div class="metric p"><div class="k">Fails (2)</div><div class="v">0</div></div>
+  <div class="metric n"><div class="k">Non-Fails (3)</div><div class="v">1</div></div>
+  <div class="metric p"><div class="k">No-image pass</div><div class="v">0<small>/3 · need 0</small></div></div>
+  <div class="metric p"><div class="k">With-image pass</div><div class="v">1<small>/4 · need 1</small></div></div>
+</div>
+<section class="card"><h2>Scorecard</h2>
+  <p class="hint">Every dimension in rubric order. Click a cell to see what is wrong (or the evidence, if it passed).</p>
+  <div class="grid"><div class="dim s5 clk"><span class="sc">5</span><div class="no">#1</div>
+<div class="nm">Structure – Task Bundle Files</div>
+<div class="why">All 11 fixed files are present and non-empty: task.toml 6386 B, instruction.md 727, evidence_bundle.json 1104, environment/Dockerfile 4307, environment/assets/ASSET_MANIFEST.json 541, solution/fix.patch 4023, solution/solve.sh 349, tests/config.json 751, tests/test.patch 18211, tests/test.sh 10145, tests/verifier.py 8158. The 3 JSON files parse, task.toml parses with tomllib, and <code>python -I</code> py_compile of verifier.py passes. recording.mp4 (2571782 B) decodes with OpenCV as h264, 1280x720, 30 fps, 780 frames (26.0 s). The extra files are allowed: README.md and environment/bugs/bug_01..05.patch (injected bugs).</div></div><div class="dim s5 clk"><span class="sc">5</span><div class="no">#2</div>
+<div class="nm">Structure – Deliverables &amp; Packaging</div>
+<div class="why">task108/Attempt2 has <code>Tasks/</code> (capital T) and <code>Trials/</code> as sibling root folders, plus Oracle/, Nop/, Check/ and Analyze/. Trials/ holds 7 trials, Option A: without_images/ has 3 (J278gLi, qeJn4aJ, ryN2gr3) and with_images/ has 4 (96kcbNY, JxFcKRP, WWyLFjR, gCxmGFG).</div></div><div class="dim s5 clk"><span class="sc">5</span><div class="no">#3</div>
+<div class="nm">Instruction – Requires Visual Evidence</div>
+<div class="why">Text alone: &#x27;Several things that happen with the objects Tux grabs in the video are not how those objects work in this game&#x27; and &#x27;behave like they normally do ... while Tux carries them, when he lets go of them, while they fall, and once they are lying on the ground&#x27;. It never says which object, which behaviours are broken or how, so a developer can&#x27;t fix it correctly, confidently and completely from the text. The trials confirm this: all 3 no-image runs failed (each missed the coin-column defect, and every one also missed the walking-leaf defect). The image path resolves to <code>/app/.harbor_assets/recording.mp4</code> (Dockerfile <code>COPY assets/recording.mp4 /app/.harbor_assets/</code>). No leak: no repo name, URL, file, class, function, mechanism or number in instruction.md. &#x27;Tux&#x27; and &#x27;forest level&#x27; only name the game context the agent is already in.</div></div><div class="dim s3 clk"><span class="sc">3</span><div class="no">#4</div>
+<div class="nm">Instruction – Symptom Specificity</div><div class="ct">[Non-Fail - Image-carried Symptom]</div>
+<div class="why">The text names the element and gives context, but never says what kind of defect it is (position, direction, collision). Every concrete defect is carried only by the video. Under V27 this is [Non-Fail - Image-carried Symptom] = 3, not a fail.</div></div><div class="dim s5 clk"><span class="sc">5</span><div class="no">#5</div>
+<div class="nm">Instruction – Task Type</div>
+<div class="why">task_type = temporal_interaction: &#x27;Fix a defect that only appears across a sequence of interactions / state transitions&#x27; (Guidelines Step IV). The instruction describes behaviour across the grab → carry → release → fall → rest sequence, and each defect shows up only at one of those transitions. That fits the slug.</div></div><div class="dim s5 clk"><span class="sc">5</span><div class="no">#6</div>
+<div class="nm">Image – Evidence Quality</div>
+<div class="why">Naming table: recording.mp4 | role bug_video | frames show the buggy build (verified frame by frame, see evidence/ contact sheets): 1.0–2.0 s Tux walks right with the rock behind him; 2.5–4.0 s the dropped rock stops on the coin column and crawls down it; 6.5–7.5 s Tux faces left, rock again behind; 9.5–10 s a rock dropped on the walking leaf turns it into an ice block; 18.5 s Tux overlaps a resting rock; 20.5–21 s Tux stands inside a rock after jumping on it; 23.5–24.5 s a rock thrown while walking right flies left and ends up embedded in the dirt | name is neutral, role/description/instruction claim a buggy gameplay clip | true | agents confused: no (no run treated the video as a target or reference). f2p ↔ asset: (0) coin test drops a rock through a coin column = 2.5–4.0 s; (1) held-in-front, both directions = 1–2 s and 6.5–7.5 s; (2) thrown while walking flies forward = 23.5–24 s; (3) thrown rock stays on the floor = 24–24.5 s; (4) Tux stands on and is stopped by a resting rock = 18.5 s and 20.5–21 s; (5) rock dropped on a walking leaf knocks it out = 9.5–10 s. Fixing exactly what the video shows is the full golden (all 6 defects are pictured), which passes 10/10 (CB Oracle and gCxmGFG). Step 7, injected bugs 01–05: a fix that skips any of them leaves a defect that is visible in the clip, so it is an incomplete fix, not a valid alternative. Clip recorded from this task&#x27;s post-injection build (source_kind captured_from_repo), consistent with the 5 bug patches.</div></div><div class="dim s5 clk"><span class="sc">5</span><div class="no">#7</div>
+<div class="nm">Metadata – task_type</div>
+<div class="why"><code>temporal_interaction</code> is one of the seven values. The evidence is a 26 s uncut clip whose defects only appear across state transitions (carry, release, flight, landing, rest). The guideline lists a &#x27;3–8 frame sequence / GIF&#x27; as the typical asset; an uncut video is a frame sequence and fits.</div></div><div class="dim s5 clk"><span class="sc">5</span><div class="no">#8</div>
+<div class="nm">Evidence – Chain Consistency</div>
+<div class="why">File on disk environment/assets/recording.mp4: 2571782 B, sha256 f7f5bbcf…9d6859. ASSET_MANIFEST.json: file recording.mp4, container_path /app/.harbor_assets/recording.mp4, same bytes and sha256. evidence_bundle.json: same file, bytes and sha256, local_path /app/.harbor_assets/recording.mp4. instruction.md references <code>/app/.harbor_assets/recording.mp4</code>. Dockerfile copies it to /app/.harbor_assets/. All four references agree.</div></div><div class="dim s5 clk"><span class="sc">5</span><div class="no">#9</div>
+<div class="nm">Golden Fix – Applies Cleanly</div>
+<div class="why">Local scratch repo with src/badguy/badguy.cpp, src/object/player.cpp, src/object/player.hpp and src/object/rock.cpp at base_commit d2c892e2: bug_01..05 apply in order (<code>git apply</code>, all ok), then <code>git apply --check -v solution/fix.patch</code> checks all 4 files, exit 0. After applying, the net diff vs base_commit is the single Rock::collision line <code>moving_object &amp;&amp; moving_object-&gt;get_group() != COLGROUP_TOUCHABLE</code> (upstream PR #1449). CB Oracle stdout shows &#x27;captured submission.patch (4023 bytes, 4 files)&#x27; and reward 1.0.</div></div><div class="dim s5 clk"><span class="sc">5</span><div class="no">#10</div>
+<div class="nm">Golden Fix – Source-Only Scope</div>
+<div class="why">fix.patch <code>diff --git</code> paths = {src/badguy/badguy.cpp, src/object/player.cpp, src/object/player.hpp, src/object/rock.cpp}, which equals task.toml files_edited (same 4). No test, doc, lockfile or changeset path.</div></div><div class="dim s5 clk"><span class="sc">5</span><div class="no">#11</div>
+<div class="nm">Tests – Implementation Overfit</div>
+<div class="why">The assertions only read positions, coin count and badguy presence, with tolerances, so there are no string, enum or format assertions to enumerate. Alternatives (value | correct in repo? | test accepts): (0) coins: ignore touchables in Rock::collision (golden) yes/yes; coin-only dynamic_cast check yes (narrower)/yes; skip only the velocity reset for touchables yes/yes; a rock that collects coins as it falls = invented behaviour (coins are only collected by Tux; the video shows the coins untouched)/no, correctly rejected. Tolerance: within 2 frames of an open-air drop. (1) hold offset: if-branch (golden), or any mirrored offset yes/yes (only &#x27;centre on the facing side&#x27;). (2) throw: <code>m_dir</code> (golden), or un-inverted side comparison once the hold is fixed yes/yes; any speed ≥ ~64 px/s accepted (16 px in 0.25 s). (3) group restore: in ungrab (golden), or unconditionally after any release yes/yes; &#x27;lies on the floor ±2 px and still ±1 px after 2 s&#x27; matches the base rock, which zeroes x velocity on landing. (4) delete the Player::collides override (golden), or keep it but limit it to the carried object (CB-validated) yes/yes; the tests check stand-on ±2 px and stop-at-left-edge +2 px. (5) restore the ICE-only freeze (golden), or have the rock kill_fall badguys directly yes/yes: the test accepts any outcome that removes the leaf (fall or squish). Structure-level: no exact counts, ordering or error text, and float checks use tolerances. Trial cross-check: every failed f2p in the 6 failing trials is a defect the agent left unfixed (base value), never a valid alternative. The passing run gCxmGFG used its own patches across all four files.</div></div><div class="dim s5 clk"><span class="sc">5</span><div class="no">#12</div>
+<div class="nm">Tests – f2p/p2p Identifier Validity</div>
+<div class="why">task.toml f2p (7) and p2p (3) are identical to tests/config.json (checked in Python: equal = True for both lists). Each ID &#x27;RockBehaviour &lt;Name&gt;&#x27; matches exactly one JUnit testcase (classname=RockBehaviour, name=&lt;Name&gt;) in the CB Oracle junit.xml: 10 testcases, all status=run.</div></div><div class="dim s5 clk"><span class="sc">5</span><div class="no">#13</div>
+<div class="nm">Tests – p2p Classification</div>
+<div class="why">CarriedRockMovesAlongWithTux, PutDownRockLandsOnTheGround and RockDroppedOnARestingRockStaysOnTop pass on CB Nop (base) and CB Oracle (reward_detail.json), and in all 7 trials.</div></div><div class="dim s5 clk"><span class="sc">5</span><div class="no">#14</div>
+<div class="nm">Tests – Discriminating (f2p)</div>
+<div class="why">All 7 f2p fail on CB Nop (reward_detail: 7 × fail) and pass on CB Oracle (7 × pass).</div></div><div class="dim s5 clk"><span class="sc">5</span><div class="no">#15</div>
+<div class="nm">Tests – Determinism</div>
+<div class="why">Tests step the game&#x27;s own update loop at a fixed FRAME = 1/64 s and drive Tux through the scripting controller, with no wall-clock time, sleep, network or rand in test.patch. SDL_VIDEODRIVER/AUDIODRIVER=dummy, so there is no rendering and no fonts. test.sh installs nothing (an offline cmake rebuild only). Consistency: the 3 p2p pass in all 9 runs (7 trials + oracle + nop), and each f2p outcome lines up with what that agent fixed. Gtest run time is 333 ms. The local oracle re-run was not done, by the user&#x27;s standing rule.</div></div><div class="dim s5 clk"><span class="sc">5</span><div class="no">#16</div>
+<div class="nm">Hardening – Difficulty (Model Trial Fails)</div>
+<div class="why">Option A, 7 trials. No-image (task digest d1f29904, path …/task_without_images): J278gLi 0.0, qeJn4aJ 0.0, ryN2gr3 0.0 = 0/3. All 3 trajectories confirm /app/.harbor_assets was empty (&#x27;harbor_assets/ is empty and there&#x27;s no recording.mp4 anywhere&#x27;). With-image (digest 3e06674b, path …/task_with_images): 96kcbNY 0.0, JxFcKRP 0.0, WWyLFjR 0.0, gCxmGFG 1.0 = exactly 1/4. Run times 4.2–14.5 min (informational).</div></div><div class="dim s5 clk"><span class="sc">5</span><div class="no">#17</div>
+<div class="nm">Hardening – Real &amp; Feasible</div>
+<div class="why">Defect 0 is the real upstream issue #1398 (fixed by PR #1449). Bugs 01–05 are coherent, plausible regressions: a sign flip in the hold offset, an inverted throw-direction comparison, a group restore moved to a branch that never runs, a &#x27;grab helper&#x27; collides override, and a &#x27;simplified&#x27; freeze branch. Each one&#x27;s fix is a small, natural revert a real developer would write. One with-image run (gCxmGFG) found and fixed all six from the video, which shows the task is solvable.</div></div><div class="dim s5 clk"><span class="sc">5</span><div class="no">#18</div>
+<div class="nm">Gate – Oracle/Nop</div>
+<div class="why">CB Oracle m5spaQX: reward 1.0, 10/10, banners &#x27;== captured submission.patch&#x27;, &#x27;== applying test.patch ==&#x27;, &#x27;== running f2p + p2p tests ==&#x27;, &#x27;== computing reward ==&#x27;, &#x27;reward=1.0&#x27;. CB Nop qaGFXDz: reward 0.0, f2p 0/7, p2p 3/3, same banners, &#x27;reward=0.0&#x27;. No &#x27;could not apply test.patch&#x27; in either stderr (0 hits). Both use lock digest 3e06674b, which equals the with-image trials and the current bundle. Local oracle/nop/re-run not run, by the user&#x27;s standing rule.</div></div><div class="dim s5 clk"><span class="sc">5</span><div class="no">#19</div>
+<div class="nm">Unauditable</div>
+<div class="why">Complete, auditable submission.</div></div></div>
+  <div class="legend"><span><i style="background:var(--pass)"></i>5 · Pass</span><span><i style="background:var(--nf)"></i>3 · Non-Fail</span>
+  <span><i style="background:var(--fail)"></i>2 · Fail</span><span><i style="background:var(--fg-faint)"></i>1 · Unauditable</span></div>
+</section>
+<section class="card"><h2>Delivery gate</h2>
+  <p class="hint">Process checks run locally or read from the submitted runs. Each failure is scored under the dimension it belongs to, not as an extra dimension.</p>
+  <div class="gates"><div class="gate"><div class="i">1</div><div class="l">Oracle (CB, lock 3e06674b)</div>
+<div><span class="pill ok">PASS</span></div><div class="e">reward 1.0, f2p 7/7, p2p 3/3, 6.5 min</div></div><div class="gate"><div class="i">2</div><div class="l">Nop (CB, lock 3e06674b)</div>
+<div><span class="pill ok">PASS</span></div><div class="e">reward 0.0, f2p 0/7, p2p 3/3, 1.4 min</div></div><div class="gate"><div class="i">3</div><div class="l">Local oracle / nop / re-run</div>
+<div><span class="pill nf">NOTE</span></div><div class="e">Not run, by the user&#x27;s standing rule (no oracle/nop/harbor). Graded from the CB runs; the bundle is byte-identical to what they used</div></div><div class="gate"><div class="i">4</div><div class="l">fix.patch applies</div>
+<div><span class="pill ok">PASS</span></div><div class="e">git apply --check on base_commit + bug_01..05 (local scratch repo): exit 0, 4 files</div></div><div class="gate"><div class="i">5</div><div class="l">Verifier completion</div>
+<div><span class="pill ok">PASS</span></div><div class="e">All 9 runs wrote reward.txt and junit.xml with 10 testcases</div></div><div class="gate"><div class="i">6</div><div class="l">pass@3 no-image</div>
+<div><span class="pill ok">PASS</span></div><div class="e">0/3 (J278gLi, qeJn4aJ, ryN2gr3 all 0.0); assets dir confirmed empty</div></div><div class="gate"><div class="i">7</div><div class="l">pass@4 with-image (Option A)</div>
+<div><span class="pill ok">PASS</span></div><div class="e">Exactly 1/4 (gCxmGFG = 1.0)</div></div><div class="gate"><div class="i">8</div><div class="l">Trial run time</div>
+<div><span class="pill ok">PASS</span></div><div class="e">4.2–14.5 min (informational)</div></div><div class="gate"><div class="i">9</div><div class="l">Trial / task checksum</div>
+<div><span class="pill ok">PASS</span></div><div class="e">17/17 hashed bundle files match with_images task_manifest.json sha256; lock digest 3e06674b = Oracle = Nop = with-image trials</div></div><div class="gate"><div class="i">10</div><div class="l">Packaging</div>
+<div><span class="pill nf">NOTE</span></div><div class="e">Tasks/ and Trials/ are sibling folders with 3+4 trials; still to be tarred separately for submission</div></div><div class="gate"><div class="i">11</div><div class="l">Leaks</div>
+<div><span class="pill ok">PASS</span></div><div class="e">instruction.md names no repo, URL, file, class, mechanism or number</div></div><div class="gate"><div class="i">12</div><div class="l">Evidence-chain integrity</div>
+<div><span class="pill ok">PASS</span></div><div class="e">disk = ASSET_MANIFEST = evidence_bundle = instruction ref (/app/.harbor_assets/recording.mp4, 2571782 B, f7f5bbcf…)</div></div><div class="gate"><div class="i">13</div><div class="l">difficulty_explanation in sync</div>
+<div><span class="pill nf">NOTE</span></div><div class="e">Non-graded: task.toml still describes an older instruction (&#x27;everything else in the level react to them normally&#x27;, one expected line per behaviour) and says &#x27;harbor not run&#x27;</div></div></div>
+</section>
+<div class="body" id="body">
+  <h2>Trials</h2>
+  <p>3 no-image runs (pass@3, all must fail) and 4 with-image runs (pass@4, exactly 1 must pass). Rewards come from each run's <code>verifier/reward.txt</code>.</p>
+  <div class="tablewrap"><table><thead><tr><th>Trial</th><th>Mode</th><th>Reward</th><th>f2p</th><th>p2p</th><th>Min</th><th>Failed tests</th></tr></thead><tbody><tr><td><code>task_without_images__J278gLi</code></td><td>no-image</td>
+<td><strong class="v2">0.0</strong></td><td>5/7</td>
+<td>3/3</td><td>4.4</td><td>DroppedRockFallsPastCoinsLikeThroughOpenAir<br>RockDroppedOnAWalkingLeafKnocksItOut</td></tr><tr><td><code>task_without_images__qeJn4aJ</code></td><td>no-image</td>
+<td><strong class="v2">0.0</strong></td><td>3/7</td>
+<td>3/3</td><td>6.4</td><td>DroppedRockFallsPastCoinsLikeThroughOpenAir<br>TuxCanStandOnARestingRock<br>TuxWalkingIntoARestingRockIsStoppedByIt<br>RockDroppedOnAWalkingLeafKnocksItOut</td></tr><tr><td><code>task_without_images__ryN2gr3</code></td><td>no-image</td>
+<td><strong class="v2">0.0</strong></td><td>5/7</td>
+<td>3/3</td><td>4.2</td><td>DroppedRockFallsPastCoinsLikeThroughOpenAir<br>RockDroppedOnAWalkingLeafKnocksItOut</td></tr><tr><td><code>task_with_images__96kcbNY</code></td><td>with-image</td>
+<td><strong class="v2">0.0</strong></td><td>3/7</td>
+<td>3/3</td><td>12.4</td><td>DroppedRockFallsPastCoinsLikeThroughOpenAir<br>RockThrownWhileWalkingFliesForward<br>TuxCanStandOnARestingRock<br>TuxWalkingIntoARestingRockIsStoppedByIt</td></tr><tr><td><code>task_with_images__JxFcKRP</code></td><td>with-image</td>
+<td><strong class="v2">0.0</strong></td><td>6/7</td>
+<td>3/3</td><td>14.5</td><td>DroppedRockFallsPastCoinsLikeThroughOpenAir</td></tr><tr><td><code>task_with_images__WWyLFjR</code></td><td>with-image</td>
+<td><strong class="v2">0.0</strong></td><td>4/7</td>
+<td>3/3</td><td>5.4</td><td>DroppedRockFallsPastCoinsLikeThroughOpenAir<br>TuxCanStandOnARestingRock<br>TuxWalkingIntoARestingRockIsStoppedByIt</td></tr><tr><td><code>task_with_images__gCxmGFG</code></td><td>with-image</td>
+<td><strong class="v5">1.0</strong></td><td>7/7</td>
+<td>3/3</td><td>13.5</td><td>—</td></tr></tbody></table></div>
+  <h2>Issues &amp; suggested fixes</h2>
+  <h3>Instruction – Symptom Specificity <span class="pill nf">3 · [Non-Fail - Image-carried Symptom]</span></h3>
+<blockquote><p><strong>What is wrong.</strong> The text names the element and gives context, but never says what kind of defect it is (position, direction, collision). Every concrete defect is carried only by the video. Under V27 this is [Non-Fail - Image-carried Symptom] = 3, not a fail.</p></blockquote>
+<p><strong>Suggested fix.</strong> No change required, since it isn&#x27;t a fail. Do not add defect classes to the text: no-image runs already reach 5/7 f2p by code audit, and only the coin-column and walking-leaf defects keep them at 0/3. Any hint at coins, falling past things, or what happens to an enemy would likely let no-image runs pass. If you ever want a 5, state only classes the no-image runs already find (for example &#x27;held on the wrong side, thrown the wrong way, sinks into the ground or lets Tux pass through it&#x27;), and note that editing instruction.md changes the task checksum, so all 7 trials must be re-run.</p>
+  <h2>Dimension details</h2>
+  <h3>1. Structure – Task Bundle Files <span class="pill ok">5 · Pass</span></h3>
+
+<table class="kv"><tbody>
+<tr><th>Evidence</th><td>All 11 fixed files are present and non-empty: task.toml 6386 B, instruction.md 727, evidence_bundle.json 1104, environment/Dockerfile 4307, environment/assets/ASSET_MANIFEST.json 541, solution/fix.patch 4023, solution/solve.sh 349, tests/config.json 751, tests/test.patch 18211, tests/test.sh 10145, tests/verifier.py 8158. The 3 JSON files parse, task.toml parses with tomllib, and <code>python -I</code> py_compile of verifier.py passes. recording.mp4 (2571782 B) decodes with OpenCV as h264, 1280x720, 30 fps, 780 frames (26.0 s). The extra files are allowed: README.md and environment/bugs/bug_01..05.patch (injected bugs).</td></tr>
+<tr><th>What is wrong</th><td>Nothing found.</td></tr>
+<tr><th>Suggested fix</th><td>None.</td></tr>
+</tbody></table><h3>2. Structure – Deliverables &amp; Packaging <span class="pill ok">5 · Pass</span></h3>
+
+<table class="kv"><tbody>
+<tr><th>Evidence</th><td>task108/Attempt2 has <code>Tasks/</code> (capital T) and <code>Trials/</code> as sibling root folders, plus Oracle/, Nop/, Check/ and Analyze/. Trials/ holds 7 trials, Option A: without_images/ has 3 (J278gLi, qeJn4aJ, ryN2gr3) and with_images/ has 4 (96kcbNY, JxFcKRP, WWyLFjR, gCxmGFG).</td></tr>
+<tr><th>What is wrong</th><td>Nothing found. The folders are not yet archived; package <code>Tasks/</code> and <code>Trials/</code> as separate .tar.gz files when you submit.</td></tr>
+<tr><th>Suggested fix</th><td>On submission: <code>tar czf Tasks.tar.gz Tasks</code> and <code>tar czf Trials.tar.gz Trials</code> (same for Oracle/Nop).</td></tr>
+</tbody></table><h3>3. Instruction – Requires Visual Evidence <span class="pill ok">5 · Pass</span></h3>
+
+<table class="kv"><tbody>
+<tr><th>Evidence</th><td>Text alone: &#x27;Several things that happen with the objects Tux grabs in the video are not how those objects work in this game&#x27; and &#x27;behave like they normally do ... while Tux carries them, when he lets go of them, while they fall, and once they are lying on the ground&#x27;. It never says which object, which behaviours are broken or how, so a developer can&#x27;t fix it correctly, confidently and completely from the text. The trials confirm this: all 3 no-image runs failed (each missed the coin-column defect, and every one also missed the walking-leaf defect). The image path resolves to <code>/app/.harbor_assets/recording.mp4</code> (Dockerfile <code>COPY assets/recording.mp4 /app/.harbor_assets/</code>). No leak: no repo name, URL, file, class, function, mechanism or number in instruction.md. &#x27;Tux&#x27; and &#x27;forest level&#x27; only name the game context the agent is already in.</td></tr>
+<tr><th>What is wrong</th><td>Nothing found.</td></tr>
+<tr><th>Suggested fix</th><td>None.</td></tr>
+</tbody></table><h3>4. Instruction – Symptom Specificity <span class="pill nf">3 · Non-Fail</span></h3>
+<p class="catline">[Non-Fail - Image-carried Symptom]</p>
+<table class="kv"><tbody>
+<tr><th>Evidence</th><td>Table: element = &#x27;the objects Tux grabs&#x27; (named by type: grabbable objects) | defect = image only (&#x27;not how those objects work in this game&#x27;; the kind of defect is never stated in text) | expected = text, generic: &#x27;behave like they normally do in this game&#x27; in four named situations (carried, let go, falling, lying on the ground) | comparison image = none (recording.mp4 is the bug video) | clue left to image = yes: which object, held on the wrong side, thrown backwards, falls into the ground, Tux passes through it, crawls down the coin column, freezes the leaf | described correctly = yes (all six defects are about the grabbed rock in those four situations). The general phrase is not standing alone: the element and the four situations follow right away, so check 2 passes. Trajectories (all 4 with-image runs read): gCxmGFG found all six defects. JxFcKRP found 5/6 and never noticed the coin column. WWyLFjR found 4/6 and never opened player.hpp. 96kcbNY found 3 defects and took one frame of Tux overlapping a resting rock for a pick-up. None of them treated an observed defect as intended behaviour; the 3 misses on the coin column are detection misses (the failing runs never mention coins outside source code), so the &#x27;agents couldn&#x27;t tell&#x27; fail does not apply.</td></tr>
+<tr><th>What is wrong</th><td>The text names the element and gives context, but never says what kind of defect it is (position, direction, collision). Every concrete defect is carried only by the video. Under V27 this is [Non-Fail - Image-carried Symptom] = 3, not a fail.</td></tr>
+<tr><th>Suggested fix</th><td>No change required, since it isn&#x27;t a fail. Do not add defect classes to the text: no-image runs already reach 5/7 f2p by code audit, and only the coin-column and walking-leaf defects keep them at 0/3. Any hint at coins, falling past things, or what happens to an enemy would likely let no-image runs pass. If you ever want a 5, state only classes the no-image runs already find (for example &#x27;held on the wrong side, thrown the wrong way, sinks into the ground or lets Tux pass through it&#x27;), and note that editing instruction.md changes the task checksum, so all 7 trials must be re-run.</td></tr>
+</tbody></table><h3>5. Instruction – Task Type <span class="pill ok">5 · Pass</span></h3>
+
+<table class="kv"><tbody>
+<tr><th>Evidence</th><td>task_type = temporal_interaction: &#x27;Fix a defect that only appears across a sequence of interactions / state transitions&#x27; (Guidelines Step IV). The instruction describes behaviour across the grab → carry → release → fall → rest sequence, and each defect shows up only at one of those transitions. That fits the slug.</td></tr>
+<tr><th>What is wrong</th><td>Nothing found.</td></tr>
+<tr><th>Suggested fix</th><td>None.</td></tr>
+</tbody></table><h3>6. Image – Evidence Quality <span class="pill ok">5 · Pass</span></h3>
+
+<table class="kv"><tbody>
+<tr><th>Evidence</th><td>Naming table: recording.mp4 | role bug_video | frames show the buggy build (verified frame by frame, see evidence/ contact sheets): 1.0–2.0 s Tux walks right with the rock behind him; 2.5–4.0 s the dropped rock stops on the coin column and crawls down it; 6.5–7.5 s Tux faces left, rock again behind; 9.5–10 s a rock dropped on the walking leaf turns it into an ice block; 18.5 s Tux overlaps a resting rock; 20.5–21 s Tux stands inside a rock after jumping on it; 23.5–24.5 s a rock thrown while walking right flies left and ends up embedded in the dirt | name is neutral, role/description/instruction claim a buggy gameplay clip | true | agents confused: no (no run treated the video as a target or reference). f2p ↔ asset: (0) coin test drops a rock through a coin column = 2.5–4.0 s; (1) held-in-front, both directions = 1–2 s and 6.5–7.5 s; (2) thrown while walking flies forward = 23.5–24 s; (3) thrown rock stays on the floor = 24–24.5 s; (4) Tux stands on and is stopped by a resting rock = 18.5 s and 20.5–21 s; (5) rock dropped on a walking leaf knocks it out = 9.5–10 s. Fixing exactly what the video shows is the full golden (all 6 defects are pictured), which passes 10/10 (CB Oracle and gCxmGFG). Step 7, injected bugs 01–05: a fix that skips any of them leaves a defect that is visible in the clip, so it is an incomplete fix, not a valid alternative. Clip recorded from this task&#x27;s post-injection build (source_kind captured_from_repo), consistent with the 5 bug patches.</td></tr>
+<tr><th>What is wrong</th><td>Nothing found.</td></tr>
+<tr><th>Suggested fix</th><td>None.</td></tr>
+</tbody></table><h3>7. Metadata – task_type <span class="pill ok">5 · Pass</span></h3>
+
+<table class="kv"><tbody>
+<tr><th>Evidence</th><td><code>temporal_interaction</code> is one of the seven values. The evidence is a 26 s uncut clip whose defects only appear across state transitions (carry, release, flight, landing, rest). The guideline lists a &#x27;3–8 frame sequence / GIF&#x27; as the typical asset; an uncut video is a frame sequence and fits.</td></tr>
+<tr><th>What is wrong</th><td>Nothing found.</td></tr>
+<tr><th>Suggested fix</th><td>None.</td></tr>
+</tbody></table><h3>8. Evidence – Chain Consistency <span class="pill ok">5 · Pass</span></h3>
+
+<table class="kv"><tbody>
+<tr><th>Evidence</th><td>File on disk environment/assets/recording.mp4: 2571782 B, sha256 f7f5bbcf…9d6859. ASSET_MANIFEST.json: file recording.mp4, container_path /app/.harbor_assets/recording.mp4, same bytes and sha256. evidence_bundle.json: same file, bytes and sha256, local_path /app/.harbor_assets/recording.mp4. instruction.md references <code>/app/.harbor_assets/recording.mp4</code>. Dockerfile copies it to /app/.harbor_assets/. All four references agree.</td></tr>
+<tr><th>What is wrong</th><td>Nothing found.</td></tr>
+<tr><th>Suggested fix</th><td>None.</td></tr>
+</tbody></table><h3>9. Golden Fix – Applies Cleanly <span class="pill ok">5 · Pass</span></h3>
+
+<table class="kv"><tbody>
+<tr><th>Evidence</th><td>Local scratch repo with src/badguy/badguy.cpp, src/object/player.cpp, src/object/player.hpp and src/object/rock.cpp at base_commit d2c892e2: bug_01..05 apply in order (<code>git apply</code>, all ok), then <code>git apply --check -v solution/fix.patch</code> checks all 4 files, exit 0. After applying, the net diff vs base_commit is the single Rock::collision line <code>moving_object &amp;&amp; moving_object-&gt;get_group() != COLGROUP_TOUCHABLE</code> (upstream PR #1449). CB Oracle stdout shows &#x27;captured submission.patch (4023 bytes, 4 files)&#x27; and reward 1.0.</td></tr>
+<tr><th>What is wrong</th><td>Nothing found.</td></tr>
+<tr><th>Suggested fix</th><td>None.</td></tr>
+</tbody></table><h3>10. Golden Fix – Source-Only Scope <span class="pill ok">5 · Pass</span></h3>
+
+<table class="kv"><tbody>
+<tr><th>Evidence</th><td>fix.patch <code>diff --git</code> paths = {src/badguy/badguy.cpp, src/object/player.cpp, src/object/player.hpp, src/object/rock.cpp}, which equals task.toml files_edited (same 4). No test, doc, lockfile or changeset path.</td></tr>
+<tr><th>What is wrong</th><td>Nothing found.</td></tr>
+<tr><th>Suggested fix</th><td>None.</td></tr>
+</tbody></table><h3>11. Tests – Implementation Overfit <span class="pill ok">5 · Pass</span></h3>
+
+<table class="kv"><tbody>
+<tr><th>Evidence</th><td>The assertions only read positions, coin count and badguy presence, with tolerances, so there are no string, enum or format assertions to enumerate. Alternatives (value | correct in repo? | test accepts): (0) coins: ignore touchables in Rock::collision (golden) yes/yes; coin-only dynamic_cast check yes (narrower)/yes; skip only the velocity reset for touchables yes/yes; a rock that collects coins as it falls = invented behaviour (coins are only collected by Tux; the video shows the coins untouched)/no, correctly rejected. Tolerance: within 2 frames of an open-air drop. (1) hold offset: if-branch (golden), or any mirrored offset yes/yes (only &#x27;centre on the facing side&#x27;). (2) throw: <code>m_dir</code> (golden), or un-inverted side comparison once the hold is fixed yes/yes; any speed ≥ ~64 px/s accepted (16 px in 0.25 s). (3) group restore: in ungrab (golden), or unconditionally after any release yes/yes; &#x27;lies on the floor ±2 px and still ±1 px after 2 s&#x27; matches the base rock, which zeroes x velocity on landing. (4) delete the Player::collides override (golden), or keep it but limit it to the carried object (CB-validated) yes/yes; the tests check stand-on ±2 px and stop-at-left-edge +2 px. (5) restore the ICE-only freeze (golden), or have the rock kill_fall badguys directly yes/yes: the test accepts any outcome that removes the leaf (fall or squish). Structure-level: no exact counts, ordering or error text, and float checks use tolerances. Trial cross-check: every failed f2p in the 6 failing trials is a defect the agent left unfixed (base value), never a valid alternative. The passing run gCxmGFG used its own patches across all four files.</td></tr>
+<tr><th>What is wrong</th><td>Nothing found.</td></tr>
+<tr><th>Suggested fix</th><td>None.</td></tr>
+</tbody></table><h3>12. Tests – f2p/p2p Identifier Validity <span class="pill ok">5 · Pass</span></h3>
+
+<table class="kv"><tbody>
+<tr><th>Evidence</th><td>task.toml f2p (7) and p2p (3) are identical to tests/config.json (checked in Python: equal = True for both lists). Each ID &#x27;RockBehaviour &lt;Name&gt;&#x27; matches exactly one JUnit testcase (classname=RockBehaviour, name=&lt;Name&gt;) in the CB Oracle junit.xml: 10 testcases, all status=run.</td></tr>
+<tr><th>What is wrong</th><td>Nothing found.</td></tr>
+<tr><th>Suggested fix</th><td>None.</td></tr>
+</tbody></table><h3>13. Tests – p2p Classification <span class="pill ok">5 · Pass</span></h3>
+
+<table class="kv"><tbody>
+<tr><th>Evidence</th><td>CarriedRockMovesAlongWithTux, PutDownRockLandsOnTheGround and RockDroppedOnARestingRockStaysOnTop pass on CB Nop (base) and CB Oracle (reward_detail.json), and in all 7 trials.</td></tr>
+<tr><th>What is wrong</th><td>Nothing found.</td></tr>
+<tr><th>Suggested fix</th><td>None.</td></tr>
+</tbody></table><h3>14. Tests – Discriminating (f2p) <span class="pill ok">5 · Pass</span></h3>
+
+<table class="kv"><tbody>
+<tr><th>Evidence</th><td>All 7 f2p fail on CB Nop (reward_detail: 7 × fail) and pass on CB Oracle (7 × pass).</td></tr>
+<tr><th>What is wrong</th><td>Nothing found.</td></tr>
+<tr><th>Suggested fix</th><td>None.</td></tr>
+</tbody></table><h3>15. Tests – Determinism <span class="pill ok">5 · Pass</span></h3>
+
+<table class="kv"><tbody>
+<tr><th>Evidence</th><td>Tests step the game&#x27;s own update loop at a fixed FRAME = 1/64 s and drive Tux through the scripting controller, with no wall-clock time, sleep, network or rand in test.patch. SDL_VIDEODRIVER/AUDIODRIVER=dummy, so there is no rendering and no fonts. test.sh installs nothing (an offline cmake rebuild only). Consistency: the 3 p2p pass in all 9 runs (7 trials + oracle + nop), and each f2p outcome lines up with what that agent fixed. Gtest run time is 333 ms. The local oracle re-run was not done, by the user&#x27;s standing rule.</td></tr>
+<tr><th>What is wrong</th><td>Nothing found.</td></tr>
+<tr><th>Suggested fix</th><td>None. Optional: [verifier] network_mode is &#x27;public&#x27; although test.sh needs no network. &#x27;no-network&#x27; would be tighter, but it changes the checksum, so only do it if you re-run trials anyway.</td></tr>
+</tbody></table><h3>16. Hardening – Difficulty (Model Trial Fails) <span class="pill ok">5 · Pass</span></h3>
+
+<table class="kv"><tbody>
+<tr><th>Evidence</th><td>Option A, 7 trials. No-image (task digest d1f29904, path …/task_without_images): J278gLi 0.0, qeJn4aJ 0.0, ryN2gr3 0.0 = 0/3. All 3 trajectories confirm /app/.harbor_assets was empty (&#x27;harbor_assets/ is empty and there&#x27;s no recording.mp4 anywhere&#x27;). With-image (digest 3e06674b, path …/task_with_images): 96kcbNY 0.0, JxFcKRP 0.0, WWyLFjR 0.0, gCxmGFG 1.0 = exactly 1/4. Run times 4.2–14.5 min (informational).</td></tr>
+<tr><th>What is wrong</th><td>Nothing found.</td></tr>
+<tr><th>Suggested fix</th><td>None.</td></tr>
+</tbody></table><h3>17. Hardening – Real &amp; Feasible <span class="pill ok">5 · Pass</span></h3>
+
+<table class="kv"><tbody>
+<tr><th>Evidence</th><td>Defect 0 is the real upstream issue #1398 (fixed by PR #1449). Bugs 01–05 are coherent, plausible regressions: a sign flip in the hold offset, an inverted throw-direction comparison, a group restore moved to a branch that never runs, a &#x27;grab helper&#x27; collides override, and a &#x27;simplified&#x27; freeze branch. Each one&#x27;s fix is a small, natural revert a real developer would write. One with-image run (gCxmGFG) found and fixed all six from the video, which shows the task is solvable.</td></tr>
+<tr><th>What is wrong</th><td>Nothing found.</td></tr>
+<tr><th>Suggested fix</th><td>None.</td></tr>
+</tbody></table><h3>18. Gate – Oracle/Nop <span class="pill ok">5 · Pass</span></h3>
+
+<table class="kv"><tbody>
+<tr><th>Evidence</th><td>CB Oracle m5spaQX: reward 1.0, 10/10, banners &#x27;== captured submission.patch&#x27;, &#x27;== applying test.patch ==&#x27;, &#x27;== running f2p + p2p tests ==&#x27;, &#x27;== computing reward ==&#x27;, &#x27;reward=1.0&#x27;. CB Nop qaGFXDz: reward 0.0, f2p 0/7, p2p 3/3, same banners, &#x27;reward=0.0&#x27;. No &#x27;could not apply test.patch&#x27; in either stderr (0 hits). Both use lock digest 3e06674b, which equals the with-image trials and the current bundle. Local oracle/nop/re-run not run, by the user&#x27;s standing rule.</td></tr>
+<tr><th>What is wrong</th><td>Nothing found.</td></tr>
+<tr><th>Suggested fix</th><td>None.</td></tr>
+</tbody></table><h3>19. Unauditable <span class="pill ok">5 · Pass</span></h3>
+
+<table class="kv"><tbody>
+<tr><th>Evidence</th><td>Complete, auditable submission.</td></tr>
+<tr><th>What is wrong</th><td>Nothing found.</td></tr>
+<tr><th>Suggested fix</th><td>None.</td></tr>
+</tbody></table>
+  <h2>Visual evidence</h2><figure><img src="evidence/contact_sheet_0-7s_carry_coins.png" alt="contact_sheet_0-7s_carry_coins.png" loading="lazy"><figcaption>contact_sheet_0-7s_carry_coins.png</figcaption></figure><figure><img src="evidence/contact_sheet_15-26s_ground.png" alt="contact_sheet_15-26s_ground.png" loading="lazy"><figcaption>contact_sheet_15-26s_ground.png</figcaption></figure><figure><img src="evidence/contact_sheet_8-15s_leaf.png" alt="contact_sheet_8-15s_leaf.png" loading="lazy"><figcaption>contact_sheet_8-15s_leaf.png</figcaption></figure>
+</div>
+</main></div>
+<script>
+function tt(){var l=document.documentElement.classList.toggle('light');try{localStorage.setItem('theme',l?'light':'dark')}catch(e){}}
+document.querySelectorAll('.dim.clk').forEach(function(d){d.addEventListener('click',function(){d.classList.toggle('open')})});
+var toc=document.getElementById('toc');
+var heads=[].slice.call(document.querySelectorAll('section.card>h2, #body h2, #body h3'));
+heads.forEach(function(h,i){h.id='h'+i;var a=document.createElement('a');a.href='#h'+i;
+  a.textContent=h.childNodes[0].textContent.replace(/\s+/g,' ').trim();if(h.tagName==='H3')a.className='h3';toc.appendChild(a)});
+var links=[].slice.call(toc.querySelectorAll('a'));
+function onScroll(){var st=window.scrollY,h=document.body.scrollHeight-innerHeight;
+  document.getElementById('bar').style.width=(h>0?st/h*100:0)+'%';var cur=0;
+  heads.forEach(function(x,i){if(x.getBoundingClientRect().top<130)cur=i});
+  links.forEach(function(a,i){a.classList.toggle('on',i===cur)})}
+addEventListener('scroll',onScroll,{passive:true});onScroll();
+</script></body></html>

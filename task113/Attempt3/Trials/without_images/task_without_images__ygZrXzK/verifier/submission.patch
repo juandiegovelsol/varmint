@@ -1,0 +1,98 @@
+diff --git a/Content.Client/Doors/DoorSystem.cs b/Content.Client/Doors/DoorSystem.cs
+index 1e76d22..7043cc5 100644
+--- a/Content.Client/Doors/DoorSystem.cs
++++ b/Content.Client/Doors/DoorSystem.cs
+@@ -154,7 +154,7 @@ private void UpdateAppearanceForDoorState(Entity<DoorComponent> entity, SpriteCo
+                 if (_animationSystem.HasRunningAnimation(entity, DoorComponent.OpenKey))
+                 {
+                     _animationSystem.Stop(entity, null, DoorComponent.OpenKey);
+-                    _animationSystem.Play(entity, (Animation)entity.Comp.OpeningAnimation, DoorComponent.CloseKey);
++                    _animationSystem.Play(entity, (Animation)entity.Comp.ClosingAnimation, DoorComponent.CloseKey);
+                 }
+ 
+                 foreach (var (layer, layerState) in entity.Comp.ClosedSpriteStates)
+diff --git a/Content.Client/Doors/FirelockSystem.cs b/Content.Client/Doors/FirelockSystem.cs
+index 911d40b..787c2a9 100644
+--- a/Content.Client/Doors/FirelockSystem.cs
++++ b/Content.Client/Doors/FirelockSystem.cs
+@@ -26,7 +26,7 @@ protected override void OnComponentStartup(Entity<FirelockComponent> ent, ref Co
+         if (_sprite.LayerMapTryGet(ent.Owner, DoorVisualLayers.BaseUnlit, out _, logMissing: false))
+         {
+             door.ClosedSpriteStates.Add((DoorVisualLayers.BaseUnlit, ent.Comp.WarningLightSpriteState));
+-            door.OpenSpriteStates.Add((DoorVisualLayers.BaseUnlit, ent.Comp.WarningLightSpriteState));
++            door.OpenSpriteStates.Add((DoorVisualLayers.BaseUnlit, null));
+ 
+             ((Animation)door.OpeningAnimation).AnimationTracks.Add(
+                 new AnimationTrackSpriteFlick
+diff --git a/Content.Server/Atmos/EntitySystems/AirtightSystem.cs b/Content.Server/Atmos/EntitySystems/AirtightSystem.cs
+index ade2b40..37e98fd 100644
+--- a/Content.Server/Atmos/EntitySystems/AirtightSystem.cs
++++ b/Content.Server/Atmos/EntitySystems/AirtightSystem.cs
+@@ -105,8 +105,7 @@ public void SetAirblocked(Entity<AirtightComponent> airtight, bool airblocked, T
+ 
+             var pos = airtight.Comp.LastPosition;
+             airtight.Comp.AirBlocked = airblocked;
+-            if (!airblocked)
+-                UpdatePosition(airtight, xform);
++            UpdatePosition(airtight, xform);
+             var airtightEv = new AirtightChanged(airtight, airtight, true, pos);
+             RaiseLocalEvent(airtight, ref airtightEv, true);
+         }
+diff --git a/Content.Server/Doors/Systems/FirelockSystem.cs b/Content.Server/Doors/Systems/FirelockSystem.cs
+index 16ebaca..78d8722 100644
+--- a/Content.Server/Doors/Systems/FirelockSystem.cs
++++ b/Content.Server/Doors/Systems/FirelockSystem.cs
+@@ -70,6 +70,9 @@ public override void Update(float frameTime)
+                     && door.State != DoorState.Welded
+                     && door.State != DoorState.Denying)
+                 {
++                    // Warning lights only show while the door is shut.
++                    if (_pointLightQuery.TryComp(uid, out var openLight) && openLight.Enabled)
++                        _pointLight.SetEnabled(uid, false, openLight);
+                     continue;
+                 }
+ 
+diff --git a/Content.Shared/Doors/Systems/SharedFirelockSystem.cs b/Content.Shared/Doors/Systems/SharedFirelockSystem.cs
+index 49532ee..d91ecb2 100644
+--- a/Content.Shared/Doors/Systems/SharedFirelockSystem.cs
++++ b/Content.Shared/Doors/Systems/SharedFirelockSystem.cs
+@@ -28,6 +28,7 @@ public override void Initialize()
+ 
+         // Visuals
+         SubscribeLocalEvent<FirelockComponent, MapInitEvent>(UpdateVisuals);
++        SubscribeLocalEvent<FirelockComponent, DoorStateChangedEvent>(UpdateVisuals);
+         SubscribeLocalEvent<FirelockComponent, ComponentStartup>(OnComponentStartup);
+ 
+         SubscribeLocalEvent<FirelockComponent, ExaminedEvent>(OnExamined);
+@@ -125,7 +126,10 @@ protected virtual void OnComponentStartup(Entity<FirelockComponent> ent, ref Com
+             && door.State != DoorState.Welded
+             && door.State != DoorState.Denying)
+         {
++            // The warning lights only show while the door is shut.
+             _appearance.SetData(uid, DoorVisuals.ClosedLights, false, appearance);
++            _appearance.SetData(uid, FirelockVisuals.PressureWarning, false, appearance);
++            _appearance.SetData(uid, FirelockVisuals.TemperatureWarning, false, appearance);
+             return;
+         }
+ 
+diff --git a/Resources/Prototypes/Entities/Structures/Doors/Firelocks/firelock.yml b/Resources/Prototypes/Entities/Structures/Doors/Firelocks/firelock.yml
+index cfb8c14..ccfe4ea 100644
+--- a/Resources/Prototypes/Entities/Structures/Doors/Firelocks/firelock.yml
++++ b/Resources/Prototypes/Entities/Structures/Doors/Firelocks/firelock.yml
+@@ -203,6 +203,16 @@
+       - state: panel_open
+         sprite: Structures/Doors/Airlocks/Effects/airlock-effects.rsi
+         map: ["enum.WiresVisualLayers.MaintenancePanel"]
++      - state: pressure_unlit
++        visible: false
++        shader: unshaded
++        sprite: Structures/Doors/Airlocks/Effects/airlock-effects-firelock.rsi
++        map: ["enum.FirelockVisualLayersPressure.Base"]
++      - state: temperature_unlit
++        visible: false
++        shader: unshaded
++        sprite: Structures/Doors/Airlocks/Effects/airlock-effects-firelock.rsi
++        map: ["enum.FirelockVisualLayersTemperature.Base"]
+     - type: Occluder
+       enabled: false
+     - type: Fixtures

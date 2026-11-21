@@ -1,0 +1,87 @@
+diff --git a/src/client/tile.cpp b/src/client/tile.cpp
+index b13d39056..84281f84d 100644
+--- a/src/client/tile.cpp
++++ b/src/client/tile.cpp
+@@ -21,11 +21,16 @@ void TileLayer::applyMaterialOptions(video::SMaterial &material, int layer) cons
+ 	/*
+ 	 * The second layer is for overlays, but uses the same vertex positions
+ 	 * as the first, which easily leads to Z-fighting.
+-	 * To fix this we can offset the polygons in the direction of the camera.
++	 * To fix this we offset the polygons of the *first layer* away from the camera.
+ 	 * This only affects the depth buffer and leads to no visual gaps in geometry.
++	 *
++	 * However, doing so intrudes the "Z space" of the overlay of the next node
++	 * so that leads to inconsistent Z-sorting again. :(
++	 * HACK: For lack of a better approach we restrict this to cases where
++	 * an overlay is actually present.
+ 	 */
+-	if (layer == 1) {
+-		material.PolygonOffsetSlopeScale = -1;
+-		material.PolygonOffsetDepthBias = -1;
++	if (need_polygon_offset) {
++		material.PolygonOffsetSlopeScale = 1;
++		material.PolygonOffsetDepthBias = 1;
+ 	}
+ }
+diff --git a/src/client/tile.h b/src/client/tile.h
+index 8336d1d85..420f0757f 100644
+--- a/src/client/tile.h
++++ b/src/client/tile.h
+@@ -73,7 +73,8 @@ struct TileLayer
+ 			material_flags == other.material_flags &&
+ 			has_color == other.has_color &&
+ 			color == other.color &&
+-			scale == other.scale;
++			scale == other.scale &&
++			need_polygon_offset == other.need_polygon_offset;
+ 	}
+ 
+ 	/*!
+@@ -92,6 +93,12 @@ struct TileLayer
+ 	 */
+ 	void applyMaterialOptions(video::SMaterial &material, int layer) const;
+ 
++	/// @return is this layer uninitalized?
++	bool empty() const
++	{
++		return !shader_id && !texture_id;
++	}
++
+ 	/// @return is this layer semi-transparent?
+ 	bool isTransparent() const
+ 	{
+@@ -125,6 +132,12 @@ struct TileLayer
+ 		MATERIAL_FLAG_TILEABLE_HORIZONTAL|
+ 		MATERIAL_FLAG_TILEABLE_VERTICAL;
+ 
++	u8 scale = 1;
++
++	/// does this tile need to have a positive polygon offset set?
++	/// @see TileLayer::applyMaterialOptions
++	bool need_polygon_offset = false;
++
+ 	/// @note not owned by this struct
+ 	std::vector<FrameSpec> *frames = nullptr;
+ 
+@@ -136,8 +149,6 @@ struct TileLayer
+ 
+ 	//! If true, the tile has its own color.
+ 	bool has_color = false;
+-
+-	u8 scale = 1;
+ };
+ 
+ enum class TileRotation: u8 {
+diff --git a/src/nodedef.cpp b/src/nodedef.cpp
+index ffc5503b1..2fc3264bc 100644
+--- a/src/nodedef.cpp
++++ b/src/nodedef.cpp
+@@ -919,6 +919,8 @@ void ContentFeatures::updateTextures(ITextureSource *tsrc, IShaderSource *shdsrc
+ 			fillTileAttribs(tsrc, &tiles[j].layers[1], tiles[j], tdef_overlay[j],
+ 					color, overlay_material, overlay_shader,
+ 					tdef[j].backface_culling, tsettings);
++
++		tiles[j].layers[0].need_polygon_offset = !tiles[j].layers[1].empty();
+ 	}
+ 
+ 	MaterialType special_material = material_type;

@@ -1,0 +1,161 @@
+diff --git a/core/src/com/agateau/pixelwheels/bonus/Mine.java b/core/src/com/agateau/pixelwheels/bonus/Mine.java
+index 913f76d..e89e224 100644
+--- a/core/src/com/agateau/pixelwheels/bonus/Mine.java
++++ b/core/src/com/agateau/pixelwheels/bonus/Mine.java
+@@ -165,7 +165,12 @@ public class Mine extends GameObjectAdapter
+ 
+         Material material = mGameWorld.getTrack().getMaterialAt(getPosition());
+         boolean hasBeenDropped = mJoint == null;
+-        boolean drawShadow = !hasBeenDropped || !material.isWater();
++        boolean drawShadow =
++                hasBeenDropped ? !material.isWater() : !mOwner.getVehicle().isFalling();
++        ZLevel bodyZLevel =
++                !hasBeenDropped && mOwner.getVehicle().isFlying()
++                        ? ZLevel.FLYING
++                        : ZLevel.VEHICLES;
+         if (hasBeenDropped) {
+             switch (material) {
+                 case WATER:
+@@ -188,7 +193,7 @@ public class Mine extends GameObjectAdapter
+             TextureRegion region = mAssets.mine.getKeyFrame(mTime);
+             mBodyRegionDrawer.drawShadow(mBody, region);
+         }
+-        if (zLevel == ZLevel.VEHICLES) {
++        if (zLevel == bodyZLevel) {
+             TextureRegion region = mAssets.mine.getKeyFrame(mTime);
+             mBodyRegionDrawer.draw(mBody, region);
+         }
+diff --git a/core/src/com/agateau/pixelwheels/bonus/Missile.java b/core/src/com/agateau/pixelwheels/bonus/Missile.java
+index e6a94a5..d74d452 100644
+--- a/core/src/com/agateau/pixelwheels/bonus/Missile.java
++++ b/core/src/com/agateau/pixelwheels/bonus/Missile.java
+@@ -137,7 +137,7 @@ public class Missile extends GameObjectAdapter
+         Vehicle vehicle = shooter.getVehicle();
+         object.mShooter = shooter;
+         object.mBodyDef.position.set(vehicle.getX(), vehicle.getY());
+-        object.mBodyDef.angle = AgcMathUtils.normalizeAnglePiRad(vehicle.getAngle());
++        object.mBodyDef.angle = AgcMathUtils.normalizeAnglePiRad(vehicle.getBody().getAngle());
+ 
+         object.mBody = gameWorld.getBox2DWorld().createBody(object.mBodyDef);
+         object.mBody.createFixture(object.mShape, WAITING_DENSITY);
+@@ -258,14 +258,32 @@ public class Missile extends GameObjectAdapter
+ 
+     @Override
+     public void draw(Batch batch, ZLevel zLevel, Rectangle viewBounds) {
++        if (mStatus == Status.WAITING) {
++            // The missile is carried by its shooter: draw it like the vehicle carrying it, so
++            // that it is hidden with it, gets the same color effects and casts its shadow on the
++            // ground
++            Vehicle vehicle = mShooter.getVehicle();
++            if (zLevel == ZLevel.GROUND) {
++                if (!vehicle.isFalling()) {
++                    drawShadow(batch);
++                }
++                return;
++            }
++            ZLevel wantedZLevel = vehicle.isFlying() ? ZLevel.FLYING : ZLevel.VEHICLES;
++            if (zLevel == wantedZLevel) {
++                batch.setColor(mShooter.getVehicleRenderer().getBatchColor());
++                drawMissile(batch);
++                batch.setColor(Color.WHITE);
++                drawTarget(batch);
++            }
++            return;
++        }
+         if (zLevel == ZLevel.FLYING) {
+             // Draw the shadow at Z_FLYING so that the shadow is drawn *over* its vehicle
+             drawShadow(batch);
+             drawMissile(batch);
+             drawTarget(batch);
+-            if (mStatus != Status.WAITING) {
+-                drawReactorFire(batch);
+-            }
++            drawReactorFire(batch);
+         }
+     }
+ 
+@@ -293,7 +311,7 @@ public class Missile extends GameObjectAdapter
+         float w = Constants.UNIT_FOR_PIXEL * region.getRegionWidth();
+         float h = Constants.UNIT_FOR_PIXEL * region.getRegionHeight();
+         float refH = Constants.UNIT_FOR_PIXEL * -WIDTH / 2;
+-        mReactorPos.set(0, refH).rotateRad(angle).add(center);
++        mReactorPos.set(refH, 0).rotateRad(angle).add(center);
+         float x = mReactorPos.x;
+         float y = mReactorPos.y;
+         batch.draw(
+diff --git a/core/src/com/agateau/pixelwheels/racer/VehicleRenderer.java b/core/src/com/agateau/pixelwheels/racer/VehicleRenderer.java
+index 7e8553c..8c325cb 100644
+--- a/core/src/com/agateau/pixelwheels/racer/VehicleRenderer.java
++++ b/core/src/com/agateau/pixelwheels/racer/VehicleRenderer.java
+@@ -155,7 +155,7 @@ public class VehicleRenderer implements CellFrameBufferUser {
+                 float old = batch.getPackedColor();
+                 batch.setColor(0, 0, 0, BodyRegionDrawer.SHADOW_ALPHA);
+                 mCellFrameBufferManager.drawCell(
+-                        batch, mVehicle.getX() - offset, mVehicle.getY() + offset, mCellId);
++                        batch, mVehicle.getX() + offset, mVehicle.getY() - offset, mCellId);
+                 batch.setPackedColor(old);
+             }
+             return;
+@@ -171,14 +171,14 @@ public class VehicleRenderer implements CellFrameBufferUser {
+             batch.setColor(getBatchColor());
+         }
+         mCellFrameBufferManager.drawScaledCell(batch, mVehicle.getPosition(), mCellId, scale);
+-        if (mVehicle.isFalling()) {
+-            batch.setColor(Color.WHITE);
+-        }
+ 
+         // Turbo (not in cell because it makes no sense for it to have a shadow)
+         if (mVehicle.getTurboTime() >= 0) {
+             drawTurbo(batch);
+         }
++        if (mVehicle.isFalling()) {
++            batch.setColor(Color.WHITE);
++        }
+     }
+ 
+     private void drawTurbo(Batch batch) {
+diff --git a/core/src/com/agateau/pixelwheels/racescreen/RacerCameraUpdater.java b/core/src/com/agateau/pixelwheels/racescreen/RacerCameraUpdater.java
+index f16e0f3..4faa7b0 100644
+--- a/core/src/com/agateau/pixelwheels/racescreen/RacerCameraUpdater.java
++++ b/core/src/com/agateau/pixelwheels/racescreen/RacerCameraUpdater.java
+@@ -56,15 +56,14 @@ class RacerCameraUpdater extends CameraUpdater {
+ 
+         // Compute pos
+         float advance = Math.min(viewportWidth, viewportHeight) * Constants.CAMERA_ADVANCE_PERCENT;
+-        sDelta.set(0, advance)
+-                .rotate(90 - mRacer.getCameraAngle())
++        sDelta.set(advance, 0)
++                .rotate(mRacer.getCameraAngle())
+                 .add(vehicle.getPosition())
+                 .sub(mCameraInfo.position);
+-        mNextCameraInfo.position.set(mCameraInfo.position).add(sDelta);
+         if (!immediate) {
+             sDelta.limit(MAX_CAMERA_DELTA * delta);
+         }
+-        limitZoomChange(delta);
++        mNextCameraInfo.position.set(mCameraInfo.position).add(sDelta);
+         applyChanges();
+     }
+ }
+diff --git a/core/src/com/agateau/pixelwheels/utils/BodyRegionDrawer.java b/core/src/com/agateau/pixelwheels/utils/BodyRegionDrawer.java
+index 6bbb42c..b4ef712 100644
+--- a/core/src/com/agateau/pixelwheels/utils/BodyRegionDrawer.java
++++ b/core/src/com/agateau/pixelwheels/utils/BodyRegionDrawer.java
+@@ -90,7 +90,7 @@ public class BodyRegionDrawer {
+ 
+     public void drawShadow(Body body, TextureRegion region) {
+         Vector2 center = body.getPosition();
+-        float angle = body.getAngle();
++        float angle = body.getAngle() * MathUtils.radDeg;
+         float offset = computeShadowOffset(mZ, mScale);
+         float x = center.x + offset;
+         float y = center.y - offset;
+@@ -102,7 +102,7 @@ public class BodyRegionDrawer {
+                 region, x - w / 2, y - h / 2, // pos
+                 w / 2, h / 2, // origin
+                 w, h, // size
+-                1, 1, // scale
++                mScale, mScale, // scale
+                 angle);
+         mBatch.setPackedColor(old);
+     }

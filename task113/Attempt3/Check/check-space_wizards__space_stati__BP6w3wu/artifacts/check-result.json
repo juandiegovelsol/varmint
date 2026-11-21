@@ -1,0 +1,46 @@
+{
+  "behavior_in_task_description": {
+    "outcome": "pass",
+    "explanation": "instruction.md states the exact expected behaviors that the hidden tests check: a shut door must keep each side apart and show a warning naming the correct hazard kind (tested by FirelockSealTest and WarningLights_SpaceBreachIsAPressureWarning/GlassFirelockShowsWarning), the warning must only show while shut (WarningLights_HideWhenDoorLeavesClosed), and a door must shut smoothly as one continuous motion (ClosingAnimation_PlaysThroughBeforeTheDoorShuts). The task intentionally withholds which lane/hazard/firelock type is wrong and relies on the attached video for that detail, which is itself called out and justified in task.toml's difficulty_explanation as the intended design (visual_essentiality=required) rather than an omission of testable behavior."
+  },
+  "behavior_in_tests": {
+    "outcome": "pass",
+    "explanation": "Every rule stated in the Expected section of instruction.md maps to at least one f2p test: sealing -> FirelockSealTest (both cases), warning identifies hazard -> WarningLights_SpaceBreachIsAPressureWarning/GlassFirelockShowsWarning, warning only while shut -> WarningLights_HideWhenDoorLeavesClosed, smooth single-motion closing -> ClosingAnimation_PlaysThroughBeforeTheDoorShuts. p2p tests (AirlockTest.OpenCloseDestroyTest, WarningLights_MatchTheHazardKind, WarningLights_StayOnWhileWelded) guard against regressions in unrelated/adjacent behavior the instruction says should keep working ('Everything else should keep looking and behaving as it does now')."
+  },
+  "informative_test_structure": {
+    "outcome": "pass",
+    "explanation": "The hidden tests (test.patch) are organized into clearly named files per concern (FirelockWarningLightTest, FirelockSealTest, FirelockAnimationTest, plus a shared FirelockLane test helper), each test has a [Description] attribute explaining exactly what is being verified, uses Assert.Multiple with explicit failure messages, and the helper class is documented with XML doc comments explaining the test-bench layout. test.sh is also heavily commented explaining the restore/apply/run/report pipeline."
+  },
+  "anti_cheating_measures": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile applies the injected bugs during image build and deletes the patch files in the same RUN layer so they never persist in the image; it also squashes git history and drops the real base_commit/fix_commit from reachable history, tagging only 'harbor_base'. Only the single recording.mp4 asset is copied into the image (not the full assets/ folder), explicitly to keep ASSET_MANIFEST.json's spoiler-containing description out of the agent's reach. tests/ and solution/ are never copied into the environment image. The agent runs with network_mode='no-network', preventing it from fetching the real upstream fix commit (763186...) from GitHub even if it knew the hash. The verifier resets any paths test.patch touches to harbor_base before applying hidden tests, so a candidate cannot tamper with test files."
+  },
+  "structured_data_schema": {
+    "outcome": "not_applicable",
+    "explanation": "This is a source-code bug-fix task operating on an existing C#/YAML/JSON game repository; the agent is not asked to emit any new structured output file (JSON/CSV/API) for the tests to parse, so no schema documentation is required."
+  },
+  "pinned_dependencies": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile pins the base image to 'mcr.microsoft.com/dotnet/sdk:10.0' and checks out the repository at an exact commit hash (58dae1ce...) plus its submodule pin, so all NuGet package versions come from that commit's own lock/csproj files rather than floating. apt packages are installed unpinned, which is acceptable per the stated guidance."
+  },
+  "typos": {
+    "outcome": "pass",
+    "explanation": "No typos found in instruction.md, task.toml, Dockerfile, test.sh, verifier.py, or the bug/fix patches. File paths referenced across instruction.md, Dockerfile (COPY destination), and task.toml (files_edited) are mutually consistent, and the recording.mp4 sha256 in evidence_bundle.json/ASSET_MANIFEST.json matches the actual file hash."
+  },
+  "tests_or_solution_in_image": {
+    "outcome": "pass",
+    "explanation": "environment/Dockerfile only COPYs bugs/ (deleted after use) and assets/recording.mp4 into the image; it never references or copies the tests/ or solution/ directories, which live outside environment/ entirely."
+  },
+  "test_deps_in_image": {
+    "outcome": "pass",
+    "explanation": "The Dockerfile's dotnet restore/build targets Content.IntegrationTests.csproj, which is part of the upstream repository's own existing test-infrastructure project (GameTest harness, PoolManager, etc., referenced by the hidden tests) and is needed just to have a working, offline-buildable baseline; the hidden f2p/p2p test source files themselves are added later by tests/test.patch at verification time, not baked into the image."
+  },
+  "hardcoded_solution": {
+    "outcome": "pass",
+    "explanation": "solution/solve.sh applies solution/fix.patch, which contains the actual multi-file source fix (client visualizer logic, server atmos re-validation, a shared component default, YAML prototype corrections, and sprite frame-timing JSON) mirroring the real upstream PR's fix -- it is a genuine code change across 5 files, not a script that just prints/echoes a final answer or copies pre-built binaries."
+  },
+  "file_reference_mentioned": {
+    "outcome": "not_applicable",
+    "explanation": "The task requires the agent to fix bugs in existing repository source files (identified by the verifier's own f2p/p2p tests at known paths within the repo), not to produce a new named output file that instruction.md would need to call out."
+  }
+}

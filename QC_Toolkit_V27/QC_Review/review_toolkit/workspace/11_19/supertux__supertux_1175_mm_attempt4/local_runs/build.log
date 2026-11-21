@@ -1,0 +1,71 @@
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 4.84kB 0.0s done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/ubuntu:22.04
+#2 DONE 0.9s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B done
+#3 DONE 0.0s
+
+#4 [ 1/14] FROM docker.io/library/ubuntu:22.04@sha256:9abcaffc92a5279fff3a6a41635c0800ea33e528425fb389658806476e7defde
+#4 resolve docker.io/library/ubuntu:22.04@sha256:9abcaffc92a5279fff3a6a41635c0800ea33e528425fb389658806476e7defde 0.0s done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 3.56MB 0.2s done
+#5 DONE 0.2s
+
+#6 [ 8/14] COPY bugs/ /tmp/bugs/
+#6 CACHED
+
+#7 [ 2/14] RUN sed -i 's#http://#https://#g' /etc/apt/sources.list.d/*.sources /etc/apt/sources.list 2>/dev/null; true
+#7 CACHED
+
+#8 [ 5/14] RUN apt-get install -y --no-install-recommends       cmake build-essential automake pkg-config git       libogg-dev libvorbis-dev libopenal-dev libboost-all-dev       libsdl2-dev libsdl2-image-dev libfreetype6-dev libharfbuzz-dev       libfribidi-dev libglib2.0-dev libraqm-dev libglew-dev       libcurl4-openssl-dev libglm-dev zlib1g-dev       xvfb x11-utils mesa-utils libgl1-mesa-dri libglx-mesa0 libosmesa6       ffmpeg       fonts-dejavu-core fonts-noto-cjk fonts-noto-color-emoji       python3     && rm -rf /var/lib/apt/lists/*
+#8 CACHED
+
+#9 [ 6/14] WORKDIR /app
+#9 CACHED
+
+#10 [ 7/14] RUN git clone https://github.com/SuperTux/supertux.git /app     && git -C /app -c advice.detachedHead=false checkout 8f0c06e3a0cf20294f960cc48a6bfbaf85bd0ca6     && git -C /app -c submodule."discord-sdk".update=none          -c submodule."external/sexp-cpp".update=none          submodule update --init --recursive --depth 1          external/tinygettext external/squirrel external/physfs external/SDL_ttf     && git -C /app submodule update --init --depth 1 external/sexp-cpp     && find /app -mindepth 2 -name .git -prune -exec rm -rf {} +
+#10 CACHED
+
+#11 [ 9/14] RUN set -e; for p in /tmp/bugs/*.patch; do git -C /app apply "$p" || patch -p1 -d /app < "$p"; done;     rm -rf /tmp/bugs
+#11 CACHED
+
+#12 [13/14] RUN mkdir -p /logs /app/.harbor_assets
+#12 CACHED
+
+#13 [ 3/14] RUN sed -i 's#archive.ubuntu.com#mirrors.edge.kernel.org#g; s#security.ubuntu.com#mirrors.edge.kernel.org#g' /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null; true
+#13 CACHED
+
+#14 [10/14] RUN keep=$(find /app \( -name .ninja_log -o -name CMakeCache.txt -o -name CACHEDIR.TAG -o -name meson-private \) -not -path '*/.git/*' -printf '%h\n' 2>/dev/null | sort -u | grep -vx /app || true); prune=''; for d in $keep; do prune="$prune -path $d -prune -o"; done; eval "find /app -mindepth 1 $prune -exec touch -h -t 202301010000 {} +"
+#14 CACHED
+
+#15 [11/14] RUN cmake -S /app -B /app/build       -DCMAKE_BUILD_TYPE=RelWithDebInfo       -DENABLE_DISCORD=OFF       -DBUILD_TESTS=OFF       -DWARNINGS=OFF -DWERROR=OFF     && cmake --build /app/build -j"$(nproc)" --target supertux2
+#15 CACHED
+
+#16 [12/14] RUN rm -rf /app/.git  && git -C /app init -q  && git -C /app -c user.email=h@l -c user.name=h add -A  && git -C /app -c user.email=h@l -c user.name=h commit -q -m base  && git -C /app tag harbor_base
+#16 CACHED
+
+#17 [ 4/14] RUN echo 'Acquire::https::Verify-Peer "false";' > /etc/apt/apt.conf.d/99insecure-bootstrap     && apt-get update     && apt-get install -y --no-install-recommends ca-certificates     && rm -f /etc/apt/apt.conf.d/99insecure-bootstrap     && apt-get update
+#17 CACHED
+
+#18 [14/14] COPY assets/recording.mp4 /app/.harbor_assets/
+#18 CACHED
+
+#19 exporting to image
+#19 exporting layers done
+#19 exporting manifest sha256:060dd298ca2d56970541a480a967d112312c740b9ec2a1ef621f1ff8f62dbd2e done
+#19 exporting config sha256:73bb1555881161c03a5cce8d88bd0bf6ea9f09cb7129572cc09c5f06edeca450 done
+#19 exporting attestation manifest sha256:70cddf3de36a97bc7d9d05dad4d777f80c091e2d96d0a8de742678419cff0965
+#19 exporting attestation manifest sha256:70cddf3de36a97bc7d9d05dad4d777f80c091e2d96d0a8de742678419cff0965 0.0s done
+#19 exporting manifest list sha256:396ebe40a03161e57b715d53b8b0640bf7ef89b6a8f2756c133b822d52df2230 0.0s done
+#19 naming to docker.io/library/qc_st1175:task done
+#19 unpacking to docker.io/library/qc_st1175:task 0.0s done
+#19 DONE 0.2s
+exit=0

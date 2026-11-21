@@ -1,0 +1,856 @@
+diff --git a/src/unittest/CMakeLists.txt b/src/unittest/CMakeLists.txt
+index 8a635c8..a8cb144 100644
+--- a/src/unittest/CMakeLists.txt
++++ b/src/unittest/CMakeLists.txt
+@@ -58,4 +58,6 @@ set (UNITTEST_CLIENT_SRCS
+ 	${CMAKE_CURRENT_SOURCE_DIR}/test_irr_gltf_mesh_loader.cpp
+ 	${CMAKE_CURRENT_SOURCE_DIR}/test_mesh_compare.cpp
+ 	${CMAKE_CURRENT_SOURCE_DIR}/test_keycode.cpp
++	${CMAKE_CURRENT_SOURCE_DIR}/test_tile_polygon_offset.cpp
++	${CMAKE_CURRENT_SOURCE_DIR}/test_node_drawing.cpp
+ 	PARENT_SCOPE)
+diff --git a/src/unittest/test.cpp b/src/unittest/test.cpp
+index 8f0eaf8..4dd2640 100644
+--- a/src/unittest/test.cpp
++++ b/src/unittest/test.cpp
+@@ -15,6 +15,7 @@
+ #include "porting.h"
+ #include "debug.h"
+ 
++#include <cstdlib>
+ #include <iostream>
+ 
+ #include "catch.h"
+@@ -274,7 +275,20 @@ bool run_tests(const std::string &module_name)
+ 	if (!testmod) {
+ 		rawstream << "Did not find module, searching Catch tests: " << module_name << std::endl;
+ 		Catch::Session session;
+-		session.configData().testsOrTags.push_back(module_name);
++		auto &config = session.configData();
++		config.testsOrTags.push_back(module_name);
++		config.skipBenchmarks = true;
++		config.allowZeroTests = true;
++		// Harvest helper: allow writing a JUnit XML report when selecting
++		// Catch tests by name/tag via --test-module, so test runs can be
++		// consumed by external tooling without a GUI/console.
++		if (const char *junit_out = std::getenv("LUANTI_JUNIT_OUT")) {
++			config.reporterSpecifications.emplace_back(
++					"junit",
++					Catch::Optional<std::string>(std::string(junit_out)),
++					Catch::Optional<Catch::ColourMode>(),
++					std::map<std::string, std::string>{});
++		}
+ 		auto catch_test_failures = session.run();
+ 		return catch_test_failures == 0;
+ 	}
+diff --git a/src/unittest/test_node_drawing.cpp b/src/unittest/test_node_drawing.cpp
+new file mode 100755
+index 0000000..12d3f81
+--- /dev/null
++++ b/src/unittest/test_node_drawing.cpp
+@@ -0,0 +1,601 @@
++// Luanti
++// SPDX-License-Identifier: LGPL-2.1-or-later
++
++// Behavioural checks on how nodes are drawn and outlined: the mesh the map
++// block mesh generator produces for small arrangements of nodes, and the
++// boxes a node reports for drawing, selection and collision. Every check
++// looks at the generated geometry (positions, texture coordinates, which
++// texture a face uses) or at the returned boxes, never at how the code gets
++// there.
++
++#include <catch.h>
++
++#include <algorithm>
++#include <cmath>
++#include <vector>
++
++#include "dummygamedef.h"
++#include "itemdef.h"
++#include "nodedef.h"
++#include "mapnode.h"
++#include "light.h"
++#include "client/content_mapblock.h"
++#include "client/mapblock_mesh.h"
++#include "client/meshgen/collector.h"
++
++namespace {
++
++constexpr float H = BS / 2.0f;
++constexpr float EPS = 1e-3f;
++
++class DrawGameDef : public DummyGameDef {
++public:
++	NodeDefManager *nodes() { return const_cast<NodeDefManager *>(m_nodedef); }
++
++	content_t add(const ContentFeatures &f)
++	{
++		ItemDefinition itemdef;
++		itemdef.type = ITEM_NODE;
++		itemdef.name = f.name;
++		itemdef.description = f.name;
++		static_cast<IWritableItemDefManager *>(m_itemdef)->registerItem(itemdef);
++		return nodes()->set(f.name, f);
++	}
++
++	void finalize() { nodes()->resolveCrossrefs(); }
++};
++
++void setLightTable()
++{
++	u8 table[LIGHT_SUN + 1] = {
++		0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
++		0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF,
++	};
++	memcpy(const_cast<u8 *>(light_decode_table), table, sizeof(table));
++}
++
++bool near(v3f a, v3f b, float tol)
++{
++	return std::fabs(a.X - b.X) <= tol && std::fabs(a.Y - b.Y) <= tol && std::fabs(a.Z - b.Z) <= tol;
++}
++
++bool near(v2f a, v2f b, float tol)
++{
++	return std::fabs(a.X - b.X) <= tol && std::fabs(a.Y - b.Y) <= tol;
++}
++
++struct Tri {
++	u32 texture;
++	video::S3DVertex v[3];
++};
++
++struct Placed {
++	v3s16 pos;
++	MapNode node;
++};
++
++// Generates the mesh of a side x side x side block holding `placed`
++// (everything else, including a one node border, is air) and returns every
++// triangle together with the texture it is drawn with.
++std::vector<Tri> render(DrawGameDef &gd, const std::vector<Placed> &placed, s16 side)
++{
++	setLightTable();
++	MeshMakeData data{gd.ndef(), (u16)side, MeshGrid{1}};
++	data.m_generate_minimap = false;
++	data.m_smooth_lighting = false;
++	data.m_enable_water_reflections = false;
++	data.m_blockpos = {0, 0, 0};
++	for (s16 x = -1; x <= side; x++)
++	for (s16 y = -1; y <= side; y++)
++	for (s16 z = -1; z <= side; z++)
++		data.m_vmanip.setNode({x, y, z}, MapNode(CONTENT_AIR, LIGHT_SUN, 0));
++	for (const Placed &p : placed)
++		data.m_vmanip.setNode(p.pos, p.node);
++
++	MeshCollector col{{}};
++	MapblockMeshGenerator mg{&data, &col};
++	mg.generate();
++
++	std::vector<Tri> out;
++	for (auto &layer : col.prebuffers)
++	for (auto &buf : layer) {
++		for (size_t i = 0; i + 2 < buf.indices.size(); i += 3) {
++			Tri t;
++			t.texture = buf.layer.texture_id;
++			for (int k = 0; k < 3; k++)
++				t.v[k] = buf.vertices.at(buf.indices[i + k]);
++			out.push_back(t);
++		}
++	}
++	return out;
++}
++
++v3f triNormal(const Tri &t)
++{
++	v3f n = (t.v[1].Pos - t.v[0].Pos).crossProduct(t.v[2].Pos - t.v[0].Pos);
++	n.normalize();
++	return n;
++}
++
++// Is `p` on a triangle drawn with `texture` that faces along `normal`
++// (either winding)?
++bool covered(const std::vector<Tri> &tris, u32 texture, v3f p, v3f normal)
++{
++	for (const Tri &t : tris) {
++		if (t.texture != texture)
++			continue;
++		v3f n = triNormal(t);
++		if (std::fabs(std::fabs(n.dotProduct(normal)) - 1.0f) > 1e-3f)
++			continue;
++		if (std::fabs((p - t.v[0].Pos).dotProduct(n)) > 1e-2f)
++			continue;
++		v3f a = t.v[0].Pos, b = t.v[1].Pos, c = t.v[2].Pos;
++		v3f v0 = c - a, v1 = b - a, v2 = p - a;
++		f32 d00 = v0.dotProduct(v0), d01 = v0.dotProduct(v1), d02 = v0.dotProduct(v2);
++		f32 d11 = v1.dotProduct(v1), d12 = v1.dotProduct(v2);
++		f32 den = d00 * d11 - d01 * d01;
++		if (std::fabs(den) < 1e-9f)
++			continue;
++		f32 u = (d11 * d02 - d01 * d12) / den;
++		f32 w = (d00 * d12 - d01 * d02) / den;
++		if (u >= -1e-4f && w >= -1e-4f && u + w <= 1.0f + 1e-4f)
++			return true;
++	}
++	return false;
++}
++
++// Does the mesh have a face drawn with `texture` facing `outward` that lies in
++// the plane through `on_plane`?
++bool hasFace(const std::vector<Tri> &tris, u32 texture, v3f on_plane, v3f outward)
++{
++	for (const Tri &t : tris) {
++		if (t.texture != texture)
++			continue;
++		if (!near(t.v[0].Normal, outward, 1e-3f))
++			continue;
++		if (std::fabs((t.v[0].Pos - on_plane).dotProduct(outward)) < EPS)
++			return true;
++	}
++	return false;
++}
++
++bool sameBox(const aabb3f &a, const aabb3f &b)
++{
++	return near(a.MinEdge, b.MinEdge, EPS) && near(a.MaxEdge, b.MaxEdge, EPS);
++}
++
++bool sameBoxes(std::vector<aabb3f> actual, std::vector<aabb3f> expected)
++{
++	if (actual.size() != expected.size())
++		return false;
++	for (const aabb3f &e : expected) {
++		auto it = std::find_if(actual.begin(), actual.end(),
++				[&](const aabb3f &a) { return sameBox(a, e); });
++		if (it == actual.end())
++			return false;
++		actual.erase(it);
++	}
++	return true;
++}
++
++// ---------------------------------------------------------------- node defs
++
++ContentFeatures stoneDef()
++{
++	ContentFeatures f;
++	f.name = "test:stone";
++	f.drawtype = NDT_NORMAL;
++	f.solidness = 2;
++	for (TileSpec &tile : f.tiles)
++		tile.layers[0].texture_id = 42;
++	return f;
++}
++
++ContentFeatures glassDef()
++{
++	// Framed glass: the first tile is the frame, the others the glass itself.
++	ContentFeatures f;
++	f.name = "test:glass";
++	f.drawtype = NDT_GLASSLIKE_FRAMED;
++	f.param_type = CPT_LIGHT;
++	f.solidness = 0;
++	f.visual_solidness = 1;
++	f.light_propagates = true;
++	f.tiles[0].layers[0].texture_id = 70;
++	for (int i = 1; i < 6; i++)
++		f.tiles[i].layers[0].texture_id = 71;
++	return f;
++}
++
++ContentFeatures stairDef()
++{
++	ContentFeatures f;
++	f.name = "test:stair";
++	f.drawtype = NDT_NODEBOX;
++	f.param_type = CPT_LIGHT;
++	f.param_type_2 = CPT2_FACEDIR;
++	f.solidness = 0;
++	f.node_box.type = NODEBOX_FIXED;
++	f.node_box.fixed = {
++		aabb3f(-H, -H, -H, H, 0, H),
++		aabb3f(-H, 0, 0, H, H, H),
++	};
++	f.selection_box = f.node_box;
++	for (TileSpec &tile : f.tiles)
++		tile.layers[0].texture_id = 60;
++	return f;
++}
++
++ContentFeatures slabDef()
++{
++	ContentFeatures f;
++	f.name = "test:slab";
++	f.drawtype = NDT_NODEBOX;
++	f.param_type = CPT_LIGHT;
++	f.solidness = 0;
++	f.node_box.type = NODEBOX_FIXED;
++	f.node_box.fixed = {aabb3f(-H, -H, -H, H, 0, H)};
++	for (TileSpec &tile : f.tiles)
++		tile.layers[0].texture_id = 95;
++	return f;
++}
++
++ContentFeatures railDef()
++{
++	ContentFeatures f;
++	f.name = "test:rail";
++	f.drawtype = NDT_RAILLIKE;
++	f.param_type = CPT_LIGHT;
++	f.solidness = 0;
++	f.light_propagates = true;
++	f.groups["connect_to_raillike"] = 1;
++	// straight, curved, junction, crossing
++	for (int i = 0; i < 4; i++)
++		f.tiles[i].layers[0].texture_id = 80 + i;
++	for (int i = 4; i < 6; i++)
++		f.tiles[i].layers[0].texture_id = 83;
++	return f;
++}
++
++ContentFeatures fenceDef()
++{
++	ContentFeatures f;
++	f.name = "test:fence";
++	f.drawtype = NDT_FENCELIKE;
++	f.param_type = CPT_LIGHT;
++	f.solidness = 0;
++	f.light_propagates = true;
++	for (TileSpec &tile : f.tiles)
++		tile.layers[0].texture_id = 90;
++	return f;
++}
++
++ContentFeatures signDef()
++{
++	ContentFeatures f;
++	f.name = "test:sign";
++	f.drawtype = NDT_SIGNLIKE;
++	f.param_type = CPT_LIGHT;
++	f.param_type_2 = CPT2_WALLMOUNTED;
++	f.solidness = 0;
++	f.walkable = false;
++	f.selection_box.reset();
++	f.selection_box.type = NODEBOX_WALLMOUNTED;
++	for (TileSpec &tile : f.tiles)
++		tile.layers[0].texture_id = 50;
++	return f;
++}
++
++// ---------------------------------------------------------------- framed glass
++
++constexpr float FRAME_IN = 0.876f * (BS / 2.0f);
++constexpr float FRAME_MID = (FRAME_IN + H) / 2.0f;
++
++// Checks a straight row of three panes: along X when `along_x`, along Z otherwise.
++void checkGlassRow(bool along_x)
++{
++	DrawGameDef gd;
++	content_t glass = gd.add(glassDef());
++	gd.finalize();
++
++	std::vector<Placed> placed;
++	for (s16 i = 0; i < 3; i++)
++		placed.push_back({along_x ? v3s16(i, 0, 0) : v3s16(0, 0, i), MapNode(glass)});
++	auto tris = render(gd, placed, 3);
++
++	// u runs along the row, w across it; both faces of the row are checked.
++	auto at = [&](float u, float w) {
++		return along_x ? v3f(u, 0, w) : v3f(w, 0, u);
++	};
++	v3f across = along_x ? v3f(0, 0, 1) : v3f(1, 0, 0);
++	for (float side : {1.0f, -1.0f}) {
++		v3f normal = across * side;
++		// no frame where two panes of the row meet
++		CHECK_FALSE(covered(tris, 70, at(FRAME_MID, H * side), normal));
++		CHECK_FALSE(covered(tris, 70, at(BS - FRAME_MID, H * side), normal));
++		CHECK_FALSE(covered(tris, 70, at(BS + FRAME_MID, H * side), normal));
++		CHECK_FALSE(covered(tris, 70, at(2 * BS - FRAME_MID, H * side), normal));
++		// a frame at both outer ends of the row
++		CHECK(covered(tris, 70, at(-FRAME_MID, H * side), normal));
++		CHECK(covered(tris, 70, at(2 * BS + FRAME_MID, H * side), normal));
++	}
++}
++
++} // namespace
++
++TEST_CASE("Framed glass in a row along X is framed only around the outside of the row",
++		"[node_drawing]")
++{
++	checkGlassRow(true);
++}
++
++TEST_CASE("Framed glass in a row along Z is framed only around the outside of the row",
++		"[node_drawing]")
++{
++	checkGlassRow(false);
++}
++
++// ---------------------------------------------------------------- turned node boxes
++
++namespace {
++
++// The stair's upper half sits on the side its facedir points to:
++// 0 = +Z, 1 = +X, 2 = -Z, 3 = -X.
++std::vector<aabb3f> expectedStair(int facedir)
++{
++	aabb3f lower(-H, -H, -H, H, 0, H);
++	switch (facedir) {
++	case 0: return {lower, aabb3f(-H, 0, 0, H, H, H)};
++	case 1: return {lower, aabb3f(0, 0, -H, H, H, H)};
++	case 2: return {lower, aabb3f(-H, 0, -H, H, H, 0)};
++	default: return {lower, aabb3f(-H, 0, -H, 0, H, H)};
++	}
++}
++
++void checkStair(int facedir)
++{
++	DrawGameDef gd;
++	content_t stair = gd.add(stairDef());
++	gd.finalize();
++	const NodeDefManager *ndef = gd.ndef();
++	MapNode n(stair, 0, facedir);
++
++	std::vector<aabb3f> boxes;
++	n.getNodeBoxes(ndef, &boxes);
++	CHECK(sameBoxes(boxes, expectedStair(facedir)));
++	boxes.clear();
++	n.getSelectionBoxes(ndef, &boxes);
++	CHECK(sameBoxes(boxes, expectedStair(facedir)));
++	boxes.clear();
++	n.getCollisionBoxes(ndef, &boxes);
++	CHECK(sameBoxes(boxes, expectedStair(facedir)));
++
++	// the drawn mesh shows the upper half on the same side: its top face
++	// covers the middle of that quarter of the node, at full height
++	auto tris = render(gd, {{v3s16(0, 0, 0), n}}, 1);
++	aabb3f upper = expectedStair(facedir)[1];
++	v3f centre = (upper.MinEdge + upper.MaxEdge) * 0.5f;
++	CHECK(covered(tris, 60, v3f(centre.X, H, centre.Z), v3f(0, 1, 0)));
++}
++
++} // namespace
++
++TEST_CASE("A node box turned a quarter turn ends up facing the side its facedir names",
++		"[node_drawing]")
++{
++	checkStair(1);
++	checkStair(3);
++}
++
++TEST_CASE("A node box with facedir 0 or 2 faces +Z or -Z",
++		"[node_drawing]")
++{
++	checkStair(0);
++	checkStair(2);
++}
++
++// ---------------------------------------------------------------- node box sides
++
++namespace {
++
++// A slab next to one full block: the slab's side facing away from the block
++// is open air and must be drawn.
++void checkSlabBeside(v3s16 block_dir)
++{
++	DrawGameDef gd;
++	content_t stone = gd.add(stoneDef());
++	content_t slab = gd.add(slabDef());
++	gd.finalize();
++
++	v3s16 slab_pos(1, 0, 1);
++	auto tris = render(gd, {
++		{slab_pos, MapNode(slab)},
++		{slab_pos + block_dir, MapNode(stone)},
++	}, 3);
++
++	v3f origin = intToFloat(slab_pos, BS);
++	v3f away = v3f::from(-block_dir);
++	CHECK(hasFace(tris, 95, origin + away * H, away));
++	// and its top is drawn as usual
++	CHECK(hasFace(tris, 95, origin, v3f(0, 1, 0)));
++}
++
++} // namespace
++
++TEST_CASE("A node box next to a full block on its X sides still draws the open side opposite it",
++		"[node_drawing]")
++{
++	checkSlabBeside(v3s16(-1, 0, 0));
++	checkSlabBeside(v3s16(1, 0, 0));
++}
++
++TEST_CASE("A node box next to a full block on its Z sides still draws the open side opposite it",
++		"[node_drawing]")
++{
++	checkSlabBeside(v3s16(0, 0, -1));
++	checkSlabBeside(v3s16(0, 0, 1));
++}
++
++// ---------------------------------------------------------------- rails
++
++namespace {
++
++// A rail at the middle of a 3x3 patch with rails on the two given sides is a
++// curve joining those sides. The curved picture, as drawn for a curve joining
++// +X and -Z, is turned by `angle` degrees about the vertical axis for the
++// other three curves; every corner of the drawn quad must carry the texture
++// coordinate that turn gives it.
++void checkCurve(v3s16 a, v3s16 b, int angle)
++{
++	DrawGameDef gd;
++	content_t rail = gd.add(railDef());
++	gd.finalize();
++
++	v3s16 mid(1, 0, 1);
++	auto tris = render(gd, {
++		{mid, MapNode(rail)}, {mid + a, MapNode(rail)}, {mid + b, MapNode(rail)},
++	}, 3);
++
++	const float y = -H + BS / 64.0f;
++	struct Corner { v3f pos; v2f uv; };
++	Corner expected[4] = {
++		{v3f(-H, y,  H), v2f(0, 0)},
++		{v3f( H, y,  H), v2f(1, 0)},
++		{v3f( H, y, -H), v2f(1, 1)},
++		{v3f(-H, y, -H), v2f(0, 1)},
++	};
++	v3f origin = intToFloat(mid, BS);
++	for (Corner &c : expected) {
++		c.pos.rotateXZBy(angle);
++		c.pos += origin;
++	}
++
++	int seen = 0;
++	for (const Tri &t : tris) {
++		if (t.texture != 81) // the curved tile
++			continue;
++		for (const video::S3DVertex &v : t.v) {
++			bool ok = false;
++			for (const Corner &c : expected)
++				if (near(v.Pos, c.pos, 1e-2f) && near(v.TCoords, c.uv, 1e-3f))
++					ok = true;
++			CHECK(ok);
++			seen++;
++		}
++	}
++	CHECK(seen >= 6);
++}
++
++} // namespace
++
++TEST_CASE("Rail curves joining +X with +Z and -X with -Z are drawn joining those sides",
++		"[node_drawing]")
++{
++	checkCurve(v3s16(1, 0, 0), v3s16(0, 0, 1), 90);
++	checkCurve(v3s16(-1, 0, 0), v3s16(0, 0, -1), 270);
++}
++
++TEST_CASE("Rail curves joining +X with -Z and -X with +Z are drawn joining those sides",
++		"[node_drawing]")
++{
++	checkCurve(v3s16(1, 0, 0), v3s16(0, 0, -1), 0);
++	checkCurve(v3s16(-1, 0, 0), v3s16(0, 0, 1), 180);
++}
++
++// ---------------------------------------------------------------- fences
++
++namespace {
++
++constexpr float POST_RAD = BS / 8.0f;
++constexpr float BAR_RAD = BS / 16.0f;
++
++// Two posts one node apart (along X or Z): the bars join the two posts, at
++// both bar heights, and nothing sticks out past either post.
++void checkFencePair(bool along_x)
++{
++	DrawGameDef gd;
++	content_t fence = gd.add(fenceDef());
++	gd.finalize();
++
++	v3s16 second = along_x ? v3s16(1, 0, 0) : v3s16(0, 0, 1);
++	auto tris = render(gd, {{v3s16(0, 0, 0), MapNode(fence)}, {second, MapNode(fence)}}, 2);
++
++	int bar_vertices = 0;
++	for (const Tri &t : tris)
++	for (const video::S3DVertex &v : t.v) {
++		if (std::fabs(v.Pos.Y) > H - 0.1f)
++			continue; // posts run the full height; bars do not
++		bar_vertices++;
++		float along = along_x ? v.Pos.X : v.Pos.Z;
++		float across = along_x ? v.Pos.Z : v.Pos.X;
++		CHECK(along >= -POST_RAD - EPS);
++		CHECK(along <= BS + POST_RAD + EPS);
++		CHECK(std::fabs(across) <= POST_RAD + EPS);
++	}
++	CHECK(bar_vertices > 0);
++
++	for (float bar_y : {BS / 4.0f, -BS / 4.0f}) {
++		v3f mid = along_x ? v3f(H, bar_y + BAR_RAD, 0) : v3f(0, bar_y + BAR_RAD, H);
++		CHECK(covered(tris, 90, mid, v3f(0, 1, 0)));
++	}
++}
++
++} // namespace
++
++TEST_CASE("Two fence posts one node apart along Z are joined by bars only between them",
++		"[node_drawing]")
++{
++	checkFencePair(false);
++}
++
++TEST_CASE("Two fence posts one node apart along X are joined by bars only between them",
++		"[node_drawing]")
++{
++	checkFencePair(true);
++}
++
++// ---------------------------------------------------------------- wall-mounted outlines
++
++namespace {
++
++// The selection box (outline) of a wall-mounted node is a thin plate lying
++// against the surface it is mounted on.
++void checkWallmounted(u8 param2)
++{
++	DrawGameDef gd;
++	content_t sign = gd.add(signDef());
++	gd.finalize();
++
++	const float t = H - BS / 16.0f;
++	aabb3f expected{v3f()};
++	switch (param2) {
++	case 0: expected = aabb3f(-H, t, -H, H, H, H); break;    // ceiling
++	case 1: expected = aabb3f(-H, -H, -H, H, -t, H); break;  // floor
++	case 2: expected = aabb3f(t, -H, -H, H, H, H); break;    // wall at +X
++	case 3: expected = aabb3f(-H, -H, -H, -t, H, H); break;  // wall at -X
++	case 4: expected = aabb3f(-H, -H, t, H, H, H); break;    // wall at +Z
++	default: expected = aabb3f(-H, -H, -H, H, H, -t); break; // wall at -Z
++	}
++
++	std::vector<aabb3f> boxes;
++	MapNode(sign, 0, param2).getSelectionBoxes(gd.ndef(), &boxes);
++	CHECK(sameBoxes(boxes, {expected}));
++}
++
++} // namespace
++
++TEST_CASE("The outline of a node mounted on a +Z or -Z wall lies against that wall",
++		"[node_drawing]")
++{
++	checkWallmounted(4);
++	checkWallmounted(5);
++}
++
++TEST_CASE("The outline of a node mounted on an X wall or a floor or a ceiling lies against it",
++		"[node_drawing]")
++{
++	checkWallmounted(0);
++	checkWallmounted(1);
++	checkWallmounted(2);
++	checkWallmounted(3);
++}
+diff --git a/src/unittest/test_tile_polygon_offset.cpp b/src/unittest/test_tile_polygon_offset.cpp
+new file mode 100644
+index 0000000..4cf188e
+--- /dev/null
++++ b/src/unittest/test_tile_polygon_offset.cpp
+@@ -0,0 +1,198 @@
++// Luanti
++// SPDX-License-Identifier: LGPL-2.1-or-later
++
++// Depth offsets of a node's tile layers. A node with an overlay draws the
++// overlay over its base layer at the same position. Nothing may be drawn
++// closer to the camera than its geometry really is, and nothing may be pushed
++// behind the nodes around it: either one hides whatever is drawn right on top
++// of a node (the selection outline, things lying on the node such as a track),
++// and the overlay must never end up behind its own base layer.
++//
++// The checks look only at the SMaterial that a tile layer sets up, either for
++// a bare TileLayer or for the tiles a node definition produces.
++
++#include "client/tile.h"
++#include "client/texturesource.h"
++#include "client/shader.h"
++#include "nodedef.h"
++
++#include <catch.h>
++
++#include <map>
++#include <string>
++
++TEST_CASE("TileLayer::applyMaterialOptions configures basic material state "
++		"from material_flags",
++		"[tile_polygon_offset]")
++{
++	TileLayer layer;
++	layer.material_flags = MATERIAL_FLAG_BACKFACE_CULLING;
++
++	video::SMaterial material;
++	layer.applyMaterialOptions(material, 0);
++
++	CHECK(material.BackfaceCulling == true);
++	CHECK(material.TextureLayers[0].TextureWrapU == video::ETC_CLAMP_TO_EDGE);
++	CHECK(material.TextureLayers[0].TextureWrapV == video::ETC_CLAMP_TO_EDGE);
++	CHECK(material.TextureLayers[1].TextureWrapU == video::ETC_CLAMP_TO_EDGE);
++	CHECK(material.TextureLayers[1].TextureWrapV == video::ETC_CLAMP_TO_EDGE);
++}
++
++TEST_CASE("TileLayer::applyMaterialOptions leaves a tile's own layer-0 "
++		"polygon offset untouched",
++		"[tile_polygon_offset]")
++{
++	TileLayer layer;
++	video::SMaterial material;
++
++	layer.applyMaterialOptions(material, /*layer=*/0);
++
++	CHECK(material.PolygonOffsetSlopeScale == 0.0f);
++	CHECK(material.PolygonOffsetDepthBias == 0.0f);
++}
++
++TEST_CASE("TileLayer::applyMaterialOptions does not push an overlay slot "
++		"toward the camera just because it is layer 1",
++		"[tile_polygon_offset]")
++{
++	// An untouched layer-1 slot, as a node without overlays has it.
++	TileLayer layer;
++	video::SMaterial material;
++
++	layer.applyMaterialOptions(material, /*layer=*/1);
++
++	CHECK(material.PolygonOffsetSlopeScale == 0.0f);
++	CHECK(material.PolygonOffsetDepthBias == 0.0f);
++}
++
++namespace {
++
++class StubTextureSource : public ITextureSource {
++	std::map<std::string, u32> m_ids;
++
++	u32 idOf(const std::string &name)
++	{
++		auto it = m_ids.find(name);
++		if (it != m_ids.end())
++			return it->second;
++		u32 id = m_ids.size() + 1;
++		m_ids[name] = id;
++		return id;
++	}
++
++public:
++	u32 getTextureId(const std::string &name) override { return idOf(name); }
++	std::string getTextureName(u32 id) override
++	{
++		for (auto &it : m_ids)
++			if (it.second == id)
++				return it.first;
++		return "";
++	}
++	video::ITexture *getTexture(u32 id) override { return nullptr; }
++	video::ITexture *getTexture(const std::string &name, u32 *id = nullptr) override
++	{
++		if (id)
++			*id = idOf(name);
++		return nullptr;
++	}
++	video::ITexture *getTextureForMesh(const std::string &name, u32 *id = nullptr) override
++	{
++		if (id)
++			*id = idOf(name);
++		return nullptr;
++	}
++	Palette *getPalette(const std::string &name) override { return nullptr; }
++	bool isKnownSourceImage(const std::string &name) override { return true; }
++	video::SColor getTextureAverageColor(const std::string &name) override
++	{
++		return video::SColor(255, 255, 255, 255);
++	}
++};
++
++class StubShaderSource : public IShaderSource {
++public:
++	ShaderInfo getShaderInfo(u32 id) override { return ShaderInfo(); }
++	u32 getShader(const std::string &name, MaterialType material_type,
++			NodeDrawType drawtype = NDT_NORMAL) override
++	{
++		return 1 + (u32)material_type;
++	}
++	u32 getShaderRaw(const std::string &name, bool blendAlpha = false) override
++	{
++		return 100;
++	}
++};
++
++TextureSettings plainSettings()
++{
++	TextureSettings ts;
++	ts.leaves_style = LEAVES_FANCY;
++	ts.world_aligned_mode = WORLDALIGN_DISABLE;
++	ts.autoscale_mode = AUTOSCALE_DISABLE;
++	ts.node_texture_size = 16;
++	ts.translucent_liquids = true;
++	ts.connected_glass = false;
++	ts.enable_minimap = false;
++	return ts;
++}
++
++// A plain cube node, with an overlay on every side when `with_overlay`.
++ContentFeatures cubeNode(bool with_overlay)
++{
++	ContentFeatures f;
++	f.name = with_overlay ? "test:dirt_with_grass" : "test:dirt";
++	f.drawtype = NDT_NORMAL;
++	for (TileDef &td : f.tiledef)
++		td.name = "test_dirt.png";
++	if (with_overlay) {
++		for (TileDef &td : f.tiledef_overlay)
++			td.name = "test_grass_overlay.png";
++	}
++	StubTextureSource tsrc;
++	StubShaderSource ssrc;
++	f.updateTextures(&tsrc, &ssrc, nullptr, nullptr, plainSettings());
++	return f;
++}
++
++} // namespace
++
++TEST_CASE("A node's overlay layer is not drawn closer to the camera than its geometry",
++		"[tile_polygon_offset]")
++{
++	ContentFeatures f = cubeNode(true);
++	for (int j = 0; j < 6; j++) {
++		REQUIRE(f.tiles[j].layers[1].texture_id != 0);
++		video::SMaterial overlay;
++		f.tiles[j].layers[1].applyMaterialOptions(overlay, 1);
++		CHECK(overlay.PolygonOffsetSlopeScale >= 0.0f);
++		CHECK(overlay.PolygonOffsetDepthBias >= 0.0f);
++	}
++}
++
++TEST_CASE("A node's overlay layer is never pushed behind its own base layer",
++		"[tile_polygon_offset]")
++{
++	ContentFeatures f = cubeNode(true);
++	for (int j = 0; j < 6; j++) {
++		video::SMaterial base, overlay;
++		f.tiles[j].layers[0].applyMaterialOptions(base, 0);
++		f.tiles[j].layers[1].applyMaterialOptions(overlay, 1);
++		CHECK(overlay.PolygonOffsetDepthBias <= base.PolygonOffsetDepthBias);
++		CHECK(overlay.PolygonOffsetSlopeScale <= base.PolygonOffsetSlopeScale);
++	}
++}
++
++TEST_CASE("A node without an overlay gets no depth offset on any of its tile layers",
++		"[tile_polygon_offset]")
++{
++	ContentFeatures f = cubeNode(false);
++	for (int j = 0; j < 6; j++) {
++		for (int layer = 0; layer < 2; layer++) {
++			video::SMaterial m;
++			f.tiles[j].layers[layer].applyMaterialOptions(m, layer);
++			CHECK(m.PolygonOffsetSlopeScale == 0.0f);
++			CHECK(m.PolygonOffsetDepthBias == 0.0f);
++		}
++	}
++}

@@ -1,0 +1,303 @@
+"""Write QC_Report/findings.json for task110 Attempt6 (SS14 firelocks, V27 review).
+Usage: python -I make_findings.py <QC_Report dir> <local_runs dir>"""
+import json
+import pathlib
+import sys
+import xml.etree.ElementTree as ET
+
+out_dir, lr = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+
+
+def junit(mode):
+    p = lr / mode / "verifier" / "junit.xml"
+    if not p.exists():
+        return None
+    res = {}
+    for tc in ET.parse(p).getroot().iter("testcase"):
+        k = f"{tc.get('classname', '')} {tc.get('name', '')}".strip()
+        res[k] = "fail" if tc.find("failure") is not None else "skip" if tc.find("skipped") is not None else "pass"
+    return res
+
+
+def reward(mode):
+    p = lr / mode / "verifier" / "reward.txt"
+    return p.read_text().strip() if p.exists() else "missing"
+
+
+summ = {l.split()[0]: l for l in (lr / "summary.txt").read_text().splitlines() if l.strip()}
+secs = {m: (summ.get(m, "").split("secs=")[1].split()[0] if "secs=" in summ.get(m, "") else "?") for m in ("nop", "oracle", "oracle_rerun")}
+J = {m: junit(m) for m in ("nop", "oracle", "oracle_rerun")}
+R = {m: reward(m) for m in ("nop", "oracle", "oracle_rerun")}
+cfg = json.loads((lr.parents[0] / "cfg.json").read_text(encoding="utf-8"))
+F2P, P2P = cfg["f2p"], cfg["p2p"]
+
+
+def counts(m):
+    j = J[m] or {}
+    return sum(j.get(t) == "pass" for t in F2P), sum(j.get(t) == "pass" for t in P2P)
+
+
+of, op = counts("oracle")
+nf, np_ = counts("nop")
+rf, rp = counts("oracle_rerun")
+same = J["oracle"] is not None and J["oracle"] == J["oracle_rerun"]
+gate_ok = R["oracle"] == "1.0" and R["nop"] == "0.0" and R["oracle_rerun"] == "1.0" and same
+loc = (f"Local runs (image `ss14_110:fast`, see the note under Gate): oracle **{R['oracle']}** ({of}/6 f2p, {op}/3 p2p, {secs['oracle']} s), "
+       f"nop **{R['nop']}** ({nf}/6 f2p, {np_}/3 p2p, {secs['nop']} s), oracle re-run **{R['oracle_rerun']}** ({rf}/6, {rp}/3, {secs['oracle_rerun']} s); "
+       f"re-run outcome per test identical to the first oracle run: {'yes' if same else 'NO'}.")
+
+N = "Nothing found."
+dims = []
+
+
+def dim(score, category, evidence, wrong, fix):
+    dims.append(dict(name="", score=score, category=category, evidence=evidence, wrong=wrong, fix=fix))
+
+
+# 1
+dim(5, "",
+    "All 11 fixed files exist and are non-empty: `task.toml` 6,497 B, `instruction.md` 986 B, `evidence_bundle.json` 1,530 B, "
+    "`environment/Dockerfile` 4,828 B, `environment/assets/ASSET_MANIFEST.json` 825 B, `solution/fix.patch` 8,983 B, `solution/solve.sh` 349 B, "
+    "`tests/config.json` 1,434 B, `tests/test.patch` 23,130 B, `tests/test.sh` 14,533 B, `tests/verifier.py` 6,691 B. The three JSON files and "
+    "`task.toml` parse; `py_compile tests/verifier.py` succeeds. `recording.mp4` decodes (ffprobe: h264 1280x720, 30 fps, 480 frames, 16.000 s; "
+    "all frames extracted). Extra files: `README.md` and `environment/bugs/bug_01..05.patch` (injected bugs); neither is a fail.",
+    N, "None.")
+# 2
+dim(5, "",
+    "`task110/Attempt6/` has `Tasks/` and `Trials/` as root-level siblings. `Trials/without_images/` holds 3 runs (2DqgEZx, cpVoMUs, nsexL5i) and "
+    "`Trials/with_images/` holds 4 (CiwVjdn, Mj6pkUk, trcuD9Y, z4FueN3): 7 trials, the Option A count. Reviewed as unpacked folders (no .tar.gz here).",
+    "Nothing found. Only the folder layout could be checked, not the final archives.",
+    "Tar from inside the attempt folder so each archive unpacks to its own top folder (`tar -czf Tasks.tar.gz Tasks`, `tar -czf Trials.tar.gz Trials`). "
+    "Keep `Check/`, `Analyze/`, `Oracle/` and `Nop/` out of `Trials.tar.gz`.")
+# 3
+dim(5, "",
+    "Without the video, the text names only abstract \"elements\" between a small room and its far side, three aspects (warning lights, how the "
+    "element moves, what ends up on each side of a shut element) and four general rules. It names no door type, hazard, file, value or mechanism. "
+    "The space-lane warning (temperature threshold lowered to 230 K) cannot be found from the text: nothing says a vacuum is involved, and 230 K "
+    "looks like a plausible tuning value.\n"
+    "The trials agree (corroboration only): all 3 no-image runs found `/app/.harbor_assets` empty (2DqgEZx and cpVoMUs: ffmpeg \"No such file\"; "
+    "nsexL5i: `ls -la .harbor_assets` empty, final message \"I couldn't watch the video\"). They fixed 4–5 of 6 defects by reading the firelock code, "
+    "and **each missed `WarningLights_SpaceBreachIsAPressureWarning`** (nsexL5i also missed the seal-after-closing test).\n"
+    "Image path resolves to `/app/.harbor_assets/recording.mp4` (Dockerfile `COPY assets/recording.mp4 /app/.harbor_assets/`). Leak scan of "
+    "`instruction.md` (177 words): no repo, URL, issue/PR, file, \"firelock\", \"door\", gas, plasma, space, threshold or animation word. "
+    "`ASSET_MANIFEST.json` (which names firelocks) is not copied into the image.",
+    "Nothing found. Note for the record: only one test separates the no-image runs from a pass (the space-lane warning), so the 0/3 rests on a single defect.",
+    "None required. Keep any future wording change away from vacuum/space/cold, since that one defect is the only thing holding 0/3.")
+# 4
+dim(3, "[Non-Fail - Image-carried Symptom]",
+    "Prompt table:\n\n"
+    "| element (as written) | defect: text or image? | expected: text or image? | correct counterpart in the clip? | clue left to image | described correctly? |\n"
+    "|---|---|---|---|---|---|\n"
+    "| \"their warning lights\" + \"its warning says what kind of danger it is holding back\" | image: lane 1 (space) shows the orange temperature brackets over the cyan pressure ones | text rule | yes: lane 2 (dense gas) shows the cyan pressure warning | which lane, which colour | yes |\n"
+    "| \"their warning lights\" (glass door) | image: lane 4 holds fire with no brackets | text rule (\"its warning says…\") | yes: lane 3, same fire, shows brackets | which door type | yes |\n"
+    "| \"The warning only shows while the element is shut\" | image: lane 2 keeps its cyan brackets after it opens (from about 10 s to the end) | text rule | no: the clip's only opened door is the buggy one; the expected result is stated in text | which door, when | yes |\n"
+    "| \"the way the element moves\" + \"A element shuts controlled\" | image: lane 6 panel snaps shut in one frame, then its green running lights play over a shut panel (about 1.9–2.3 s, frame-stepping) | text rule (ungrammatical) | yes: lane 2 opening slides normally | which door, the frame timing | yes, but garbled |\n"
+    "| \"what ends up on each side of a shut element\" | image: lane 6 shut, gas released above it at about 4–5 s is in the lower room by 6 s | text rule (\"keeps what is on one side from reaching the other\") | yes: lanes 1–4 hold their hazards | which door, the trigger (shut during play) | yes |\n"
+    "| \"Every element of a element stays aligned with the rest of it\" + the side rule | image: lane 5 gas fills the edge door's own tile past its strip | text rule (garbled) | partly: other lanes keep the hazard on the far side | which edge | yes, but garbled |\n\n"
+    "Why 3, not 5: the text names the aspects and gives a rule for each, but never states a defect (no \"wrong colour\", \"missing\", \"stays on\", "
+    "\"snaps\"). Every exact defect is left to the clip, with the rest of the bench as the comparison. That is the V27 middle option. "
+    "Why not 2: the floor holds. The text names the warning lights by type and gives context for the other aspects (a shut thing between a room "
+    "and a hazard, with a warning). The with-image runs show the clip plus text was readable: all 4 named the elements as firelocks, and each "
+    "read 5–7 of the 6 defects.\n\n"
+    "Every with-image trajectory:\n\n"
+    "| run | reward | what it read (final message) | could it tell bug from intended? |\n"
+    "|---|---|---|---|\n"
+    "| CiwVjdn | 1.0 | all 6: space lane \"showed the fire warning on top of the pressure warning\"; warning \"stayed lit after the firelock opened\"; glass \"no warning while holding back lava\"; \"snapped shut instantly\"; \"vacuum leaked past a firelock\"; edge \"sealed the wrong side\" (filed under \"Alignment\") | yes, all 6 |\n"
+    "| Mj6pkUk | 1.0 | all 6 (\"Space showed the fire warning (column 1)\", \"Warning stayed lit after opening (column 2)\", \"Firelock snapped shut (column 6)\" …) | yes, all 6 |\n"
+    "| trcuD9Y | 0.0 | 5: stays on, glass, snaps shut, gas past shut door, edge side. **\"I left one thing alone on purpose. The firelock facing space (1st column) shows the orange temperature warning on top of the cyan pressure one. That's correct\"** | **no, for the space-lane warning**: took the bug for intended behaviour |\n"
+    "| z4FueN3 | 0.0 | all 6 symptoms read correctly (\"snapped shut instead of closing smoothly … the closing lights played afterwards\"), but blamed the snap on a `SyncSprite` component and never fixed the frame delays | yes; wrong cause, not a misread symptom |\n\n"
+    "Flags (not graded on their own, but they put this score at risk):\n"
+    "1. **Ungrammatical, garbled lines from a \"door\"→\"element\" replace**: \"A element shuts controlled.\" and \"Every element of a element stays "
+    "aligned with the rest of it.\" A reviewer may read \"element\" as a placeholder rather than an element named by type (the dimension 4 floor). "
+    "The agents parsed them as meant (CiwVjdn filed the edge seal under \"Alignment\"; Mj6pkUk tied \"out of line\" to the animation).\n"
+    "2. 1 of 4 with-image runs (trcuD9Y) took the space-lane warning for intended behaviour. Under V25/V27 \"agents couldn't tell\" can fail this "
+    "dimension on its own; the rubric example is 3/4. At 1/4, with the other 3 runs flagging it, I score it as a flag rather than a fail.",
+    "Image-carried symptoms (non-fail). The two rules above are ungrammatical, and one with-image run took the space-lane warning for intended behaviour.",
+    "Keep the abstraction, fix only the grammar: \"An element shuts in a controlled way.\" (or \"shuts smoothly\", as task.toml already says) and "
+    "\"Every part of an element stays aligned with the rest of it.\" Sync `difficulty_explanation` (it still quotes \"a door shuts smoothly\"). "
+    "Changing `instruction.md` changes the task checksum, so every trial must be re-run; do it only if you are re-running anyway.")
+# 5
+dim(5, "",
+    "The text describes warnings that must follow the door's state (\"only shows while the element is shut\"), how the element moves while it "
+    "shuts, and what crosses it after it shuts: defects that show across state transitions over time. That fits `temporal_interaction` "
+    "(\"a defect that only appears across a sequence of interactions / state transitions\"). Nothing is misdescribed (no crash called a render bug).",
+    N, "None.")
+# 6
+dim(5, "",
+    "Naming table:\n\n"
+    "| file | role field | what the frames show (how verified) | what name/role/instruction claim | true? | agents confused? |\n"
+    "|---|---|---|---|---|---|\n"
+    "| `recording.mp4` | `bug_video` | the buggy state: compared frame by frame with `task110/recording_kit/reference_fixed_state.mp4` (same 16 s scene with fixes applied; evidence 01–03). The local image carries exactly the 5 Attempt6 bug patches (each reverses cleanly; files then hash to the upstream base blobs) and the same `recording.mp4` sha256 | neutral name; role says bug; description: six one-tile lanes (lattice/space, dense purple gas, fire, fire behind glass, gas behind an edge firelock, plain air with the last door open); last door shuts and gas is released above it; second door opened later | yes: every item in the description is in the frames, in that order | no: all 4 runs treated it as the buggy clip |\n\n"
+    "Each f2p against the asset:\n\n"
+    "| f2p | precondition (test.patch) | clip (bug) | fixed reference | trial cross-check (verifier in the task image) |\n"
+    "|---|---|---|---|---|\n"
+    "| HideWhenDoorLeavesClosed | standard firelock vs 1000 K air, opened then re-closed | lane 2 keeps its cyan brackets once open (from about 10 s) | no brackets once open | passes in all 7 trials, every one of which hid the lights from shared code (`SharedFirelockSystem` on door-state change) instead of the golden's client handler |\n"
+    "| GlassFirelockShowsWarning | `FirelockGlass` vs over-pressure | lane 4 holds fire, no brackets | brackets shown | passes in all 7 trials |\n"
+    "| SpaceBreachIsAPressureWarning | standard firelock, upper cell open to space | lane 1: orange temperature over cyan pressure | cyan only | fails in exactly the 4 trials that kept 230 K (trcuD9Y + 3 no-image); passes in the 3 that restored 330 K |\n"
+    "| ClosedFirelock_HoldsBackGasReleasedAfterClosing | door shut during play, then gas released | lane 6 shut, released gas reaches the lower room | gas held | fails only in nsexL5i, the one run that left `AirtightSystem` alone |\n"
+    "| EdgeFirelock_SealsAlongItsDoorEdge | `FirelockEdge`, gas beyond its panel edge | lane 5 gas fills the door's own tile past its strip | gas stops at the strip | passes in all 7 trials |\n"
+    "| ClosingAnimation_PlaysThroughBeforeTheDoorShuts | standard firelock, client sprite frames while closing | lane 6 snaps shut, lights run over a shut panel | panel slides in with its lights | fails only in z4FueN3, the one run that left the frame delays (3 of 15 frames shown) |\n\n"
+    "Steps 3–4 (cross-checks): the golden is the exact reverse of each injected bug, plus the upstream client fix for the lights. The 7 trials act "
+    "as natural partial fixes run by the real verifier in the task image: each missed defect failed exactly its own f2p and nothing else. "
+    "Fixing what the clip shows passes the f2p (CiwVjdn, Mj6pkUk, 6/6 with code different from the golden), and each f2p flips only with its own defect. "
+    "Step 7 (injected defects): all 5 injected bugs are visible in the clip, so a fix that skips one leaves a visible defect, not a valid alternative.",
+    "Nothing found. Non-graded note: the opened-door warning (lane 2) has no correct counterpart in the clip; its expected result comes from the text rule.",
+    "None.")
+# 7
+dim(5, "",
+    "`task_type = \"temporal_interaction\"` is one of the seven values. The evidence is a 16 s video whose defects unfold across state changes "
+    "(a door shutting, gas released after it shuts, a door opening while its lights stay on, a closing animation that needs frame-stepping). "
+    "The upstream issue (#36889, the warning stays on after opening) is itself a state-transition defect. Tags include `temporal_interaction` and `2d_video`.",
+    N, "None.")
+# 8
+dim(5, "",
+    "Asset references:\n\n| reference | path | sha256 | bytes |\n|---|---|---|---|\n"
+    "| file on disk | `environment/assets/recording.mp4` | `0274cf20…5eaa36b0` | 1,770,475 |\n"
+    "| `ASSET_MANIFEST.json` | `/app/.harbor_assets/recording.mp4` | same | same |\n"
+    "| `evidence_bundle.json` | `local_path` = `container_path` = `/app/.harbor_assets/recording.mp4` | same | same |\n"
+    "| `instruction.md` | `/app/.harbor_assets/recording.mp4` | — | — |\n"
+    "| image (Dockerfile `COPY assets/recording.mp4 /app/.harbor_assets/`) | baked file sha256 `0274cf20…` (checked in the local image) | same | — |\n\n"
+    "All four references point to the same asset.",
+    N, "None.")
+# 9
+dim(5, "",
+    "`git apply --check /solution/fix.patch` at `harbor_base` in the local image: OK (`test.patch` also checks OK). "
+    "`solve.sh` applies it with `git apply`; CB oracle stdout shows `captured submission.patch (8973 bytes, 5 files)`.",
+    N, "None.")
+# 10
+dim(5, "",
+    "`diff --git` paths = `files_edited` exactly (5): `Content.Client/Doors/FirelockSystem.cs`, `Content.Server/Atmos/EntitySystems/AirtightSystem.cs`, "
+    "`Content.Shared/Doors/Components/FirelockComponent.cs`, `Resources/Prototypes/Entities/Structures/Doors/Firelocks/firelock.yml`, "
+    "`Resources/Textures/Structures/Doors/Airlocks/Standard/firelock-base.rsi/meta.json`. No test, doc, lockfile or changeset path. The prototype YAML and "
+    "the RSI `meta.json` are game content the runtime loads, not tests or docs.",
+    N, "None.")
+# 11
+dim(5, "",
+    "Value-level assertions and their accepted sets:\n\n"
+    "| assertion | what it reads | real accepted set | alternatives tried / reasoned | test accepts? |\n"
+    "|---|---|---|---|---|\n"
+    "| warning layers hidden while Opening/Open/Closing | client layer `Visible` and a drawable RSI state | any mechanism that hides the layer on the client | golden: client `OnAppearanceChange`. **Trials CiwVjdn/Mj6pkUk: shared-side `DoorStateChangedEvent` sets the appearance booleans false (GenericVisualizer kept)** | yes (6/6) |\n"
+    "| glass shows the pressure warning | layer keyed `FirelockVisualLayersPressure.Base` shown and drawable | inherit the parent layers or add the two keyed layers | golden: drop the override. Trials: add the layers to the glass list | yes (both) |\n"
+    "| space breach = pressure only | temperature layer not shown | any threshold in about 291–706 K, or skipping vacuum in the check | trials: 330 K (restored); Mj6pkUk also changed the vacuum handling | yes |\n"
+    "| gas < 1 mol past a door shut in play | atmos moles after 4 s | any way that makes atmos re-read the tile on close | golden: always `UpdatePosition`; trials: same idea written differently | yes |\n"
+    "| edge seal on the panel edge | moles on the door tile and beyond | `airBlockedDirection: South` (moving the panel/fixture instead breaks \"keep looking as it does now\") | trials: `South` | yes |\n"
+    "| closing animation ≥ 6 distinct frames and last ≥ frameCount−3 within 60 ticks | client layer `AnimationFrame` per tick | any closing timing longer than a few ticks and under 2 s (uniform delays, mirroring `opening`, the glass sprite's values) | golden: upstream delays (0.49 s); trials: copied from `opening`/glass | yes |\n\n"
+    "Structure level: no exact counts beyond thresholds, no ordering, no float equality (gas uses a `< 1 mol` / `> 200 mol` margin), no log-text matching. "
+    "Failing trials were rejected for real defects: z4FueN3 \"showed only 3 of its 15 closing frames\" (delays untouched); trcuD9Y and the no-image runs kept 230 K.",
+    N, "None.")
+# 12
+dim(5, "",
+    "`task.toml` and `tests/config.json` f2p (6) and p2p (3) lists are identical, with no overlap. The JUnit report has 9 test cases. `test.sh` writes "
+    "`classname=\"\"` and the full dotted id in `name`, and `verifier.py` keys on `\"{classname} {name}\".strip()`, so each id matches exactly one test case "
+    "(CB oracle/nop and local runs).",
+    N, "None.")
+# 13
+dim(5, "",
+    f"p2p (`AirlockTest.OpenCloseDestroyTest`, `WarningLights_MatchTheHazardKind`, `WarningLights_StayOnWhileWelded`) pass on CB nop (agSDJuk) and CB oracle (78pQwy9), "
+    f"and on local nop ({np_}/3) and local oracle ({op}/3).",
+    N, "None.")
+# 14
+dim(5, "",
+    f"All 6 f2p fail on nop (CB agSDJuk 0/6, local {nf}/6 passing) and pass on oracle (CB 78pQwy9 6/6, local {of}/6).",
+    N, "None.")
+# 15
+dim(5, "",
+    "Tests run on the engine's fixed server/client ticks (`RunTicksSync`, `RunSeconds`) with `Fresh = true` pools and one NUnit worker. They use no wall clock, "
+    "network or fonts, and gas checks have wide margins. `test.sh` installs nothing: `dotnet build --no-restore`, offline; local runs used "
+    "`--network none` and completed. "
+    + ("The oracle re-run gave the same outcome for every test." if same else "**The oracle re-run did NOT match the first run.**")
+    + " Across the 7 Attempt6 trials and the CB oracle/nop, every test result follows the code change; no unexplained flip.",
+    N if same else "Oracle re-run mismatch.", "None." if same else "Investigate the flaky test.")
+# 16
+dim(2, "[Fail - Trial Threshold Not Met]",
+    "Attempt6 trial results:\n\n| run | mode | reward | f2p | p2p | failed |\n|---|---|---|---|---|---|\n"
+    "| 2DqgEZx | no-image | 0.0 | 5/6 | 3/3 | SpaceBreach |\n"
+    "| cpVoMUs | no-image | 0.0 | 5/6 | 3/3 | SpaceBreach |\n"
+    "| nsexL5i | no-image | 0.0 | 4/6 | 3/3 | SpaceBreach, ClosedFirelock_HoldsBackGas |\n"
+    "| CiwVjdn | with-image | **1.0** | 6/6 | 3/3 | — |\n"
+    "| Mj6pkUk | with-image | **1.0** | 6/6 | 3/3 | — |\n"
+    "| trcuD9Y | with-image | 0.0 | 5/6 | 3/3 | SpaceBreach |\n"
+    "| z4FueN3 | with-image | 0.0 | 5/6 | 3/3 | ClosingAnimation |\n\n"
+    "No-image 0/3 (correct). With-image **2/4**. Option A needs exactly 1/4, and the V27 rubric lists 2/4 as a fail example. 7 trials, so Option B "
+    "doesn't apply. Checksums: with-image `e248b0f1…` = CB oracle/nop; no-image `96f6d694…` (assets-stripped variant); the trial "
+    "`task_manifest.json` hashes match all 17 bundle files. Run time: agent 5.6–11.1 min, total 11.4–18.0 min (informational).\n\n"
+    "Context: `Attempt5/` has the **byte-identical bundle** (`diff -rq` empty) with the **same checksum `e248b0f1…`**, and its trials are 0/3 "
+    "no-image and **1/4** with-image (bviMeex passes). That set meets Option A. Pooling both runs as one Option B set (8 with-image) gives 3/8, which fails.",
+    "With-image pass@4 is 2/4; Option A needs exactly 1/4.",
+    "Either submit the Attempt5 `Trials/` (same checksum, 0/3 + 1/4) with this `Tasks/`, or re-run pass@4 with images until it lands on exactly 1/4. "
+    "Over Attempts 4–6 this prompt family passed 5 of 12 with-image runs, so a fresh pass@4 hits exactly 1/4 only about a third of the time. "
+    "Which run set to submit is your call.")
+# 17
+dim(5, "",
+    "Each injected bug is coherent and its fix is what a real developer would write: a lowered default threshold (230 → 330 K), an airtight update made "
+    "conditional (restore the unconditional call), closing frame delays 10× too short (restore them, as in the `opening` state), a glass prototype that "
+    "overrides the sprite layer list and drops the warning layers (remove the override), and a flipped edge seal direction (North → South). "
+    "The upstream defect (#36889, PR #46007) is fixed the upstream way (client appearance handler). All 6 defects are visible in the clip.",
+    N, "None.")
+# 18
+dim(5 if gate_ok else 2, "" if gate_ok else "[Fail - Gate Broken]",
+    loc + "\nCB runs: oracle 78pQwy9 = 1.0 (6/6, 3/3), nop agSDJuk = 0.0 (0/6, 3/3). Both show the stage banners and `reward=`, and neither has \"could not apply test.patch\". "
+    "They are the same runs as in Attempt5 (same trial ids and checksum).\n"
+    "**Image note:** a fresh `docker build` of `environment/` failed at the apt step (`mirrors.edge.kernel.org:443` unreachable from this machine today). "
+    "The local runs used the cached `ss14_110:fast` image instead. Its fetch/checkout/bug-apply layer is the same command as the Attempt6 Dockerfile. "
+    "Its restore/build step built the whole solution rather than only `Content.IntegrationTests.csproj`, a superset, and `test.sh` rebuilds anyway. "
+    "Proof it holds the Attempt6 tree: in a throwaway container, `bug_05..01` each reverse-apply cleanly, and the touched files then hash to the "
+    "upstream blob ids recorded in the patches (`00f1d490`, `37e98fd9`, `5797040a`, `838fa615`). The baked `recording.mp4` sha256 also matches.",
+    N if gate_ok else "Local gate did not reproduce.", "None." if gate_ok else "See the local run logs.")
+# 19
+dim(5, "", "A complete, auditable submission: bundle, 7 trials, oracle and nop.", N, "None.")
+
+RUBRIC_TITLES = ["Structure - Task Bundle Files", "Structure - Deliverables & Packaging", "Instruction - Requires the Visual Evidence",
+                 "Instruction – Symptom Specificity", "Instruction – Task Type", "Image - Evidence Quality", "Metadata - task_type Accuracy",
+                 "Evidence - Chain Consistency", "Golden Fix - Applies Cleanly", "Golden Fix - Source-Only Scope", "Tests - Implementation Overfit",
+                 "Tests - f2p/p2p Identifier Validity", "Tests - p2p Classification", "Tests - Discriminating (f2p)", "Tests - Determinism",
+                 "Hardening - Difficulty (Model Trial Fails)", "Hardening - Real & Feasible", "Gate - Oracle/Nop", "Unauditable"]
+assert len(dims) == 19
+for d_, t_ in zip(dims, RUBRIC_TITLES):
+    d_["name"] = t_
+
+gates = [
+    dict(label="Local oracle", status="pass" if R["oracle"] == "1.0" else "fail", detail=f"{R['oracle']} ({of}/6 f2p, {op}/3 p2p), {secs['oracle']} s, `--network none`, 4 CPU / 8 GB."),
+    dict(label="Local nop", status="pass" if R["nop"] == "0.0" else "fail", detail=f"{R['nop']} ({nf}/6 f2p, {np_}/3 p2p), {secs['nop']} s."),
+    dict(label="Oracle re-run", status="pass" if same and R["oracle_rerun"] == "1.0" else "fail", detail=f"{R['oracle_rerun']}; same outcome per test: {'yes' if same else 'no'}."),
+    dict(label="CB oracle / nop", status="pass", detail="78pQwy9 1.0, agSDJuk 0.0; checksum `e248b0f1…` = with-image trials."),
+    dict(label="Patch apply", status="pass", detail="`git apply --check` OK for fix.patch and test.patch at `harbor_base`."),
+    dict(label="Verifier completion", status="pass", detail="Stage banners and `reward=` present; no \"could not apply test.patch\"."),
+    dict(label="Local image provenance", status="warn", detail="Fresh build blocked (apt mirror unreachable); cached `ss14_110:fast` used, verified to carry exactly the Attempt6 bugs and asset."),
+    dict(label="pass@3 no-image", status="pass", detail="0/3 (5/6, 5/6, 4/6; all miss SpaceBreach); `/app/.harbor_assets` empty in each."),
+    dict(label="pass@4 with-image (Option A)", status="fail", detail="**2/4** (CiwVjdn, Mj6pkUk). Needs exactly 1/4. Attempt5's trials on the same checksum are 1/4."),
+    dict(label="Trial run time (informational)", status="pass", detail="Agent 5.6–11.1 min, total 11.4–18.0 min."),
+    dict(label="Trial / task checksum", status="pass", detail="`task_manifest.json` hashes = all 17 bundle files; with-image = CB oracle/nop checksum."),
+    dict(label="Packaging", status="pass", detail="`Tasks/` and `Trials/` root siblings, 3 + 4 trials."),
+    dict(label="Leaks", status="pass", detail="No repo, URL, file, door type, hazard or mechanism in instruction.md."),
+    dict(label="Evidence-chain integrity", status="pass", detail="Disk, manifest, evidence bundle, instruction and image all agree on `recording.mp4` (sha256 `0274cf20…`)."),
+    dict(label="Instruction wording", status="warn", detail="\"A element shuts controlled.\" / \"Every element of a element…\": garbled by a door→element replace (dim 4 flag)."),
+]
+
+trials = [
+    dict(id="task_without_images__2DqgEZx", mode="no-image", reward=0.0, f2p="5/6", p2p="3/3", minutes=17.5, failed=["WarningLights_SpaceBreachIsAPressureWarning"]),
+    dict(id="task_without_images__cpVoMUs", mode="no-image", reward=0.0, f2p="5/6", p2p="3/3", minutes=18.0, failed=["WarningLights_SpaceBreachIsAPressureWarning"]),
+    dict(id="task_without_images__nsexL5i", mode="no-image", reward=0.0, f2p="4/6", p2p="3/3", minutes=16.2,
+         failed=["WarningLights_SpaceBreachIsAPressureWarning", "ClosedFirelock_HoldsBackGasReleasedAfterClosing"]),
+    dict(id="task_with_images__CiwVjdn", mode="with-image", reward=1.0, f2p="6/6", p2p="3/3", minutes=13.3, failed=[]),
+    dict(id="task_with_images__Mj6pkUk", mode="with-image", reward=1.0, f2p="6/6", p2p="3/3", minutes=11.6, failed=[]),
+    dict(id="task_with_images__trcuD9Y", mode="with-image", reward=0.0, f2p="5/6", p2p="3/3", minutes=11.4, failed=["WarningLights_SpaceBreachIsAPressureWarning"]),
+    dict(id="task_with_images__z4FueN3", mode="with-image", reward=0.0, f2p="5/6", p2p="3/3", minutes=13.0, failed=["ClosingAnimation_PlaysThroughBeforeTheDoorShuts"]),
+]
+
+data = dict(
+    task_hash="space_wizards__space_station_14_36889_mm_attempt6",
+    task_id="space_wizards__space_station_14_36889_mm",
+    title="The elements in the video misbehave (task110, Attempt6)",
+    rubric="Official V27",
+    review_date="2026-11-19",
+    date_folder="11_19",
+    eyebrow="QC review · SS14 firelocks · Attempt6",
+    verdict="FAIL",
+    verdict_reason=("Only Difficulty fails: with-image pass@4 is 2/4, and Option A needs exactly 1/4 (no-image 0/3 is correct). The other 18 "
+                    "dimensions pass. Symptom Specificity is a non-fail 3: the exact defects are left to the clip, and two Expected lines are garbled. "
+                    "Attempt5's trials ran on the byte-identical bundle (same checksum) and scored 0/3 + 1/4, which meets Option A."),
+    dimensions=dims, gates=gates, trials=trials,
+)
+(out_dir / "findings.json").write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+print("wrote", out_dir / "findings.json", "| gate ok:", gate_ok, "| rewards:", R, "| same:", same)

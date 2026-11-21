@@ -1,0 +1,267 @@
+diff --git a/Content.Client/Doors/DoorSystem.cs b/Content.Client/Doors/DoorSystem.cs
+index 1e76d22..7043cc5 100644
+--- a/Content.Client/Doors/DoorSystem.cs
++++ b/Content.Client/Doors/DoorSystem.cs
+@@ -154,7 +154,7 @@ private void UpdateAppearanceForDoorState(Entity<DoorComponent> entity, SpriteCo
+                 if (_animationSystem.HasRunningAnimation(entity, DoorComponent.OpenKey))
+                 {
+                     _animationSystem.Stop(entity, null, DoorComponent.OpenKey);
+-                    _animationSystem.Play(entity, (Animation)entity.Comp.OpeningAnimation, DoorComponent.CloseKey);
++                    _animationSystem.Play(entity, (Animation)entity.Comp.ClosingAnimation, DoorComponent.CloseKey);
+                 }
+ 
+                 foreach (var (layer, layerState) in entity.Comp.ClosedSpriteStates)
+diff --git a/Content.Client/Doors/FirelockSystem.cs b/Content.Client/Doors/FirelockSystem.cs
+index 911d40b..dc14d8d 100644
+--- a/Content.Client/Doors/FirelockSystem.cs
++++ b/Content.Client/Doors/FirelockSystem.cs
+@@ -85,5 +85,16 @@ private void OnAppearanceChange(Entity<FirelockComponent> ent, ref AppearanceCha
+ 
+         if (_sprite.LayerMapTryGet((ent, args.Sprite), DoorVisualLayers.BaseBolted, out var boltedLayer, logMissing: false))
+             _sprite.LayerSetVisible((ent, args.Sprite), boltedLayer, boltedVisible);
++
++        // Warnings are only shown while the door is shut.
++        var shut = state is DoorState.Closed or DoorState.Welded or DoorState.Denying;
++        var pressure = args.TryGetData<bool>(FirelockVisuals.PressureWarning, out var p) && p;
++        var temperature = args.TryGetData<bool>(FirelockVisuals.TemperatureWarning, out var t) && t;
++
++        if (_sprite.LayerMapTryGet((ent, args.Sprite), FirelockVisualLayersPressure.Base, out var pressureLayer, logMissing: false))
++            _sprite.LayerSetVisible((ent, args.Sprite), pressureLayer, shut && pressure);
++
++        if (_sprite.LayerMapTryGet((ent, args.Sprite), FirelockVisualLayersTemperature.Base, out var temperatureLayer, logMissing: false))
++            _sprite.LayerSetVisible((ent, args.Sprite), temperatureLayer, shut && temperature);
+     }
+ }
+diff --git a/Content.Server/Atmos/EntitySystems/AirtightSystem.cs b/Content.Server/Atmos/EntitySystems/AirtightSystem.cs
+index ade2b40..37e98fd 100644
+--- a/Content.Server/Atmos/EntitySystems/AirtightSystem.cs
++++ b/Content.Server/Atmos/EntitySystems/AirtightSystem.cs
+@@ -105,8 +105,7 @@ public void SetAirblocked(Entity<AirtightComponent> airtight, bool airblocked, T
+ 
+             var pos = airtight.Comp.LastPosition;
+             airtight.Comp.AirBlocked = airblocked;
+-            if (!airblocked)
+-                UpdatePosition(airtight, xform);
++            UpdatePosition(airtight, xform);
+             var airtightEv = new AirtightChanged(airtight, airtight, true, pos);
+             RaiseLocalEvent(airtight, ref airtightEv, true);
+         }
+diff --git a/Content.Server/Doors/Systems/FirelockSystem.cs b/Content.Server/Doors/Systems/FirelockSystem.cs
+index 16ebaca..4137f0d 100644
+--- a/Content.Server/Doors/Systems/FirelockSystem.cs
++++ b/Content.Server/Doors/Systems/FirelockSystem.cs
+@@ -70,6 +70,10 @@ public override void Update(float frameTime)
+                     && door.State != DoorState.Welded
+                     && door.State != DoorState.Denying)
+                 {
++                    // An open (or moving) door is not holding anything back, so clear any stale warnings.
++                    if (firelock.Pressure || firelock.Temperature)
++                        ClearWarnings(uid, firelock);
++
+                     continue;
+                 }
+ 
+@@ -92,6 +96,23 @@ public override void Update(float frameTime)
+             }
+         }
+ 
++        private void ClearWarnings(EntityUid uid, FirelockComponent firelock)
++        {
++            firelock.Pressure = false;
++            firelock.Temperature = false;
++            Dirty(uid, firelock);
++
++            if (_appearanceQuery.TryGetComponent(uid, out var appearance))
++            {
++                _appearance.SetData(uid, DoorVisuals.ClosedLights, false, appearance);
++                _appearance.SetData(uid, FirelockVisuals.PressureWarning, false, appearance);
++                _appearance.SetData(uid, FirelockVisuals.TemperatureWarning, false, appearance);
++            }
++
++            if (_pointLightQuery.TryComp(uid, out var pointLight))
++                _pointLight.SetEnabled(uid, false, pointLight);
++        }
++
+         private void OnAtmosAlarm(EntityUid uid, FirelockComponent component, AtmosAlarmEvent args)
+         {
+             if (!this.IsPowered(uid, EntityManager))
+diff --git a/Resources/Prototypes/Entities/Structures/Doors/Firelocks/firelock.yml b/Resources/Prototypes/Entities/Structures/Doors/Firelocks/firelock.yml
+index cfb8c14..5224ac8 100644
+--- a/Resources/Prototypes/Entities/Structures/Doors/Firelocks/firelock.yml
++++ b/Resources/Prototypes/Entities/Structures/Doors/Firelocks/firelock.yml
+@@ -67,16 +67,6 @@
+       shader: unshaded
+       sprite: Structures/Doors/Airlocks/Effects/airlock-effects-firelock.rsi
+       map: ["enum.FirelockVisualLayersTemperature.Base"]
+-  - type: GenericVisualizer
+-    visuals:
+-      enum.FirelockVisuals.PressureWarning:
+-        enum.FirelockVisualLayersPressure.Base:
+-          True: { visible: true }
+-          False: { visible: false }
+-      enum.FirelockVisuals.TemperatureWarning:
+-        enum.FirelockVisualLayersTemperature.Base:
+-          True: { visible: true }
+-          False: { visible: false }
+   - type: AnimationPlayer
+   - type: Fixtures
+     fixtures:
+@@ -203,6 +193,16 @@
+       - state: panel_open
+         sprite: Structures/Doors/Airlocks/Effects/airlock-effects.rsi
+         map: ["enum.WiresVisualLayers.MaintenancePanel"]
++      - state: pressure_unlit
++        visible: false
++        shader: unshaded
++        sprite: Structures/Doors/Airlocks/Effects/airlock-effects-firelock.rsi
++        map: ["enum.FirelockVisualLayersPressure.Base"]
++      - state: temperature_unlit
++        visible: false
++        shader: unshaded
++        sprite: Structures/Doors/Airlocks/Effects/airlock-effects-firelock.rsi
++        map: ["enum.FirelockVisualLayersTemperature.Base"]
+     - type: Occluder
+       enabled: false
+     - type: Fixtures
+@@ -249,7 +249,7 @@
+       airBlocked: false
+       noAirWhenFullyAirBlocked: false
+       airBlockedDirection:
+-        - North
++        - South
+     - type: Fixtures
+       fixtures:
+         fix1:
+diff --git a/Resources/Textures/Structures/Doors/Airlocks/Standard/firelock-base.rsi/meta.json b/Resources/Textures/Structures/Doors/Airlocks/Standard/firelock-base.rsi/meta.json
+index cd47d30..5797040 100644
+--- a/Resources/Textures/Structures/Doors/Airlocks/Standard/firelock-base.rsi/meta.json
++++ b/Resources/Textures/Structures/Doors/Airlocks/Standard/firelock-base.rsi/meta.json
+@@ -98,72 +98,72 @@
+             "directions": 4,
+             "delays": [
+                 [
++                    0.1,
++                    0.05,
++                    0.05,
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.01,
+                     0.01,
+-                    0.005,
+-                    0.005,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.005,
+-                    0.005,
+-                    0.01
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.05,
++                    0.05,
++                    0.1
+                 ],
+                 [
++                    0.1,
++                    0.05,
++                    0.05,
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.01,
+                     0.01,
+-                    0.005,
+-                    0.005,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.005,
+-                    0.005,
+-                    0.01
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.05,
++                    0.05,
++                    0.1
+                 ],
+                 [
++                    0.1,
++                    0.05,
++                    0.05,
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.01,
+                     0.01,
+-                    0.005,
+-                    0.005,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.005,
+-                    0.005,
+-                    0.01
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.05,
++                    0.05,
++                    0.1
+                 ],
+                 [
++                    0.1,
++                    0.05,
++                    0.05,
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.01,
+                     0.01,
+-                    0.005,
+-                    0.005,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.001,
+-                    0.005,
+-                    0.005,
+-                    0.01
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.01,
++                    0.05,
++                    0.05,
++                    0.1
+                 ]
+             ]
+         }
